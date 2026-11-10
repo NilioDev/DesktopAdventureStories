@@ -30,7 +30,7 @@
 
 namespace das::app {
 
-enum class ViewMode { Title, Zone, Tiles, Play };
+enum class ViewMode { Title, Zone, Tiles, Play, Edit };
 
 // The device the player used last; the hints on screen follow it.
 enum class InputDevice { Keyboard, Gamepad, Touch };
@@ -82,6 +82,8 @@ public:
         menuItem_ = 0;
     }
     void openMods();
+    // The zone editor (docs/editor.md), on the selected zone.
+    void openEditor();
     // Where mods are kept; without it the menu has no Mods page.
     void setModsFolder(std::filesystem::path folder);
 
@@ -120,13 +122,15 @@ public:
     bool playing() const { return mode_ == ViewMode::Play && page_ == Page::None && !showMap_ && banner_.empty(); }
     // A mouse click or a tap, in interface units.
     void pointerPressed(float x, float y);
+    // The mouse moved with its button held: the editor paints on.
+    void pointerDragged(float x, float y) { drag_ = SDL_FPoint{x, y}; }
 
     void update(const ActionState& actions, std::optional<Step> step, Uint64 now);
     void render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now) const;
 
 private:
     // Menus: the title screen's, the pause menu and the options.
-    enum class Page { None, Main, Pause, Options, Controls, Mods };
+    enum class Page { None, Main, Pause, Options, Controls, Mods, Editor };
     enum class RowId {
         Continue,
         NewGame,
@@ -152,6 +156,19 @@ private:
         Mods,
         Mod,
         OpenModsFolder,
+        Editor,
+        EditZone,
+        EditLayer,
+        EditTool,
+        EditTile,
+        EditSpotType,
+        EditSpotArgument,
+        EditZoneType,
+        EditUndo,
+        EditNewZone,
+        EditTest,
+        EditSave,
+        EditLeave,
         Back,
     };
     struct Row {
@@ -163,7 +180,7 @@ private:
     };
     // A place on screen the pointer can press, found while drawing.
     struct Hit {
-        enum class Kind { Row, RowLeft, Field, Slot, Menu, Map } kind;
+        enum class Kind { Row, RowLeft, Field, Slot, Menu, Map, Picker } kind;
         SDL_FRect rect;
         int index = 0;
     };
@@ -174,6 +191,8 @@ private:
     // viewer.cpp: state and input.
     // Makes the game's data from its base pack and the mods switched on.
     void rebuild(LoadedGame& game);
+    // Puts a pack's content in the game: data, sounds and textures.
+    void install(LoadedGame& game, pack::Pack pack);
     void rescanMods();
     // The mods of the current game, in the order they are applied.
     std::vector<const pack::Mod*> gameMods() const;
@@ -196,6 +215,39 @@ private:
     std::filesystem::path savePath() const;
     std::string gameId() const;
     int difficultyValue() const;
+
+    // viewer_edit.cpp: the zone editor.
+    struct EditState {
+        int layer = 0; // 0 floor, 1 objects, 2 roof, 3 hotspots
+        int tool = 0;  // 0 paint, 1 erase, 2 pick
+        std::uint16_t tile = 0;
+        std::uint32_t spotType = 9; // the hotspot type to place
+        int x = 0;                  // the cursor, in cells
+        int y = 0;
+        bool picking = false; // choosing a tile
+        int pickPage = 0;
+        int pickIndex = 0; // the picker's cursor on its page
+        std::vector<std::pair<int, data::Zone>> undo;
+        bool dirty = false;
+        bool leaveArmed = false; // leaving with unsaved changes asks once more
+        bool testing = false;    // test play started from the editor
+        pack::ModInfo info;      // of the mod being edited
+        pack::Files sounds;      // the base sounds with the mod's
+    };
+    std::vector<Row> editorRows() const;
+    void updateEditor(const ActionState& actions, std::optional<Step> step);
+    void editorActivate(const Row& row, int change);
+    void editorClick(const Hit& hit, SDL_FPoint at, bool dragged);
+    // Applies the tool at a cell; `record` keeps the zone for Undo first.
+    void editAt(int x, int y, bool record);
+    void editUndo();
+    void editNewZone();
+    void editSave();
+    void leaveEditor();
+    data::Zone& editZone() { return game().data.zones[static_cast<std::size_t>(zone_)]; }
+    const data::Zone& editZone() const { return game().data.zones[static_cast<std::size_t>(zone_)]; }
+    void renderEditor(SDL_Renderer* renderer, const SDL_FRect& field) const;
+    void renderEditorPanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;
 
     // viewer_draw.cpp: drawing.
     void renderTile(SDL_Renderer* renderer, std::uint16_t tile, const SDL_FRect& dst) const;
@@ -220,6 +272,8 @@ private:
     std::vector<pack::Mod> mods_; // every mod found, of both games
     std::vector<std::string> modScanProblems_;
     std::string notice_; // a short message under the title menu
+    EditState edit_;
+    std::optional<SDL_FPoint> drag_;
     std::size_t current_ = 0;
     ViewMode mode_ = ViewMode::Title;
     int zone_ = 0;

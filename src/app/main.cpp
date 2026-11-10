@@ -4,12 +4,12 @@
 // own interface around it. Without game files it asks for them.
 //
 // Usage: DesktopAdventureStories [game folder, zip or data file]
-//          [--game yoda|indy] [--mode title|zone|tiles|play|game|continue] [--zone N]
+//          [--game yoda|indy] [--mode title|zone|tiles|play|game|continue|edit] [--zone N]
 //          [--seed N] [--size small|medium|large]
 //          [--at X,Y] [--walk UDLR...] [--library DIR] [--reimport]
 //        For screenshots and tests:
 //          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map|mods]
-//          [--device keyboard|gamepad|touch] [--tap X,Y]
+//          [--device keyboard|gamepad|touch] [--tap X,Y]...
 //
 // The first time a game is found it is imported into our own open format in
 // the library folder (the app's data folder, or --library / DAS_LIBRARY_DIR);
@@ -451,7 +451,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     int windowH = kWindowHeight;
     std::string menu;
     std::string device;
-    std::optional<SDL_FPoint> tap;
+    std::vector<SDL_FPoint> taps;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         const bool hasValue = i + 1 < argc;
@@ -485,7 +485,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         } else if (arg == "--tap" && hasValue) {
             SDL_FPoint p{};
             if (std::sscanf(argv[++i], "%f,%f", &p.x, &p.y) == 2) {
-                tap = p;
+                taps.push_back(p);
             }
         } else if (arg == "--screenshot" && hasValue) {
             app->screenshotPath = argv[++i];
@@ -551,6 +551,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         app->viewer.setMode(das::app::ViewMode::Tiles);
     }
     app->viewer.selectZone(zone);
+    if (mode == "edit") {
+        app->viewer.openEditor();
+    }
     if (mode == "play" || mode == "game" || mode == "continue") {
         if (mode == "game") {
             app->viewer.newGame(seed, size);
@@ -589,10 +592,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         const auto& f = app->layout.field;
         app->touch.fingerDown(1, f.x / 2 + 30, f.y + f.h - 40, app->actions);
     }
-    if (tap) {
-        // A tap needs the layout of a drawn frame: draw one first.
+    for (std::size_t i = 0; i < taps.size(); ++i) {
+        // A tap needs the layout of a drawn frame: draw one first. The
+        // last tap is handled by the first frame.
         render(*app, SDL_GetTicks());
-        app->viewer.pointerPressed(tap->x, tap->y);
+        app->viewer.pointerPressed(taps[i].x, taps[i].y);
+        if (i + 1 < taps.size()) {
+            update(*app, SDL_GetTicks(), 0);
+            app->actions.endFrame();
+        }
     }
 
     // Gamepads that are already plugged in also arrive as GAMEPAD_ADDED
@@ -648,6 +656,12 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
             SDL_ConvertEventToRenderCoordinates(app.renderer, event);
             app.viewer.pointerPressed(event->button.x, event->button.y);
             welcomePress(app, event->button.x, event->button.y);
+        }
+        break;
+    case SDL_EVENT_MOUSE_MOTION:
+        if ((event->motion.state & SDL_BUTTON_LMASK) != 0 && event->motion.which != SDL_TOUCH_MOUSEID) {
+            SDL_ConvertEventToRenderCoordinates(app.renderer, event);
+            app.viewer.pointerDragged(event->motion.x, event->motion.y);
         }
         break;
     case SDL_EVENT_FINGER_DOWN:

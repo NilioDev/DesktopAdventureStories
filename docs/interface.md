@@ -24,7 +24,7 @@ smaller, for screens at least 320 units on their short side.
 
 - **Title:** the game's own title picture in the field; the menu in the
   panel: Continue (when there is a save), New game, Game (when both games
-  are installed), World size, Difficulty, Options, Mods, Add games, Data
+  are installed), World size, Difficulty, Options, Mods, Editor, Add games, Data
   viewer and Quit (these two not on phones).
 - **Game:** the panel shows the puzzles solved, health, the weapon in hand,
   the inventory as a grid (scrolling to the selected item), the selected
@@ -44,6 +44,8 @@ smaller, for screens at least 320 units on their short side.
   author and description below the menu. A mod that cannot be applied shows
   Error and the reason. *Open mods folder* (desktop) opens the folder in the
   file manager. See [formats/mod.md](formats/mod.md).
+- **Editor:** draws on a zone's layers, places hotspots, adds zones, tries a
+  zone out and saves the changes as a mod. See [editor.md](editor.md).
 - **Map:** the world's sites coloured by kind (town, open puzzle, solved
   puzzle, goal), with the hero's site blinking.
 

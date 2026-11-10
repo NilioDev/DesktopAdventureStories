@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The player's settings, kept as a small JSON file in the app's data folder.
+#pragma once
+
+#include <filesystem>
+
+namespace das::app {
+
+enum class Filter { Sharp, Smooth, Scanlines };
+
+struct Settings {
+    bool fullscreen = false;
+    // Pixel perfect scales the play field in whole steps only; otherwise it
+    // fills the space it has.
+    bool pixelPerfect = true;
+    Filter filter = Filter::Sharp;
+    int volume = 80; // 0 to 100
+
+    friend bool operator==(const Settings&, const Settings&) = default;
+};
+
+// Missing or damaged files give the defaults.
+Settings loadSettings(const std::filesystem::path& file);
+void saveSettings(const Settings& settings, const std::filesystem::path& file);
+
+} // namespace das::app

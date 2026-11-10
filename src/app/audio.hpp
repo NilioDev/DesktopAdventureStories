@@ -22,6 +22,8 @@ public:
     void open();
     void play(const data::Bytes& wav);
     void stopAll();
+    // 0 to 1.
+    void setVolume(float volume);
     // Frees sounds that finished playing.
     void update();
 

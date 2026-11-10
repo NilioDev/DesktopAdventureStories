@@ -155,5 +155,11 @@ jobs:
           - Linux: unpack the tar.gz and start DesktopAdventureStories.
           - Android: install the APK, then choose a zip of the game folder.
           NOTES
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-            --title "DesktopAdventureStories ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes
+          # A release made on GitHub's release page (which also makes the
+          # tag) gets the packages added; otherwise the release is made here.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+              --title "DesktopAdventureStories ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes
+          fi

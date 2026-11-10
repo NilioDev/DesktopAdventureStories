@@ -17,8 +17,11 @@ No package ever holds anything of the original games.
 1. Set the new version in `CMakeLists.txt` (`project(... VERSION x.y.z)`).
    The Android version is taken from there as well.
 2. Merge that to `main`, then tag it: `git tag vx.y.z && git push origin vx.y.z`.
+   Or, on GitHub, open Releases, *Draft a new release*, type the new tag
+   `vx.y.z` (target `main`) and publish it; that makes the tag too.
 3. The workflow checks that the tag matches the version, builds everything
-   and creates the release with notes for each system.
+   and creates the release with notes for each system. When the release was
+   already made on GitHub, the packages are added to it.
 
 Starting the workflow by hand (Actions, Release, Run workflow) only builds
 the packages, as workflow artifacts, to try the packaging.

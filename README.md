@@ -1,182 +1,151 @@
-# DesktopAdventureStories
+<p align="center">
+  <img src="docs/images/banner.png" alt="Desktop Adventure Stories" width="100%">
+</p>
 
-An open-source, clean-room reimplementation of the 1996–1997 "Desktop Adventures"
-game engine, so that *Indiana Jones and His Desktop Adventures* and
-*Star Wars: Yoda Stories* stay playable on modern Windows, Linux, macOS and Android,
-with a modern interface, gamepad support and an editor for new content.
+<p align="center">
+  <b>Play <i>Indiana Jones and His Desktop Adventures</i> and <i>Star Wars: Yoda Stories</i><br>
+  on today's computers, phones and tablets.</b>
+</p>
 
-> **Status:** playable. Both games can be played from start to finish in
-> generated worlds, and the editor makes mods. Not yet tested much on real
-> devices, so please report what goes wrong.
+<p align="center">
+  <a href="https://github.com/NilioDev/DesktopAdventureStories/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NilioDev/DesktopAdventureStories?style=flat-square&color=ECC45C&labelColor=12141A&label=download"></a>
+  <a href="https://github.com/NilioDev/DesktopAdventureStories/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/NilioDev/DesktopAdventureStories/ci.yml?branch=main&style=flat-square&labelColor=12141A&label=build"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-ECC45C?style=flat-square&labelColor=12141A">
+  <a href="LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-ECC45C?style=flat-square&labelColor=12141A"></a>
+</p>
 
-## You need your own copy of the games
+<p align="center">
+  <a href="#download-and-play">Download</a> ·
+  <a href="#add-your-games">Add your games</a> ·
+  <a href="#controls">Controls</a> ·
+  <a href="#mods-and-the-editor">Mods &amp; editor</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="docs/building.md">Build from source</a>
+</p>
 
-This project contains **no game data**. To play, point it at the files from your own
-copy of the original games:
+---
 
-| Game | Data file | Executable (only used to read the colour palette) |
+**Desktop Adventure Stories** is a free, open-source, from-scratch remake of
+the engine behind the 1996–1997 *Desktop Adventures* games. Bring your own
+copy of the originals, and play them again with a modern interface, smooth
+scaling to any screen, gamepad and touch controls, and an editor to make your
+own adventures.
+
+> [!NOTE]
+> **Status: playable.** Both games can be played from start to finish in
+> generated worlds, and the editor makes mods. It has not been tested much on
+> real devices yet, so please
+> [report what goes wrong](https://github.com/NilioDev/DesktopAdventureStories/issues).
+
+## Features
+
+- 🗺️ **A new adventure every time.** Worlds are generated just like in the
+  originals: the same seed gives the same world. Pick the world size and the
+  difficulty.
+- 🖥️ **Modern interface.** Your own game's pixel art, scaled sharply to any
+  window, with a clean side panel for health, weapon and inventory (below the
+  play field on tall screens). No Windows 3.1 look.
+- 🎮 **Play your way.** Keyboard, mouse, gamepad or touch. Every key and button
+  can be changed.
+- 💾 **Saves itself.** The game is saved when you go back to the title screen
+  or close the app.
+- 📱 **Everywhere.** Windows, macOS, Linux and Android, from one codebase.
+- 🛠️ **Editor and mods.** Change or add zones, tiles, characters, puzzles,
+  scripts and sounds in a beginner-friendly editor, and share them as mods.
+- 🔓 **Open.** GPL-licensed code, and open file formats for game data, mods
+  and saves.
+
+## Download and play
+
+Get the package for your system from the
+**[latest release](https://github.com/NilioDev/DesktopAdventureStories/releases/latest)**.
+The first time you start it, it asks for your game files (see
+[Add your games](#add-your-games)).
+
+| System | Download | |
+| --- | --- | --- |
+| 🪟 **Windows** | `…-windows.zip` | Unpack, double-click `DesktopAdventureStories.exe` |
+| 🍎 **macOS** | `…-macos.dmg` | Drag the app to *Applications* |
+| 🐧 **Linux** | `…-linux-x86_64.AppImage` | One file, nothing to install |
+| 🤖 **Android** | `…-android.apk` | Android 5 or newer |
+
+<details>
+<summary><b>🪟 Windows: step by step</b></summary>
+
+1. Download `DesktopAdventureStories-<version>-windows.zip` and unpack it.
+2. Double-click `DesktopAdventureStories.exe`.
+3. Windows SmartScreen may warn the first time because the program is not
+   signed: choose *More info*, then *Run anyway*.
+4. Press *Choose game files*, or put your games in a `gamedata` folder next to
+   the `.exe` before starting.
+
+</details>
+
+<details>
+<summary><b>🍎 macOS: step by step</b></summary>
+
+1. Download `DesktopAdventureStories-<version>-macos.dmg`, open it and drag the
+   app to *Applications*.
+2. The app is not signed, so the first time right-click it and choose *Open*,
+   then *Open* again.
+3. Press *Choose game files*, or drop your game folder on the window.
+
+</details>
+
+<details>
+<summary><b>🐧 Linux: step by step</b></summary>
+
+1. Download `DesktopAdventureStories-<version>-linux-x86_64.AppImage`. That one
+   file is the whole program.
+2. Right-click the file, open *Properties* and turn on *Allow executing file as
+   program* (in some file managers: *Executable as Program*, or a
+   *Permissions* tab).
+3. Double-click it.
+4. Press *Choose game files* and pick your game folder or a zip of it. Or put
+   your games in a `gamedata` folder next to the AppImage before starting.
+
+To get it in your application menu, use a tool such as
+[Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) or
+[AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher).
+A plain `DesktopAdventureStories-<version>-linux.tar.gz` with the same program
+is on the releases page too.
+
+</details>
+
+<details>
+<summary><b>🤖 Android: step by step</b></summary>
+
+1. Download `DesktopAdventureStories-<version>-android.apk` on your phone or
+   tablet and open it.
+2. The first time, Android asks to allow installing apps from this source (your
+   browser or file manager).
+3. Start the app and choose a `.zip` of your game folder, or its files.
+
+</details>
+
+Rather build it yourself? See **[Building from source](docs/building.md)**.
+
+## Add your games
+
+This project contains **no game data**. You need your own copy of the original
+games; the program reads these files from it:
+
+| Game | Data file | Executable (only for the colour palette) |
 | --- | --- | --- |
 | Indiana Jones and His Desktop Adventures | `DESKTOP.DAW` | `DESKADV.EXE` |
 | Star Wars: Yoda Stories | `YODESK.DTA` | `YODESK.EXE` |
 
-Never commit these files, or anything extracted from them, to this repository.
+The easiest way is to give the program the **whole game folder** from your CD
+or installation, or a `.zip` of it. You can:
 
-## Ground rules
+- press *Choose game files* on first start (or *Add games* in the title menu),
+- drop the folder or zip on the window,
+- put the games in a `gamedata/yoda/` and `gamedata/indy/` folder next to the
+  program (see [gamedata/README.md](gamedata/README.md)),
+- or pass the folder or zip on the command line.
 
-- **Clean room.** All code here is written from scratch for this project. Code from
-  other engine reimplementations is not copied or adapted; other projects may only be
-  used as documentation of the file format.
-- **Own look.** The original game world (tiles, sprites, sounds) is loaded from the
-  player's files; the interface around it is our own and modern, not a copy of the
-  Windows 3.x interface.
-- **Trademarks.** This project is not affiliated with or endorsed by Lucasfilm, Disney
-  or LucasArts. Game names are used only to describe compatibility.
-
-## Installing and starting
-
-Ready-made packages are on the
-[releases page](https://github.com/NilioDev/DesktopAdventureStories/releases)
-once a version is out (see [docs/releases.md](docs/releases.md) for how they
-are made). Below, for each system, how to start a package and how to build
-it yourself. The first start always needs your game files; see
-[Pointing it at your games](#pointing-it-at-your-games).
-
-### Windows
-
-**Package:** download `DesktopAdventureStories-<version>-windows.zip`, unpack
-it and double-click `DesktopAdventureStories.exe`. Windows SmartScreen may
-warn the first time because the program is not signed: choose *More info*,
-*Run anyway*. Put your games in a `gamedata` folder next to the `.exe`, or
-start the program and press *Choose game files*.
-
-**Build it yourself:** install [Git](https://git-scm.com/),
-[CMake](https://cmake.org/download/) and Visual Studio 2022 (the free
-Community edition, with *Desktop development with C++*). Then, in a
-*Developer PowerShell for VS 2022*:
-
-```powershell
-git clone https://github.com/NilioDev/DesktopAdventureStories.git
-cd DesktopAdventureStories
-cmake -S . -B build
-cmake --build build --config Release --parallel
-.\build\src\app\Release\DesktopAdventureStories.exe
-```
-
-### macOS
-
-**Package:** download `DesktopAdventureStories-<version>-macos.dmg`, open it
-and drag the app to *Applications*. The app is not signed, so the first time
-right-click it and choose *Open*, then *Open* again. Start it and press
-*Choose game files*, or drop your game folder on the window.
-
-**Build it yourself:** install the Xcode command line tools
-(`xcode-select --install`) and CMake (for example `brew install cmake`). Then
-in Terminal:
-
-```sh
-git clone https://github.com/NilioDev/DesktopAdventureStories.git
-cd DesktopAdventureStories
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-open build/src/app/DesktopAdventureStories.app
-```
-
-Started this way the app does not look in the repository's `gamedata`
-folder; choose the game files in the app, or start the program inside the
-app from the repository root:
-`./build/src/app/DesktopAdventureStories.app/Contents/MacOS/DesktopAdventureStories`.
-
-### Linux
-
-**Package:** download `DesktopAdventureStories-<version>-linux-x86_64.AppImage`.
-That one file is the whole program; nothing needs to be installed.
-
-1. Right-click the file, open *Properties* and turn on *Allow executing file
-   as program* (in some file managers: *Executable as Program*, or a
-   *Permissions* tab).
-2. Double-click it.
-3. Press *Choose game files* and pick your game folder or a zip of it. Or put
-   your games in a `gamedata` folder next to the AppImage before starting.
-
-The games are copied into the app's own library the first time, so after
-that the program starts straight away. To get it in your application menu,
-use a tool such as [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever)
-or [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher).
-A plain `DesktopAdventureStories-<version>-linux.tar.gz` with the same
-program is on the releases page too.
-
-<details>
-<summary><b>Build it yourself</b></summary>
-
-On Debian or Ubuntu, install the tools and SDL's build dependencies (other
-distributions have packages with similar names):
-
-```sh
-sudo apt install git cmake g++ ninja-build pkg-config \
-  libasound2-dev libpulse-dev libpipewire-0.3-dev \
-  libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
-  libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
-  libwayland-dev libdecor-0-dev wayland-protocols \
-  libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
-  libdbus-1-dev libibus-1.0-dev libudev-dev
-git clone https://github.com/NilioDev/DesktopAdventureStories.git
-cd DesktopAdventureStories
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-./build/src/app/DesktopAdventureStories
-```
-
-To make an AppImage of your own build, configure with
-`-DDAS_USE_SYSTEM_SDL3=OFF`, build, and run
-`packaging/linux/make-appimage.sh build dist` (needs `desktop-file-utils`).
-
-</details>
-
-### Android
-
-**Package:** download `DesktopAdventureStories-<version>-android.apk` on your
-phone or tablet and open it. Android asks to allow installing apps from this
-source (your browser or file manager) the first time. Start the app and
-choose a `.zip` of your game folder, or its files. Android 5 or newer.
-
-**Build it yourself:** install JDK 17 and the Android SDK and NDK (easiest
-with [Android Studio](https://developer.android.com/studio)). Then:
-
-```sh
-git clone https://github.com/NilioDev/DesktopAdventureStories.git
-cd DesktopAdventureStories/android
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/*.apk
-```
-
-Or open the `android` folder in Android Studio and press *Run*.
-
-### All desktop systems
-
-The build needs CMake 3.22+, a C++20 compiler and Git. SDL3 is downloaded and
-built automatically when it is not installed. Run the tests with:
-
-```sh
-ctest --test-dir build --output-on-failure
-```
-
-### Pointing it at your games
-
-Copy your game files into [`gamedata/yoda/`](gamedata/README.md) and
-`gamedata/indy/`; that folder is ignored by Git. The program finds it when
-started from the repository root:
-
-```sh
-./build/src/app/DesktopAdventureStories
-```
-
-You can also pass another folder or the game's `.zip` on the command line, set
-`DAS_GAMEDATA_DIR`, drop a folder or zip on the window, or press *Choose game files* (title menu: *Add games*). On Android the picker takes a zip of the game folder, or its files.
-
-The first time a game is found it is imported into our own open format (see
-[docs/formats/pack.md](docs/formats/pack.md)) in the app's data folder. After
-that the original files are no longer needed. Use `--reimport` to import again,
-or `--library DIR` (or `DAS_LIBRARY_DIR`) to keep the library somewhere else.
+The first time, each game is imported into our own open format in the app's
+library. After that the original files are no longer needed.
 
 | System | Library folder |
 | --- | --- |
@@ -184,22 +153,7 @@ or `--library DIR` (or `DAS_LIBRARY_DIR`) to keep the library somewhere else.
 | Linux | `~/.local/share/DesktopAdventureStories/library` |
 | macOS | `~/Library/Application Support/DesktopAdventureStories/library` |
 
-The title screen starts a new game in a generated world (pick the world
-size and difficulty), continues a saved one, or opens the options. The game
-saves itself when you go back to the title screen or close the app. The data
-viewer (title menu, desktop only) shows every zone and tile of the data.
-
-The screen is laid out for any window size: the play field is scaled in
-whole pixels, with a panel beside it (or below it on a tall screen) for
-health, the weapon and the inventory. See [docs/interface.md](docs/interface.md).
-
-Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
-
-```sh
-DAS_GAMEDATA_DIR=gamedata ctest --test-dir build --output-on-failure
-```
-
-### Controls
+## Controls
 
 | Action | Keyboard | Gamepad | Mouse / touch |
 | --- | --- | --- | --- |
@@ -210,20 +164,80 @@ DAS_GAMEDATA_DIR=gamedata ctest --test-dir build --output-on-failure
 | Map | M / Tab | Back / Select | Map button |
 | Menu, back | Esc | Start (B goes back in menus) | Menu button |
 
-Every key and button can be changed under Options, Controls.
+Every key and button can be changed under *Options → Controls*.
 
-## Mods
+The title screen starts a new game in a generated world, continues a saved
+one, or opens the options. On desktop, the *data viewer* in the title menu
+shows every zone and tile of a game. More about the screen layout in
+[docs/interface.md](docs/interface.md).
+
+## Mods and the editor
 
 Mods change or extend a game: new or changed zones, tiles, sounds and title
-screens. A mod is a folder (or a .zip of it) in the `mods` folder next to the
-library; switch it on under *Mods* in the title menu. See
-[docs/formats/mod.md](docs/formats/mod.md) for how to make one. The
-*Editor* in the title menu draws zones and saves them as a mod; see
-[docs/editor.md](docs/editor.md).
+screens. A mod is a folder (or a `.zip` of it) in the `mods` folder next to the
+library; switch it on under *Mods* in the title menu.
 
-## Contributing
+The *Editor* in the title menu lets you make your own: draw zones and tiles,
+write scripts as simple sentence cards, and set up characters, puzzles and
+sounds. Your changes are saved as a mod.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), especially the clean-room rules.
+- [Using the editor](docs/editor.md)
+- [The mod format](docs/formats/mod.md)
+
+## FAQ
+
+<details>
+<summary><b>Where do I get the games?</b></summary>
+
+From your own copy of the originals: an old CD or an existing installation.
+This project does not include, download or sell them.
+</details>
+
+<details>
+<summary><b>Do I need to keep the original files?</b></summary>
+
+No. They are imported once into the app's library (see the table above). To
+import them again, start the program with `--reimport`.
+</details>
+
+<details>
+<summary><b>Windows or macOS says the program can't be trusted.</b></summary>
+
+The packages are not signed yet. On Windows choose *More info → Run anyway*;
+on macOS right-click the app and choose *Open*. See
+[Download and play](#download-and-play).
+</details>
+
+<details>
+<summary><b>Something doesn't work.</b></summary>
+
+Please [open an issue](https://github.com/NilioDev/DesktopAdventureStories/issues)
+with your system, the game and what happened.
+</details>
+
+## For developers
+
+| | |
+| --- | --- |
+| [Building from source](docs/building.md) | Build on each system, command line options, tests |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to help, and the clean-room rules |
+| [docs/formats/](docs/formats/README.md) | The original file formats and our own open formats |
+| [docs/world-generator.md](docs/world-generator.md) | How worlds are generated |
+| [docs/combat.md](docs/combat.md) · [docs/savegames.md](docs/savegames.md) · [docs/music.md](docs/music.md) | Game systems |
+| [docs/releases.md](docs/releases.md) | How the release packages are made |
+
+## Ground rules and legal
+
+- **No game data.** The original game world (tiles, sprites, sounds) is loaded
+  from the player's own files. Never commit those files, or anything extracted
+  from them, to this repository.
+- **Clean room.** All code here is written from scratch for this project. Code
+  from other engine reimplementations is not copied or adapted; other projects
+  may only be used as documentation of the file format.
+- **Own look.** The interface around the game world is our own and modern, not
+  a copy of the Windows 3.x interface.
+- **Trademarks.** This project is not affiliated with or endorsed by Lucasfilm,
+  Disney or LucasArts. Game names are used only to describe compatibility.
 
 ## License
 

@@ -440,6 +440,8 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Scaling, "Scaling", s.pixelPerfect ? "Pixel" : "Fill"});
         rows.push_back({RowId::Filter, "Filter", filterName(s.filter)});
         rows.push_back({RowId::Volume, "Sound", std::to_string(s.volume) + "%"});
+        rows.push_back({RowId::TouchPad, "Touch pad",
+                        s.touchPad == TouchPad::On ? "On" : s.touchPad == TouchPad::Off ? "Off" : "Auto"});
         if (bindings_) {
             rows.push_back({RowId::Controls, "Controls", ""});
         }
@@ -562,6 +564,9 @@ void Viewer::menuActivate(RowId id, int change) {
                 s.volume = std::clamp(s.volume + 10 * change, 0, 100);
             }
         });
+        break;
+    case RowId::TouchPad:
+        changeSetting([&](Settings& s) { s.touchPad = static_cast<TouchPad>(wrapAround(static_cast<int>(s.touchPad) + change, 3)); });
         break;
     case RowId::Controls:
         page_ = Page::Controls;

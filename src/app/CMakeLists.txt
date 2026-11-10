@@ -5,6 +5,7 @@ set(DAS_APP_SOURCES
     viewer_draw.cpp
     ui.cpp
     settings.cpp
+    touch_controls.cpp
     audio.cpp
 )
 

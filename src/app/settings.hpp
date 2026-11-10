@@ -11,6 +11,8 @@
 namespace das::app {
 
 enum class Filter { Sharp, Smooth, Scanlines };
+// The on-screen pad: Auto shows it once the screen was touched.
+enum class TouchPad { Auto, On, Off };
 
 struct Settings {
     bool fullscreen = false;
@@ -19,6 +21,7 @@ struct Settings {
     bool pixelPerfect = true;
     Filter filter = Filter::Sharp;
     int volume = 80; // 0 to 100
+    TouchPad touchPad = TouchPad::Auto;
     // Controls, per action (by its actionName): keys by SDL scancode name
     // and gamepad buttons by SDL button name. A missing action keeps its
     // default controls.

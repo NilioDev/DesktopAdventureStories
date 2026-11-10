@@ -48,8 +48,9 @@ struct Layout {
 };
 
 // The play field is 288 game pixels square. `pixelPerfect` keeps it at a
-// whole multiple of that on screen.
-Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect);
+// whole multiple of that on screen. On a tall screen `bottomRoom` units are
+// kept free under the panel (for the touch pad).
+Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom = 0);
 
 // Starts drawing a frame in units.
 void begin(SDL_Renderer* renderer, const Layout& layout);

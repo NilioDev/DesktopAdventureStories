@@ -28,7 +28,7 @@ void setColor(SDL_Renderer* r, Color c) {
 
 namespace {
 
-Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect) {
+Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom) {
     Layout out;
     const auto pw = static_cast<float>(std::max(1, pixelWidth));
     const auto ph = static_cast<float>(std::max(1, pixelHeight));
@@ -58,7 +58,8 @@ Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect)
         const float x = std::floor((out.width - field) / 2);
         out.field = {x, kMargin, field, field};
         const float panelY = out.field.y + field + kMargin;
-        out.panel = {kMargin, panelY, out.width - 2 * kMargin, out.height - panelY - kMargin};
+        out.panel = {kMargin, panelY, out.width - 2 * kMargin,
+                     std::max(120.0f, out.height - panelY - kMargin - bottomRoom)};
     } else {
         const float total = field + kMargin + kPanelWidth;
         const float x = std::floor((out.width - total) / 2);
@@ -71,12 +72,12 @@ Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect)
 
 } // namespace
 
-Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect) {
+Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom) {
     // The largest interface that does not make the play field smaller.
     const float most = std::max(1.0f, std::floor(static_cast<float>(std::min(pixelWidth, pixelHeight)) / kMinShort));
-    Layout best = layoutAt(1, pixelWidth, pixelHeight, pixelPerfect);
+    Layout best = layoutAt(1, pixelWidth, pixelHeight, pixelPerfect, bottomRoom);
     for (float scale = 2; scale <= most; ++scale) {
-        const Layout next = layoutAt(scale, pixelWidth, pixelHeight, pixelPerfect);
+        const Layout next = layoutAt(scale, pixelWidth, pixelHeight, pixelPerfect, bottomRoom);
         if (next.field.w * next.scale >= best.field.w * best.scale - 0.5f) {
             best = next;
         }

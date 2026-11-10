@@ -101,6 +101,10 @@ public:
     bool continueGame();
 
     void setInputDevice(InputDevice device) { device_ = device; }
+    InputDevice inputDevice() const { return device_; }
+    // Whether the game itself is on screen and takes moves (no menu, map or
+    // ending in the way): the time for the touch pad.
+    bool playing() const { return mode_ == ViewMode::Play && page_ == Page::None && !showMap_ && banner_.empty(); }
     // A mouse click or a tap, in interface units.
     void pointerPressed(float x, float y);
 
@@ -126,6 +130,7 @@ private:
         Scaling,
         Filter,
         Volume,
+        TouchPad,
         Controls,
         Bind,
         ResetControls,

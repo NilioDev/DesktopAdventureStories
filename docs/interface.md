@@ -53,12 +53,22 @@ back. In the game:
 - tapping an item selects it, and tapping the selected item uses it;
 - a tap anywhere moves a speech bubble on, or closes the map.
 
+## The touch pad
+
+On a touch screen a direction pad and *Use* and *Hit* (attack) buttons show
+while the game is on screen: in the empty strips beside the field when the
+screen is held sideways, in a strip under the panel when it is held upright,
+and over the field's bottom corners otherwise. Several fingers work at once.
+A finger that starts on the pad keeps steering wherever it moves; in the
+pad's middle it holds nothing. Options, *Touch pad*: Auto (shown once the
+screen was touched), On or Off. Touches are read as fingers, not as a mouse.
+
 ## Settings
 
 Kept in `settings.json` next to the library folder:
 
 ```json
-{"fullscreen": false, "pixelPerfect": true, "filter": "sharp", "volume": 80,
+{"fullscreen": false, "pixelPerfect": true, "filter": "sharp", "volume": 80, "touchPad": "auto",
  "keys": {"use": ["Space", "Return"], ...}, "buttons": {"use": ["a"], ...}}
 ```
 
@@ -69,6 +79,6 @@ missing or damaged file gives the defaults.
 ## Testing options
 
 `--window WxH` sets the window size, `--menu pause|options|controls|map` opens a
-menu, `--device keyboard|gamepad|touch` picks the hints and `--tap X,Y`
+menu, `--device keyboard|gamepad|touch|touch-pad` picks the hints and `--tap X,Y`
 presses at a point (in units) after the first frame. With `--screenshot` they
 make pictures of every screen for checking a change.

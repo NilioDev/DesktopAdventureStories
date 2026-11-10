@@ -29,6 +29,7 @@
 #include "audio.hpp"
 #include "input_bindings.hpp"
 #include "settings.hpp"
+#include "touch_controls.hpp"
 #include "ui.hpp"
 #include "viewer.hpp"
 
@@ -60,6 +61,9 @@ struct App {
     das::app::Settings settings;
     std::filesystem::path settingsFile;
     das::app::ui::Layout layout;
+    int pixelWidth = 1; // of the last frame
+    int pixelHeight = 1;
+    das::app::TouchControls touch;
     std::optional<das::pack::Library> library;
     std::string loadMessage;
     std::string screenshotPath; // when set: render one frame, save it, quit
@@ -189,6 +193,11 @@ void applySettings(App& app) {
 }
 
 void update(App& app, Uint64 now, Uint32 elapsedMs) {
+    using das::app::TouchPad;
+    const bool wantPad = app.settings.touchPad == TouchPad::On ||
+                         (app.settings.touchPad == TouchPad::Auto &&
+                          app.viewer.inputDevice() == das::app::InputDevice::Touch);
+    app.touch.setVisible(wantPad && app.viewer.playing(), app.actions);
     app.viewer.update(app.actions, app.mover.update(das::heldDirection(app.actions), elapsedMs), now);
     app.audio.update();
     if (app.viewer.takeSettingsChanged()) {
@@ -228,7 +237,11 @@ void render(App& app, Uint64 now) {
     int pw = 0;
     int ph = 0;
     SDL_GetCurrentRenderOutputSize(r, &pw, &ph);
-    app.layout = das::app::ui::layout(pw, ph, app.settings.pixelPerfect);
+    app.pixelWidth = pw;
+    app.pixelHeight = ph;
+    app.layout = das::app::ui::layout(pw, ph, app.settings.pixelPerfect,
+                                      app.touch.visible() ? das::app::TouchControls::kBottomRoom : 0);
+    app.touch.place(app.layout);
     SDL_SetRenderScale(r, 1, 1);
     const auto bg = das::app::ui::color::background;
     SDL_SetRenderDrawColor(r, bg.r, bg.g, bg.b, 255);
@@ -238,6 +251,7 @@ void render(App& app, Uint64 now) {
         renderWelcome(app);
     } else {
         app.viewer.render(r, app.layout, now);
+        app.touch.render(r);
     }
 }
 
@@ -247,6 +261,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_SetAppMetadata("DesktopAdventureStories", std::string(das::kVersion).c_str(),
                        "org.desktopadventurestories.app");
 
+    // Touches are handled as fingers (several at once), not as a mouse.
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Init failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -401,6 +417,14 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     } else if (device == "touch") {
         app->viewer.setInputDevice(das::app::InputDevice::Touch);
     }
+    if (device == "touch-pad") {
+        // A finger held on the pad's right arm, for a screenshot.
+        app->viewer.setInputDevice(das::app::InputDevice::Touch);
+        render(*app, SDL_GetTicks());
+        update(*app, SDL_GetTicks(), 0);
+        const auto& f = app->layout.field;
+        app->touch.fingerDown(1, f.x / 2 + 30, f.y + f.h - 40, app->actions);
+    }
     if (tap) {
         // A tap needs the layout of a drawn frame: draw one first.
         render(*app, SDL_GetTicks());
@@ -455,14 +479,32 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_KEY_DOWN: app.viewer.setInputDevice(das::app::InputDevice::Keyboard); break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN: app.viewer.setInputDevice(das::app::InputDevice::Gamepad); break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event->button.button == SDL_BUTTON_LEFT) {
-            // Taps arrive as mouse presses too, marked with the touch id.
-            app.viewer.setInputDevice(event->button.which == SDL_TOUCH_MOUSEID ? das::app::InputDevice::Touch
-                                                                                : das::app::InputDevice::Keyboard);
+        if (event->button.button == SDL_BUTTON_LEFT && event->button.which != SDL_TOUCH_MOUSEID) {
+            app.viewer.setInputDevice(das::app::InputDevice::Keyboard);
             SDL_ConvertEventToRenderCoordinates(app.renderer, event);
             app.viewer.pointerPressed(event->button.x, event->button.y);
         }
         break;
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_CANCELED: {
+        // Fingers come in parts of the window; we want interface units.
+        const float x = event->tfinger.x * static_cast<float>(app.pixelWidth) / app.layout.scale;
+        const float y = event->tfinger.y * static_cast<float>(app.pixelHeight) / app.layout.scale;
+        const SDL_FingerID finger = event->tfinger.fingerID;
+        if (event->type == SDL_EVENT_FINGER_DOWN) {
+            app.viewer.setInputDevice(das::app::InputDevice::Touch);
+            if (!app.touch.fingerDown(finger, x, y, app.actions)) {
+                app.viewer.pointerPressed(x, y);
+            }
+        } else if (event->type == SDL_EVENT_FINGER_MOTION) {
+            app.touch.fingerMoved(finger, x, y, app.actions);
+        } else {
+            app.touch.fingerUp(finger, app.actions);
+        }
+        break;
+    }
     default: break;
     }
     app.bindings.handleEvent(*event, app.actions);

@@ -276,6 +276,10 @@ void Editor::frame(SDL_Renderer* renderer, const ui::Layout& layout) {
         const float left = std::min(170.0f, w * 0.22f);
         const float right = std::min(230.0f, w * 0.3f);
         zonesTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
+    } else if (tab_ == Tab::Scripts) {
+        const float left = std::min(170.0f, w * 0.22f);
+        const float right = std::min(260.0f, w * 0.3f);
+        scriptsTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
     } else {
         const float left = std::min(300.0f, w * 0.38f);
         const float right = std::min(240.0f, w * 0.3f);
@@ -305,6 +309,11 @@ void Editor::topBar(const SDL_FRect& r) {
     if (button("tab-tiles", "Tiles", "The tiles: their names and what they do (floor, wall, item...).",
                tab_ == Tab::Tiles)) {
         tab_ = Tab::Tiles;
+    }
+    if (button("tab-scripts", "Scripts",
+               "Scripts: what happens in a zone, such as people talking, doors opening and items appearing.",
+               tab_ == Tab::Scripts)) {
+        tab_ = Tab::Scripts;
     }
     x += 8;
     if (button("undo", "Undo", "Take back the last change (Ctrl+Z).", false, !undo_.empty())) {
@@ -366,6 +375,9 @@ void Editor::helpBar(const SDL_FRect& r) {
         text = tab_ == Tab::Zones
                    ? "Choose a zone on the left, a tile on the right, and draw on the zone. Point at anything to see "
                      "what it does."
+                   : tab_ == Tab::Scripts
+                   ? "Choose a zone on the left; its scripts are in the middle. Click a line to change it. Point at "
+                     "anything to see what it does."
                    : "Choose a tile on the left to see and change what it does. Point at anything to see what it does.";
     }
     gui_.paragraph(r.x + 6, r.y + 6, r.w - 12, text, c, 3);
@@ -419,6 +431,7 @@ void Editor::setTileName(std::uint16_t tile, const std::string& name) {
 // --- undo ----------------------------------------------------------------------
 
 void Editor::remember(int zone, int tile, bool structure) {
+    mergeKey_.clear();
     Snapshot s;
     auto& d = *host_.data;
     if (structure) {
@@ -515,12 +528,19 @@ bool Editor::syncScripts() {
         auto& z = host_.data->zones[static_cast<std::size_t>(zone)];
         const auto layout = host_.data->layout();
         try {
+            // Only a file the player changed counts: changes made on the
+            // Scripts tab since it was written are kept.
+            const auto known = scriptText_.find(zone);
+            if (known != scriptText_.end() && known->second == text.str()) {
+                continue;
+            }
             auto actions = script::readScriptText(text.str(), layout);
             const std::string now = z.actions ? script::writeScriptText(*z.actions, layout) : std::string();
             if (script::writeScriptText(actions, layout) != now) {
                 remember(zone, -1);
                 z.actions = std::move(actions);
             }
+            scriptText_[zone] = text.str();
         } catch (const std::exception& e) {
             notice_ = scriptFile(zone) + ": " + e.what();
             noticeAt_ = SDL_GetTicks();
@@ -550,6 +570,7 @@ void Editor::save() {
             const auto& actions = host_.data->zones[static_cast<std::size_t>(zone)].actions;
             const std::string text = actions ? script::writeScriptText(*actions, layout) : std::string();
             mod.files[scriptFile(zone)] = data::Bytes(text.begin(), text.end());
+            scriptText_[zone] = text;
         }
         pack::writeMod(mod, host_.modFolder);
         if (host_.saved) {

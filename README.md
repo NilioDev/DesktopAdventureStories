@@ -51,16 +51,37 @@ cd android
 ./gradlew assembleDebug
 ```
 
+### Pointing it at your games
+
+Copy your game files into [`gamedata/yoda/`](gamedata/README.md) and
+`gamedata/indy/`; that folder is ignored by Git. The program finds it when
+started from the repository root:
+
+```sh
+./build/src/app/DesktopAdventureStories
+```
+
+You can also pass another folder on the command line, set `DAS_GAMEDATA_DIR`,
+or drop a folder on the window.
+
+For now this opens a data viewer: the title screen, every zone and every tile.
+
+Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
+
+```sh
+DAS_GAMEDATA_DIR=gamedata ctest --test-dir build --output-on-failure
+```
+
 ### Controls (for now)
 
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
-| Move | Arrow keys / WASD | D-pad / left stick |
+| Move (viewer: next zone or page, up/down jumps 10) | Arrow keys / WASD | D-pad / left stick |
 | Use, talk | Space / Enter | A (south) |
 | Attack | Ctrl / X | B (east) |
-| Previous / next item | Q / E | LB / RB |
-| Map | M / Tab | Back / Select |
-| Menu | Esc | Start |
+| Previous / next item (viewer: switch game) | Q / E | LB / RB |
+| Map (viewer: title, zones, tiles) | M / Tab | Back / Select |
+| Menu (viewer: title screen) | Esc | Start |
 
 Controls will be rebindable.
 

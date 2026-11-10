@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Phase 0 placeholder: opens a window, scales a 9x9 tile play field to the
-// screen and lets a marker walk around with keyboard or gamepad. This proves
-// the build, rendering and input pipeline on every platform before any game
-// data is loaded.
+// Opens a window with a play field scaled in whole pixels. With the original
+// game files it shows the data viewer; without them, a marker that walks
+// around with keyboard or gamepad.
+//
+// Usage: DesktopAdventureStories [game folder or data file]
+//          [--game yoda|indy] [--mode title|zone|tiles] [--zone N]
+//          [--screenshot out.bmp]
+// Without a path it uses DAS_GAMEDATA_DIR, or else a "gamedata" folder next
+// to the program or in the current folder. A folder can also be dropped on
+// the window.
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -13,8 +19,11 @@
 #include "das/input.hpp"
 #include "das/version.hpp"
 #include "input_bindings.hpp"
+#include "viewer.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -42,7 +51,28 @@ struct App {
     Uint64 lastTicks = 0;
     Uint64 useFlashUntil = 0;
     Uint64 attackFlashUntil = 0;
+
+    das::app::Viewer viewer;
+    std::string loadMessage;
+    std::string screenshotPath; // when set: render one frame, save it, quit
 };
+
+void loadGames(App& app, const std::filesystem::path& where) {
+    app.loadMessage = app.viewer.load(app.renderer, where);
+    SDL_Log("%s", app.loadMessage.c_str());
+}
+
+void saveScreenshot(App& app) {
+    SDL_Surface* shot = SDL_RenderReadPixels(app.renderer, nullptr);
+    if (!shot) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Screenshot failed: %s", SDL_GetError());
+        return;
+    }
+    if (!SDL_SaveBMP(shot, app.screenshotPath.c_str())) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not save %s: %s", app.screenshotPath.c_str(), SDL_GetError());
+    }
+    SDL_DestroySurface(shot);
+}
 
 void openGamepad(App& app, SDL_JoystickID id) {
     if (SDL_Gamepad* pad = SDL_OpenGamepad(id)) {
@@ -62,6 +92,10 @@ void closeGamepad(App& app, SDL_JoystickID id) {
 }
 
 void update(App& app, Uint64 now, Uint32 elapsedMs) {
+    if (!app.viewer.empty()) {
+        app.viewer.update(app.actions, app.mover.update(das::heldDirection(app.actions), elapsedMs));
+        return;
+    }
     if (app.actions.wasPressed(das::Action::Menu)) {
         app.paused = !app.paused;
     }
@@ -85,6 +119,11 @@ void render(App& app, Uint64 now) {
     SDL_Renderer* r = app.renderer;
     SDL_SetRenderDrawColor(r, 18, 20, 26, 255);
     SDL_RenderClear(r);
+
+    if (!app.viewer.empty()) {
+        app.viewer.render(r, kMargin, kMargin, das::kViewPixels, das::kViewPixels + 2 * kMargin);
+        return;
+    }
 
     // Play field: a checkerboard of 32x32 tiles until real zones are loaded.
     for (int y = 0; y < das::kViewTiles; ++y) {
@@ -124,7 +163,8 @@ void render(App& app, Uint64 now) {
                                 ? std::string("No gamepad connected")
                                 : std::string("Gamepad: ") + SDL_GetGamepadName(app.gamepads.front());
     SDL_RenderDebugText(r, kMargin, textY + 14, pad.c_str());
-    SDL_RenderDebugText(r, kMargin, textY + 28, "Move, A/Space use, B/X attack");
+    SDL_RenderDebugText(r, kMargin, textY + 28,
+                        app.loadMessage.empty() ? "Drop your game folder here" : app.loadMessage.c_str());
 
     if (app.paused) {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
@@ -137,13 +177,11 @@ void render(App& app, Uint64 now) {
         const float cy = kMargin + das::kViewPixels / 2.0f;
         SDL_RenderDebugText(r, cx - 3 * 8, cy - 4, "Paused");
     }
-
-    SDL_RenderPresent(r);
 }
 
 } // namespace
 
-SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[]) {
+SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_SetAppMetadata("DesktopAdventureStories", std::string(das::kVersion).c_str(),
                        "org.desktopadventurestories.app");
 
@@ -165,6 +203,62 @@ SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[]) {
     SDL_SetRenderLogicalPresentation(app->renderer, kCanvasWidth, kCanvasHeight,
                                      SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
 
+    // Command line.
+    std::string dataPath;
+    std::string game;
+    std::string mode;
+    int zone = 0;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        const bool hasValue = i + 1 < argc;
+        if (arg == "--game" && hasValue) {
+            game = argv[++i];
+        } else if (arg == "--mode" && hasValue) {
+            mode = argv[++i];
+        } else if (arg == "--zone" && hasValue) {
+            zone = std::atoi(argv[++i]);
+        } else if (arg == "--screenshot" && hasValue) {
+            app->screenshotPath = argv[++i];
+        } else if (!arg.empty() && arg[0] != '-') {
+            dataPath = arg;
+        }
+    }
+    if (dataPath.empty()) {
+        if (const char* env = SDL_getenv("DAS_GAMEDATA_DIR")) {
+            dataPath = env;
+        }
+    }
+    if (dataPath.empty()) {
+        // Default: a "gamedata" folder next to the program or in the
+        // current folder (the repository root during development).
+        std::vector<std::filesystem::path> candidates;
+        if (const char* base = SDL_GetBasePath()) {
+            candidates.emplace_back(std::filesystem::path(base) / "gamedata");
+        }
+        candidates.emplace_back("gamedata");
+        for (const auto& candidate : candidates) {
+            std::error_code ec;
+            if (std::filesystem::is_directory(candidate, ec)) {
+                dataPath = candidate.string();
+                break;
+            }
+        }
+    }
+    if (!dataPath.empty()) {
+        loadGames(*app, dataPath);
+    }
+    if (game == "indy") {
+        app->viewer.selectGame(das::data::Layout::Indy);
+    } else if (game == "yoda") {
+        app->viewer.selectGame(das::data::Layout::Yoda);
+    }
+    if (mode == "zone") {
+        app->viewer.setMode(das::app::ViewMode::Zone);
+    } else if (mode == "tiles") {
+        app->viewer.setMode(das::app::ViewMode::Tiles);
+    }
+    app->viewer.selectZone(zone);
+
     // Gamepads that are already plugged in also arrive as GAMEPAD_ADDED
     // events, so they are opened in SDL_AppEvent.
     app->lastTicks = SDL_GetTicks();
@@ -178,6 +272,11 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_GAMEPAD_ADDED: openGamepad(app, event->gdevice.which); break;
     case SDL_EVENT_GAMEPAD_REMOVED: closeGamepad(app, event->gdevice.which); break;
     case SDL_EVENT_WINDOW_FOCUS_LOST: app.bindings.reset(app.actions); break;
+    case SDL_EVENT_DROP_FILE:
+        if (event->drop.data) {
+            loadGames(app, event->drop.data);
+        }
+        break;
     default: break;
     }
     app.bindings.handleEvent(*event, app.actions);
@@ -193,6 +292,11 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     update(app, now, elapsed);
     app.actions.endFrame();
     render(app, now);
+    if (!app.screenshotPath.empty()) {
+        saveScreenshot(app);
+        return SDL_APP_SUCCESS;
+    }
+    SDL_RenderPresent(app.renderer);
     return SDL_APP_CONTINUE;
 }
 

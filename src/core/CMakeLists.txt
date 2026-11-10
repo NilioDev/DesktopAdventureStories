@@ -9,6 +9,12 @@ add_library(das_core STATIC
     src/data/palette.cpp
     src/data/zone_records.cpp
     src/data/character.cpp
+    src/data/puzzle.cpp
+    src/world/generator.cpp
+    src/world/yoda_generator.cpp
+    src/world/zone_rules.cpp
+    src/world/indy_generator.cpp
+    src/world/yoda_layout.cpp
     src/world/world.cpp
     src/world/scripts.cpp
     src/script/opcodes.cpp

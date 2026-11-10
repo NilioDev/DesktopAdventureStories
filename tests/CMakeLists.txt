@@ -6,6 +6,7 @@ add_executable(das_tests
     test_world.cpp
     test_util.cpp
     test_scripts.cpp
+    test_generator.cpp
 )
 target_link_libraries(das_tests PRIVATE das::core)
 das_set_warnings(das_tests)

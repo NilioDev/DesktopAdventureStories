@@ -11,12 +11,15 @@
 
 #include "das/data/character.hpp"
 #include "das/data/game_data.hpp"
+#include "das/data/puzzle.hpp"
 #include "das/input.hpp"
 #include "das/script/opcodes.hpp"
+#include "das/world/generator.hpp"
 
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <optional>
 #include <random>
 #include <string>
@@ -27,8 +30,13 @@ namespace das::world {
 
 // Hotspot types we act on so far (see docs/formats/zone-records.md).
 enum class HotspotType : std::uint32_t {
-    DoorIn = 9,   // argument: the zone behind the door
-    DoorOut = 10, // leads back to where the player came from
+    ItemSpot = 0,  // where the generator puts a site's find item
+    Spawn = 1,     // where a trading character stands
+    CrateItem = 6, // argument: an item lying here or hidden in the object
+    DoorIn = 9,    // argument: the zone behind the door
+    DoorOut = 10,  // leads back to where the player came from
+    ShipFromDagobah = 14, // argument: the town zone it flies to
+    ShipToDagobah = 15,   // argument: the Dagobah zone it flies to
 };
 
 struct Position {
@@ -51,11 +59,11 @@ struct ZoneGoal {
 // Something the app has to show or play. Speech and Wait pause the scripts
 // until resume().
 struct Effect {
-    enum class Kind { Speech, Wait, Sound, StopSound, Won, Lost };
+    enum class Kind { Speech, Wait, Sound, StopSound, Won, Lost, ItemFound };
     Kind kind = Kind::Speech;
     std::string text;          // Speech: UTF-8, lines separated by '\n'
     std::optional<Position> at; // Speech: the speaker's cell; none: the hero
-    int value = 0;             // Wait: milliseconds; Sound: sound index
+    int value = 0;             // Wait: milliseconds; Sound: sound index; ItemFound: the tile
 };
 
 enum class Outcome { Playing, Won, Lost };
@@ -71,6 +79,8 @@ namespace detail {
 
 struct ZoneState {
     std::vector<data::ZoneCell> cells;
+    // Items hidden in an object (a crate, a bush); bumping it finds them.
+    std::map<std::pair<int, int>, std::uint16_t> hidden;
     std::vector<bool> hotspotEnabled;
     std::vector<bool> actionDisabled;
     std::vector<bool> monsterEnabled;
@@ -111,6 +121,12 @@ public:
     // Puts the player in a zone: on its exit door if it has one, otherwise
     // on the walkable cell closest to the middle.
     void start(int zone);
+    // Takes a generated world: the zones' goals, the map for walking from
+    // zone to zone, the trading characters and items. Then start() the
+    // game in map.startZone, or call begin().
+    void setMap(WorldMap map);
+    void begin() { start(map_.startZone); }
+    const WorldMap& map() const { return map_; }
     void enter(int zone, Position at);
 
     MoveResult move(Step step);
@@ -148,7 +164,8 @@ public:
     // A tile drawn over the zone by a script (DrawTile) until the next zone change.
     const std::vector<std::pair<Position, std::uint16_t>>& overlays() const { return overlays_; }
 
-    void setGoal(int zone, ZoneGoal goal) { goals_[zone] = goal; }
+    // Zones on one map site share their goal.
+    void setGoal(int zone, ZoneGoal goal);
     ZoneGoal goal(int zone) const;
     void setGamesWon(int count) { gamesWon_ = count; }
     void setEnding(int ending) { ending_ = ending; }
@@ -179,6 +196,19 @@ private:
     // Returns false when the scripts have to pause.
     bool execute(const data::ScriptLine& line, Pass& pass);
     void changeZone(int zone, Position at);
+    bool walkableIn(int zone, Position at) const;
+    std::uint16_t tileIn(int zone, Position at, int layer) const;
+    const Site* site(int zone) const;
+    void setSolved(int zone);
+    void prepareZone(int zone, ZoneState& state);
+    bool leaveEdge(Step step);
+    bool fly(Position target);
+    Position nearWalkable(int zone, Position at) const;
+    // The hero's own reactions when no script reacted.
+    bool bumpBuiltIn(Position target);
+    bool useBuiltIn(std::uint16_t item, Position at);
+    void found(std::uint16_t item);
+    std::string puzzleText(int puzzle, data::PuzzleText which) const;
     void setTile(Position at, int layer, std::uint16_t tile);
     std::string speechText(const std::string& raw) const;
     std::string tileName(std::uint16_t tile) const;
@@ -197,7 +227,11 @@ private:
     std::vector<Return> returns_;
     // Zones changed by play, keyed by zone index.
     std::unordered_map<int, ZoneState> states_;
-    std::unordered_map<int, ZoneGoal> goals_;
+    std::vector<data::Puzzle> puzzles_;
+    WorldMap map_;
+    std::unordered_map<int, int> zoneSite_; // zone -> index into goals_
+    std::vector<ZoneGoal> goals_;
+    std::vector<Site> sites_;              // parallel to goals_
 
     std::vector<std::uint16_t> inventory_;
     int health_ = kMaxHealth;

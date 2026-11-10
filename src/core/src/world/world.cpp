@@ -32,7 +32,7 @@ std::size_t cellIndex(const data::Zone& zone, Position at) {
 
 } // namespace
 
-World::World(const data::GameData& data) : data_(data) {
+World::World(const data::GameData& data) : data_(data), puzzles_(data::parsePuzzles(data)) {
     if (data_.zones.empty()) {
         throw data::DataError("the game data has no zones");
     }
@@ -52,6 +52,7 @@ World::ZoneState& World::stateOf(int zoneIndex) {
         fresh.actionDisabled.assign(z.actions ? z.actions->size() : 0, false);
         fresh.monsterEnabled.assign(z.monsters.size(), true);
         fresh.monsterDead.assign(z.monsters.size(), false);
+        prepareZone(zoneIndex, fresh);
         it = states_.emplace(zoneIndex, std::move(fresh)).first;
     }
     return it->second;
@@ -106,8 +107,97 @@ int World::sharedCounter() const {
 }
 
 ZoneGoal World::goal(int zoneIndex) const {
-    const auto it = goals_.find(zoneIndex);
-    return it == goals_.end() ? ZoneGoal{} : it->second;
+    const auto it = zoneSite_.find(zoneIndex);
+    return it == zoneSite_.end() ? ZoneGoal{} : goals_[static_cast<std::size_t>(it->second)];
+}
+
+const Site* World::site(int zoneIndex) const {
+    const auto it = zoneSite_.find(zoneIndex);
+    return it == zoneSite_.end() ? nullptr : &sites_[static_cast<std::size_t>(it->second)];
+}
+
+void World::setGoal(int zoneIndex, ZoneGoal g) {
+    if (const auto it = zoneSite_.find(zoneIndex); it != zoneSite_.end()) {
+        goals_[static_cast<std::size_t>(it->second)] = g;
+        return;
+    }
+    Site s;
+    s.zone = zoneIndex;
+    s.zones = {zoneIndex};
+    zoneSite_[zoneIndex] = static_cast<int>(goals_.size());
+    goals_.push_back(g);
+    sites_.push_back(std::move(s));
+}
+
+void World::setSolved(int zoneIndex) {
+    ZoneGoal g = goal(zoneIndex);
+    g.solved = true;
+    setGoal(zoneIndex, g);
+}
+
+void World::setMap(WorldMap map) {
+    map_ = std::move(map);
+    states_.clear();
+    goals_.clear();
+    sites_.clear();
+    zoneSite_.clear();
+    for (const Map* m : {&map_.world, &map_.dagobah}) {
+        for (const Site& s : m->sites) {
+            if (s.zone < 0) {
+                continue;
+            }
+            const int index = static_cast<int>(goals_.size());
+            goals_.push_back({s.requiredItem, s.requiredItem2, s.findItem, false});
+            sites_.push_back(s);
+            for (const int z : s.zones) {
+                zoneSite_[z] = index;
+            }
+        }
+    }
+    if (map_.goalPuzzle >= 0 && static_cast<std::size_t>(map_.goalPuzzle) < puzzles_.size()) {
+        setEnding(puzzles_[static_cast<std::size_t>(map_.goalPuzzle)].item1);
+    }
+}
+
+void World::prepareZone(int zoneIndex, ZoneState& fresh) {
+    const auto& z = data_.zones.at(static_cast<std::size_t>(zoneIndex));
+    const auto put = [&](const data::Hotspot& h, std::uint16_t item) {
+        if (h.x >= z.width || h.y >= z.height || item >= data_.tiles.size()) {
+            return;
+        }
+        auto& layer = fresh.cells[static_cast<std::size_t>(h.y * z.width + h.x)].layers[kObjectLayer];
+        if (layer == data::kNoTile) {
+            layer = item;
+        } else {
+            fresh.hidden[{h.x, h.y}] = item;
+        }
+    };
+    if (z.hotspots) {
+        for (const auto& h : *z.hotspots) {
+            if (h.type == static_cast<std::uint32_t>(HotspotType::CrateItem) && h.argument != data::kNoTile) {
+                put(h, h.argument);
+            }
+        }
+    }
+    const Site* s = site(zoneIndex);
+    if (s == nullptr || !z.hotspots) {
+        return;
+    }
+    const auto spot = [&](int index) -> const data::Hotspot* {
+        return index >= 0 && static_cast<std::size_t>(index) < z.hotspots->size()
+                   ? &(*z.hotspots)[static_cast<std::size_t>(index)]
+                   : nullptr;
+    };
+    if (s->npcZone == zoneIndex && s->npc != data::kNoTile) {
+        if (const auto* h = spot(s->npcSpot); h && h->x < z.width && h->y < z.height) {
+            fresh.cells[static_cast<std::size_t>(h->y * z.width + h->x)].layers[kObjectLayer] = s->npc;
+        }
+    }
+    if (s->itemZone == zoneIndex && s->findItem != data::kNoTile) {
+        if (const auto* h = spot(s->itemSpot)) {
+            put(*h, s->findItem);
+        }
+    }
 }
 
 bool World::hasItem(std::uint16_t item) const {
@@ -128,25 +218,33 @@ bool World::inside(Position at) const {
     return at.x >= 0 && at.y >= 0 && at.x < zone().width && at.y < zone().height;
 }
 
-std::uint16_t World::tile(Position at, int layer) const {
-    if (!inside(at)) {
+std::uint16_t World::tileIn(int zoneIndex, Position at, int layer) const {
+    const auto& z = data_.zones.at(static_cast<std::size_t>(zoneIndex));
+    if (at.x < 0 || at.y < 0 || at.x >= z.width || at.y >= z.height) {
         return data::kNoTile;
     }
-    return cells()[cellIndex(zone(), at)].layers[static_cast<std::size_t>(layer)];
+    const auto* s = findState(zoneIndex);
+    const auto& grid = s != nullptr ? s->cells : z.cells;
+    return grid[cellIndex(z, at)].layers[static_cast<std::size_t>(layer)];
 }
 
-bool World::walkable(Position at) const {
-    if (!inside(at)) {
+std::uint16_t World::tile(Position at, int layer) const { return tileIn(zone_, at, layer); }
+
+bool World::walkableIn(int zoneIndex, Position at) const {
+    const auto& z = data_.zones.at(static_cast<std::size_t>(zoneIndex));
+    if (at.x < 0 || at.y < 0 || at.x >= z.width || at.y >= z.height) {
         return false;
     }
     for (int layer : {kFloorLayer, kObjectLayer}) {
-        const std::uint16_t t = tile(at, layer);
+        const std::uint16_t t = tileIn(zoneIndex, at, layer);
         if (t != data::kNoTile && (flags(t) & flags_::kBlocking) != 0) {
             return false;
         }
     }
     return true;
 }
+
+bool World::walkable(Position at) const { return walkableIn(zone_, at); }
 
 const data::Hotspot* World::hotspotAt(Position at, HotspotType type) const {
     if (!zone().hotspots) {
@@ -179,6 +277,7 @@ void World::enter(int zoneIndex, Position at) {
         throw data::DataError("there is no zone " + std::to_string(zoneIndex));
     }
     zone_ = zoneIndex;
+    (void)state(); // places the zone's characters and items
     player_ = at;
     if (!inside(player_)) {
         player_ = {zone().width / 2, zone().height / 2};
@@ -215,6 +314,180 @@ void World::start(int zoneIndex) {
     player_ = best;
 }
 
+Position World::nearWalkable(int zoneIndex, Position at) const {
+    const auto& z = data_.zones.at(static_cast<std::size_t>(zoneIndex));
+    const int most = z.width + z.height;
+    for (int d = 1; d <= most; ++d) {
+        // Below first: ships and doors face the player that way.
+        for (int dy = d; dy >= -d; --dy) {
+            const int rest = d - std::abs(dy);
+            for (const int dx : {rest, -rest}) {
+                const Position p{at.x + dx, at.y + dy};
+                if (walkableIn(zoneIndex, p)) {
+                    return p;
+                }
+                if (rest == 0) {
+                    break;
+                }
+            }
+        }
+    }
+    return {z.width / 2, z.height / 2};
+}
+
+bool World::leaveEdge(Step step) {
+    const Map* m = nullptr;
+    int x = 0;
+    int y = 0;
+    if (!map_.locate(zone_, m, x, y) || !m->inside(x + step.dx, y + step.dy)) {
+        return false;
+    }
+    const int to = m->at(x + step.dx, y + step.dy).zone;
+    if (to < 0) {
+        return false;
+    }
+    const auto& z = data_.zones.at(static_cast<std::size_t>(to));
+    Position at = player_;
+    if (step.dx != 0) {
+        at.x = step.dx > 0 ? 0 : z.width - 1;
+    }
+    if (step.dy != 0) {
+        at.y = step.dy > 0 ? 0 : z.height - 1;
+    }
+    if (!walkableIn(to, at)) {
+        return false;
+    }
+    returns_.clear();
+    enter(to, at);
+    ++steps_;
+    return true;
+}
+
+bool World::fly(Position target) {
+    if (!zone().hotspots) {
+        return false;
+    }
+    // The town the ship flies to: the one on the map, if there is a map.
+    int town = -1;
+    for (const auto& s : map_.world.sites) {
+        if (s.kind == SiteKind::Town) {
+            town = s.zone;
+        }
+    }
+    const auto& list = *zone().hotspots;
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        const auto& h = list[i];
+        if (!hotspotEnabled(i) || h.x != target.x || h.y != target.y || h.argument >= data_.zones.size()) {
+            continue;
+        }
+        HotspotType arrival;
+        if (h.type == static_cast<std::uint32_t>(HotspotType::ShipFromDagobah) && (town < 0 || h.argument == town)) {
+            arrival = HotspotType::ShipToDagobah;
+        } else if (h.type == static_cast<std::uint32_t>(HotspotType::ShipToDagobah)) {
+            arrival = HotspotType::ShipFromDagobah;
+        } else {
+            continue;
+        }
+        const int to = h.argument;
+        const auto& z = data_.zones[static_cast<std::size_t>(to)];
+        Position at{z.width / 2, z.height / 2};
+        if (z.hotspots) {
+            for (const auto& other : *z.hotspots) {
+                if (other.type == static_cast<std::uint32_t>(arrival)) {
+                    at = {other.x, other.y};
+                    break;
+                }
+            }
+        }
+        returns_.clear();
+        enter(to, nearWalkable(to, at));
+        ++steps_;
+        return true;
+    }
+    return false;
+}
+
+std::string World::puzzleText(int puzzle, data::PuzzleText which) const {
+    if (puzzle < 0 || static_cast<std::size_t>(puzzle) >= puzzles_.size()) {
+        return {};
+    }
+    return puzzles_[static_cast<std::size_t>(puzzle)].text(which);
+}
+
+void World::found(std::uint16_t item) {
+    addItem(item);
+    effects_.push_back({Effect::Kind::ItemFound, {}, {}, item});
+    const ZoneGoal g = goal(zone_);
+    if (g.findItem == item && g.requiredItem == data::kNoTile) {
+        setSolved(zone_);
+    }
+}
+
+bool World::bumpBuiltIn(Position target) {
+    auto& s = state();
+    // Something hidden in the object.
+    if (const auto it = s.hidden.find({target.x, target.y}); it != s.hidden.end()) {
+        const std::uint16_t item = it->second;
+        s.hidden.erase(it);
+        found(item);
+        return true;
+    }
+    const std::uint16_t object = tile(target, kObjectLayer);
+    if (object == data::kNoTile) {
+        return false;
+    }
+    // A trading character.
+    const Site* here = site(zone_);
+    if (here != nullptr && here->npcZone == zone_ && object == here->npc) {
+        const ZoneGoal g = goal(zone_);
+        std::string raw;
+        if (g.solved) {
+            raw = puzzleText(here->requestPuzzle, data::PuzzleText::Thanks);
+        } else {
+            raw = puzzleText(here->requestPuzzle, data::PuzzleText::Request);
+            const std::string offer = puzzleText(here->offerPuzzle, data::PuzzleText::Offer);
+            if (!offer.empty()) {
+                raw += raw.empty() ? offer : " " + offer;
+            }
+        }
+        if (raw.empty()) {
+            return false;
+        }
+        effects_.push_back({Effect::Kind::Speech, speechText(raw), target, 0});
+        paused_ = true;
+        return true;
+    }
+    // An item to pick up.
+    if ((flags(object) & (flags_::kItem | flags_::kWeapon)) != 0) {
+        setTile(target, kObjectLayer, data::kNoTile);
+        found(object);
+        return true;
+    }
+    return false;
+}
+
+bool World::useBuiltIn(std::uint16_t item, Position at) {
+    const Site* here = site(zone_);
+    if (here == nullptr || here->npcZone != zone_ || tile(at, kObjectLayer) != here->npc) {
+        return false;
+    }
+    const ZoneGoal g = goal(zone_);
+    if (g.solved || (item != g.requiredItem && item != g.requiredItem2)) {
+        return false;
+    }
+    inventory_.erase(std::find(inventory_.begin(), inventory_.end(), item));
+    setSolved(zone_);
+    const std::string thanks = puzzleText(here->requestPuzzle, data::PuzzleText::Thanks);
+    if (g.findItem != data::kNoTile) {
+        found(g.findItem);
+    }
+    if (!thanks.empty()) {
+        effects_.push_back({Effect::Kind::Speech, speechText(thanks), at, 0});
+        paused_ = true;
+    }
+    return true;
+}
+
 MoveResult World::move(Step step) {
     if (paused_ || outcome_ != Outcome::Playing) {
         return MoveResult::Blocked;
@@ -222,9 +495,10 @@ MoveResult World::move(Step step) {
     facing_ = facingFor(step);
     const Position target{player_.x + step.dx, player_.y + step.dy};
     if (!inside(target)) {
-        // Walking off the edge of an outdoor zone needs the world map, which
-        // comes with the world generator.
-        return MoveResult::Blocked;
+        return leaveEdge(step) ? MoveResult::ChangedZone : MoveResult::Blocked;
+    }
+    if (fly(target)) {
+        return MoveResult::ChangedZone;
     }
 
     if (const auto* door = hotspotAt(target, HotspotType::DoorIn)) {
@@ -253,9 +527,12 @@ MoveResult World::move(Step step) {
         return zoneChanged_ ? MoveResult::ChangedZone : MoveResult::Moved;
     }
 
+    // Searching an object with something hidden in it comes before pushing it.
+    const bool hides = state().hidden.contains({target.x, target.y});
+
     // A draggable block moves one cell ahead when that cell is free.
     const std::uint16_t block = tile(target, kObjectLayer);
-    if (block != data::kNoTile && (flags(block) & flags_::kDraggable) != 0) {
+    if (!hides && block != data::kNoTile && (flags(block) & flags_::kDraggable) != 0) {
         const Position beyond{target.x + step.dx, target.y + step.dy};
         if (inside(beyond) && walkable(beyond) && tile(beyond, kObjectLayer) == data::kNoTile) {
             auto& grid = cells();
@@ -268,18 +545,30 @@ MoveResult World::move(Step step) {
     }
 
     zoneChanged_ = false;
+    const std::size_t effectsBefore = effects_.size();
     trigger(script::Event::Bump, {player_.x, player_.y, step.dx, step.dy, -1});
     runScripts();
-    return zoneChanged_ ? MoveResult::ChangedZone : MoveResult::Blocked;
+    if (zoneChanged_) {
+        return MoveResult::ChangedZone;
+    }
+    const bool scriptSpoke = std::any_of(effects_.begin() + static_cast<std::ptrdiff_t>(effectsBefore), effects_.end(),
+                                         [](const Effect& e) { return e.kind == Effect::Kind::Speech; });
+    if (!paused_ && !scriptSpoke && outcome_ == Outcome::Playing) {
+        bumpBuiltIn(target);
+    }
+    return MoveResult::Blocked;
 }
 
 bool World::useItem(std::uint16_t item, Position at) {
-    if (paused_ || outcome_ != Outcome::Playing || !inside(at)) {
+    if (paused_ || outcome_ != Outcome::Playing || !inside(at) || !hasItem(item)) {
         return false;
     }
     reacted_ = false;
     trigger(script::Event::PlaceItem, {at.x, at.y, 0, 0, item});
     runScripts();
+    if (!reacted_ && !paused_ && outcome_ == Outcome::Playing) {
+        return useBuiltIn(item, at);
+    }
     return reacted_;
 }
 

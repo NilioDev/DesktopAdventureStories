@@ -12,7 +12,11 @@
 #include "das/pack/pack.hpp"
 #include "das/world/world.hpp"
 
+#include "audio.hpp"
+
 #include <SDL3/SDL.h>
+
+#include <deque>
 
 #include <filesystem>
 #include <memory>
@@ -32,6 +36,7 @@ struct LoadedGame {
     bool paletteFromGame = false;
     SDL_Texture* atlas = nullptr; // all tiles, kAtlasColumns per row
     SDL_Texture* setup = nullptr; // 288 x 288 title screen
+    std::vector<data::Bytes> sounds; // by sound index; empty when missing
 
     LoadedGame() = default;
     LoadedGame(const LoadedGame&) = delete;
@@ -53,8 +58,12 @@ public:
 
     // Starts walking around in the selected zone.
     void play();
+    // Puts the player on a cell of the current zone; for testing.
+    void placePlayer(int x, int y);
     // Walks a scripted path ("UDLR" letters) in play mode; for testing.
     void walk(const std::string& path);
+
+    void setAudio(Audio* audio) { audio_ = audio; }
 
     void update(const ActionState& actions, std::optional<Step> step, Uint64 now);
     // Draws the view into a square area of the logical canvas, and the status
@@ -69,6 +78,9 @@ private:
     void renderZone(SDL_Renderer* renderer, float x, float y, float size) const;
     void renderTiles(SDL_Renderer* renderer, float x, float y, float size) const;
     void renderPlay(SDL_Renderer* renderer, float x, float y, float size, Uint64 now) const;
+    void renderBubble(SDL_Renderer* renderer, float x, float y, float size, float cell, int camX, int camY) const;
+    // Shows what the scripts asked for; resumes them when it is done.
+    void handleEffects(const ActionState& actions, Uint64 now);
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
     std::size_t current_ = 0;
@@ -77,6 +89,12 @@ private:
     int tilePage_ = 0;
     std::optional<world::World> world_;
     Uint64 lastStepAt_ = 0;
+    Audio* audio_ = nullptr;
+    std::deque<world::Effect> effects_;
+    std::optional<world::Effect> bubble_;
+    int bubblePage_ = 0;
+    Uint64 waitUntil_ = 0;
+    std::string banner_; // "You won" / "You lost"
 };
 
 } // namespace das::app

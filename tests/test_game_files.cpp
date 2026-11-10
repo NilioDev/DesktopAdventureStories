@@ -12,6 +12,7 @@
 #include "das/data/palette.hpp"
 #include "das/pack/import.hpp"
 #include "das/pack/pack.hpp"
+#include "das/world/world.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -137,5 +138,32 @@ DAS_TEST("original data survives the trip through our own pack format") {
         DAS_CHECK(writeGameData(back.data) == original);
         // Encoding is stable, so packs diff cleanly.
         DAS_CHECK(das::pack::encode(back) == files);
+    }
+}
+
+DAS_TEST("every zone of both games can be entered with its scripts running") {
+    const auto games = installedGames();
+    if (games.empty()) {
+        DAS_SKIP("set DAS_GAMEDATA_DIR to run");
+    }
+    for (const auto& game : games) {
+        const GameData data = parseGameData(readFile(game.dataFile));
+        int speeches = 0;
+        for (std::size_t z = 0; z < data.zones.size(); ++z) {
+            das::world::World w(data);
+            w.start(static_cast<int>(z));
+            for (int guard = 0; guard < 200; ++guard) {
+                for (const auto& e : w.takeEffects()) {
+                    speeches += e.kind == das::world::Effect::Kind::Speech ? 1 : 0;
+                }
+                if (!w.paused()) {
+                    break;
+                }
+                w.resume();
+            }
+            DAS_CHECK(!w.paused());
+        }
+        std::printf("    %s: %d speech bubbles on entering every zone\n", std::string(layoutName(game.game)).c_str(),
+                    speeches);
     }
 }

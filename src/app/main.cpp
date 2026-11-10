@@ -6,7 +6,7 @@
 //
 // Usage: DesktopAdventureStories [game folder, zip or data file]
 //          [--game yoda|indy] [--mode title|zone|tiles|play] [--zone N]
-//          [--walk UDLR...] [--screenshot out.bmp]
+//          [--at X,Y] [--walk UDLR...] [--screenshot out.bmp]
 //          [--library DIR] [--reimport]
 //
 // The first time a game is found it is imported into our own open format in
@@ -24,10 +24,12 @@
 #include "das/input.hpp"
 #include "das/pack/import.hpp"
 #include "das/version.hpp"
+#include "audio.hpp"
 #include "input_bindings.hpp"
 #include "viewer.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
@@ -59,6 +61,7 @@ struct App {
     Uint64 useFlashUntil = 0;
     Uint64 attackFlashUntil = 0;
 
+    das::app::Audio audio;
     das::app::Viewer viewer;
     std::optional<das::pack::Library> library;
     std::string loadMessage;
@@ -184,6 +187,7 @@ void closeGamepad(App& app, SDL_JoystickID id) {
 void update(App& app, Uint64 now, Uint32 elapsedMs) {
     if (!app.viewer.empty()) {
         app.viewer.update(app.actions, app.mover.update(das::heldDirection(app.actions), elapsedMs), now);
+        app.audio.update();
         return;
     }
     if (app.actions.wasPressed(das::Action::Menu)) {
@@ -282,6 +286,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
     auto* app = new App();
     *appstate = app;
+    app->audio.open();
+    app->viewer.setAudio(&app->audio);
 
     if (!SDL_CreateWindowAndRenderer("DesktopAdventureStories", kCanvasWidth * 2, kCanvasHeight * 2,
                                      SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &app->window,
@@ -301,6 +307,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     std::string walkPath;
     std::string libraryPath;
     bool reimport = false;
+    int atX = -1;
+    int atY = -1;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         const bool hasValue = i + 1 < argc;
@@ -312,6 +320,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
             zone = std::atoi(argv[++i]);
         } else if (arg == "--walk" && hasValue) {
             walkPath = argv[++i];
+        } else if (arg == "--at" && hasValue) {
+            std::sscanf(argv[++i], "%d,%d", &atX, &atY);
         } else if (arg == "--library" && hasValue) {
             libraryPath = argv[++i];
         } else if (arg == "--reimport") {
@@ -361,6 +371,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     app->viewer.selectZone(zone);
     if (mode == "play") {
         app->viewer.play();
+        if (atX >= 0 && atY >= 0) {
+            app->viewer.placePlayer(atX, atY);
+        }
         app->viewer.walk(walkPath);
     }
 

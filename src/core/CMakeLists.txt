@@ -10,6 +10,8 @@ add_library(das_core STATIC
     src/data/zone_records.cpp
     src/data/character.cpp
     src/world/world.cpp
+    src/world/scripts.cpp
+    src/script/opcodes.cpp
     src/util/json.cpp
     src/util/png.cpp
     src/util/text.cpp

@@ -6,6 +6,7 @@ set(DAS_APP_SOURCES
     gui.cpp
     editor.cpp
     editor_zones.cpp
+    editor_scripts.cpp
     editor_tiles.cpp
     ui.cpp
     settings.cpp

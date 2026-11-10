@@ -129,6 +129,9 @@ private:
     std::vector<Scroll> scrolls_;
 };
 
+// Cuts text to a width, marking the cut with "..".
+std::string fitText(std::string_view text, float width);
+
 // Wraps text into lines of at most `columns` characters.
 std::vector<std::string> wrap(std::string_view text, std::size_t columns);
 

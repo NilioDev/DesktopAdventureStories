@@ -26,6 +26,8 @@ in it.
   size; *New zone* and *Copy this zone* below), the zone in the middle,
   and on the right either *Draw* (its properties, tools, layers and tiles)
   or *Story* (what it asks for and gives).
+- **Scripts tab:** the zones on the left, the zone's scripts as cards of
+  plain sentences in the middle, and a map of the zone on the right.
 - **Tiles tab:** all tiles on the left (filter by kind, search by number or
   name), the chosen tile large in the middle with the zones that use it
   (press one to open it), and its name and what it is on the right.
@@ -119,12 +121,34 @@ warns when that tile is not marked as an item or a person).
 
 ## Scripts
 
-*Scripts* saves the mod (when needed), writes the zone's scripts to
-`scripts/NNNN.txt` in the mod's folder and opens that file in the system's
-text editor. The format is in [formats/script-text.md](formats/script-text.md)
-and what each line does in [formats/scripts.md](formats/scripts.md). Save the
-file, then choose *Try it out* or *Save*: both read the scripts files
-again first. A mistake stops them and names the file and line.
+Scripts make things happen in a zone: people talk, doors open, items
+appear. The Scripts tab shows each script of the zone as a card: its
+*When* lines (all must hold) and its *Then* lines (done in order), each
+written as a sentence, such as "the hero walks against tile 12 at 3,4".
+
+- Click a line to open it. *When* or *Then* chooses what the line is,
+  from everything a script can check or do; the help bar explains each.
+  Every number has a name (x, y, layer, tile, item, zone, person, hotspot,
+  sound, time) and is changed with `<` and `>`.
+- Places are pointed out on the map on the right: the places of the open
+  script are outlined, the open line's are marked 1 and 2, and clicking the
+  map sets the place (*On the map* chooses which one when a line has two).
+  For a line about a hotspot or a person, clicking it on the map chooses
+  it.
+- *In hand* sets a tile or item to the tile in hand, chosen under the map.
+- *+ When* and *+ Then* add a line; *Line up*, *Line down* and *Delete
+  line* move and remove it. *New script*, *Up*, *Down*, *Copy* and
+  *Delete* do the same for whole scripts. Scripts are checked from the top.
+
+### As text
+
+*Edit scripts* on the Zones tab saves the mod (when needed), writes the
+zone's scripts to `scripts/NNNN.txt` in the mod's folder and opens that
+file in the system's text editor. The format is in
+[formats/script-text.md](formats/script-text.md) and what each line does in
+[formats/scripts.md](formats/scripts.md). Save the file, then choose *Try it
+out* or *Save*: both read the scripts files again first, when they were
+changed. A mistake stops them and names the file and line.
 
 ## Not in the editor yet
 

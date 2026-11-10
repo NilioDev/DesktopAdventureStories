@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -69,7 +70,7 @@ public:
     bool syncScripts();
 
 private:
-    enum class Tab { Zones, Tiles };
+    enum class Tab { Zones, Tiles, Scripts };
     enum class Tool { Paint, Erase, Pick, Fill };
 
     // What a change replaced, for Undo and Redo. Undoing swaps it with
@@ -120,6 +121,18 @@ private:
                    std::vector<std::uint16_t>& list, bool people);
     std::string characterName(int character) const;
 
+    // editor_scripts.cpp
+    void scriptsTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
+    void scriptCards(const SDL_FRect& r);
+    // The controls of the chosen line; returns the height used.
+    float lineEditor(const std::string& id, float x, float y, float w, bool condition, data::ScriptLine& line);
+    void scriptMap(const SDL_FRect& r);
+    // Call before changing scripts; changes with the same key in a row are
+    // one step for Undo (typing, stepping a number).
+    void changeScripts(const std::string& mergeKey = {});
+    std::string argText(int kind, int value) const;
+    std::string lineSentence(bool condition, const data::ScriptLine& line) const;
+
     // editor_tiles.cpp
     void tilesTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
     // A scrolling, filtered grid of tiles; returns the tile clicked.
@@ -153,6 +166,17 @@ private:
     int tileFilter_ = 0; // 0 all, then by kind
     float tileScroll_ = 0;
     float tileScroll2_ = 0;
+
+    int scriptsZone_ = -1; // the zone the Scripts tab shows
+    int selScript_ = -1;
+    int selLine_ = -1;      // When lines first, then Then lines
+    int pickPair_ = 0;      // the place a map click sets: 0 first, 1 second
+    float scriptScroll_ = 0;
+    float scriptHeight_ = 0;
+    std::string mergeKey_;
+    // The scripts text last written or read per zone, to see whether the
+    // player changed the file.
+    std::map<int, std::string> scriptText_;
 
     std::vector<Snapshot> undo_;
     std::vector<Snapshot> redo_;

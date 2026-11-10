@@ -17,15 +17,20 @@ SDL_Rect pixelRect(const SDL_FRect& r) {
             static_cast<int>(std::ceil(r.h))};
 }
 
+} // namespace
+
 std::string fitText(std::string_view text, float width) {
     const auto chars = static_cast<std::size_t>(std::max(0.0f, width / ui::kFont));
     if (text.size() <= chars) {
         return std::string(text);
     }
-    return chars > 2 ? std::string(text.substr(0, chars - 2)) + ".." : std::string(text.substr(0, chars));
+    std::size_t cut = chars > 2 ? chars - 2 : chars;
+    // Not in the middle of a UTF-8 letter.
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xc0) == 0x80) {
+        --cut;
+    }
+    return std::string(text.substr(0, cut)) + (chars > 2 ? ".." : "");
 }
-
-} // namespace
 
 std::vector<std::string> wrap(std::string_view text, std::size_t columns) {
     std::vector<std::string> lines;

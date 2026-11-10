@@ -38,6 +38,7 @@ World::World(const data::GameData& data) : data_(data), puzzles_(data::parsePuzz
     if (data_.zones.empty()) {
         throw data::DataError("the game data has no zones");
     }
+    loadFighters();
 }
 
 World::ZoneState& World::stateOf(int zoneIndex) {
@@ -54,6 +55,7 @@ World::ZoneState& World::stateOf(int zoneIndex) {
         fresh.actionDisabled.assign(z.actions ? z.actions->size() : 0, false);
         fresh.monsterEnabled.assign(z.monsters.size(), true);
         fresh.monsterDead.assign(z.monsters.size(), false);
+        initMonsters(zoneIndex, fresh);
         prepareZone(zoneIndex, fresh);
         it = states_.emplace(zoneIndex, std::move(fresh)).first;
     }
@@ -210,6 +212,9 @@ void World::addItem(std::uint16_t item) {
     if (!hasItem(item)) {
         inventory_.push_back(item);
     }
+    if (weapon_ == data::kNoTile && isWeapon(item)) {
+        weapon_ = item;
+    }
 }
 
 std::uint32_t World::flags(std::uint16_t tile) const {
@@ -285,6 +290,7 @@ void World::enter(int zoneIndex, Position at) {
         player_ = {zone().width / 2, zone().height / 2};
     }
     overlays_.clear();
+    shots_.clear();
     // Scripts of the zone we left do not continue here.
     passes_.clear();
     paused_ = false;
@@ -539,6 +545,9 @@ MoveResult World::move(Step step) {
         return MoveResult::ChangedZone;
     }
 
+    if (monsterAt(target)) {
+        return MoveResult::Blocked;
+    }
     if (walkable(target)) {
         player_ = target;
         ++steps_;

@@ -1,0 +1,151 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Combat tests (docs/combat.md). They need the original game files (see
+// test_game_files.cpp) and are skipped without them.
+#include "test.hpp"
+
+#include "das/data/game_data.hpp"
+#include "das/data/game_files.hpp"
+#include "das/world/world.hpp"
+
+#include <cstdlib>
+
+using namespace das;
+
+namespace {
+
+std::vector<data::GameData> loadGames() {
+    const char* dir = std::getenv("DAS_GAMEDATA_DIR");
+    if (!dir || !*dir) {
+        return {};
+    }
+    std::vector<data::GameData> out;
+    for (const auto& game : data::findGameFiles(dir)) {
+        out.push_back(data::parseGameData(data::readFile(game.dataFile)));
+    }
+    return out;
+}
+
+// A zone with an enemy that can be hurt and does harm, and a free cell
+// beside it for the hero.
+struct Arena {
+    int zone = -1;
+    std::size_t monster = 0;
+    world::Position hero;
+    das::Step toward{0, 0};
+};
+
+Arena findArena(const data::GameData& game, world::World& w) {
+    for (std::size_t z = 0; z < game.zones.size(); ++z) {
+        const auto& zone = game.zones[z];
+        if (zone.actions && !zone.actions->empty()) {
+            continue; // keep scripts out of the way
+        }
+        for (std::size_t i = 0; i < zone.monsters.size(); ++i) {
+            const auto& m = zone.monsters[i];
+            const auto& f = w.fighters().at(m.character);
+            if (f.character.type != 2 || f.health <= 0 || f.damage <= 0 || f.weapon >= 0) {
+                continue;
+            }
+            for (const das::Step s : {das::Step{1, 0}, das::Step{-1, 0}, das::Step{0, 1}, das::Step{0, -1}}) {
+                const world::Position at{m.x - s.dx, m.y - s.dy};
+                w.enter(static_cast<int>(z), at);
+                if (w.inside(at) && w.walkable(at)) {
+                    return {static_cast<int>(z), i, at, s};
+                }
+            }
+        }
+    }
+    return {};
+}
+
+} // namespace
+
+DAS_TEST("weapons are found from their inventory tiles") {
+    for (const auto& game : loadGames()) {
+        world::World w(game);
+        int weapons = 0;
+        for (const auto& f : w.fighters()) {
+            if (f.character.type == 4 && f.item != 0xffff) {
+                DAS_CHECK(w.isWeapon(f.item));
+                ++weapons;
+            }
+        }
+        DAS_CHECK(weapons >= 4);
+    }
+}
+
+DAS_TEST("a monster next to the hero hurts him until he is lost") {
+    const auto games = loadGames();
+    if (games.empty()) {
+        DAS_SKIP("set DAS_GAMEDATA_DIR to run");
+    }
+    for (const auto& game : games) {
+        world::World w(game);
+        const Arena a = findArena(game, w);
+        DAS_CHECK(a.zone >= 0);
+        if (a.zone < 0) {
+            continue;
+        }
+        w.enter(a.zone, a.hero);
+        const int before = w.health();
+        for (int t = 0; t < 600 && w.outcome() == world::Outcome::Playing; ++t) {
+            w.update(100);
+            // Stay next to it: it may have moved.
+            (void)w.takeEffects();
+        }
+        DAS_CHECK(w.health() < before);
+    }
+}
+
+DAS_TEST("the hero's weapon kills a monster") {
+    const auto games = loadGames();
+    if (games.empty()) {
+        DAS_SKIP("set DAS_GAMEDATA_DIR to run");
+    }
+    for (const auto& game : games) {
+        world::World w(game);
+        // The strongest melee weapon the hero can carry.
+        std::uint16_t best = data::kNoTile;
+        int damage = 0;
+        for (const auto& f : w.fighters()) {
+            if (f.character.type == 4 && f.item != 0xffff && f.damage > damage &&
+                f.character.frame(0, data::Facing::Up) == 0xffff) {
+                best = f.item;
+                damage = f.damage;
+            }
+        }
+        DAS_CHECK(best != data::kNoTile);
+        w.addItem(best);
+        DAS_CHECK(w.equip(best));
+        DAS_CHECK(w.weapon() == best);
+        const Arena a = findArena(game, w);
+        if (a.zone < 0) {
+            continue;
+        }
+        w.enter(a.zone, a.hero);
+        (void)w.takeEffects();
+        bool dead = false;
+        for (int t = 0; t < 400 && !dead && w.outcome() == world::Outcome::Playing; ++t) {
+            // Face the monster wherever it went and strike.
+            for (const auto& m : w.monsters()) {
+                if (m.index != a.monster) {
+                    continue;
+                }
+                const int dx = m.at.x - w.player().x;
+                const int dy = m.at.y - w.player().y;
+                if (std::abs(dx) + std::abs(dy) == 1) {
+                    (void)w.move({dx, dy}); // blocked by the monster: just turns
+                    (void)w.attack();
+                }
+            }
+            w.update(100);
+            (void)w.takeEffects();
+            dead = true;
+            for (const auto& m : w.monsters()) {
+                dead = dead && m.index != a.monster;
+            }
+        }
+        DAS_CHECK(dead);
+    }
+}

@@ -85,6 +85,7 @@ private:
     void handleEffects(const ActionState& actions, Uint64 now);
     void updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now);
     void renderInventory(SDL_Renderer* renderer, float x, float y) const;
+    void renderHealth(SDL_Renderer* renderer, float x, float y) const;
     void renderMap(SDL_Renderer* renderer, float x, float y, float size) const;
     std::string itemName(std::uint16_t tile) const;
 
@@ -95,6 +96,7 @@ private:
     int tilePage_ = 0;
     std::optional<world::World> world_;
     Uint64 lastStepAt_ = 0;
+    Uint64 lastUpdate_ = 0; // for letting game time pass
     Audio* audio_ = nullptr;
     std::deque<world::Effect> effects_;
     std::optional<world::Effect> bubble_;

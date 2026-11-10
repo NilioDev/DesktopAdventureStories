@@ -129,6 +129,7 @@ void Viewer::play() {
     waitUntil_ = 0;
     banner_.clear();
     world_.emplace(game().data);
+    lastUpdate_ = 0;
     world_->start(zone_);
     mode_ = ViewMode::Play;
     generated_ = false;
@@ -157,6 +158,7 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
     waitUntil_ = 0;
     banner_.clear();
     world_.emplace(game().data);
+    lastUpdate_ = 0;
     world_->setRandomSeed(seed);
     world_->setMap(std::move(map));
     world_->begin();
@@ -300,13 +302,30 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
         }
         selected_ = std::min(selected_, count - 1);
     }
+    const int elapsed = lastUpdate_ == 0 ? 0 : static_cast<int>(std::min<Uint64>(now - lastUpdate_, 100));
+    lastUpdate_ = now;
     if (hadBubble || bubble_ || waitUntil_ != 0) {
+        return;
+    }
+    // Game time: monsters move and attack, shots fly.
+    world_->update(elapsed);
+    handleEffects(ActionState{}, now);
+    if (bubble_ || waitUntil_ != 0) {
+        return;
+    }
+    if (actions.wasPressed(Action::Attack)) {
+        world_->attack();
+        handleEffects(ActionState{}, now);
         return;
     }
     if (actions.wasPressed(Action::Use) && !inventory.empty()) {
         const Step ahead = facingStep(world_->facing());
         const world::Position at{world_->player().x + ahead.dx, world_->player().y + ahead.dy};
-        world_->useItem(inventory[selected_], at);
+        const std::uint16_t item = inventory[selected_];
+        // Using a weapon on nothing takes it in hand.
+        if (!world_->useItem(item, at) && world_->isWeapon(item)) {
+            world_->equip(item);
+        }
         handleEffects(ActionState{}, now);
         return;
     }
@@ -479,10 +498,33 @@ void Viewer::renderPlay(SDL_Renderer* renderer, float x, float y, float size, Ui
             renderTile(renderer, t, dst(at.x, at.y));
         }
     }
+    for (const auto& m : w.monsters()) {
+        if (m.at.x >= camX && m.at.x < endX && m.at.y >= camY && m.at.y < endY) {
+            renderTile(renderer, m.tile, dst(m.at.x, m.at.y));
+        }
+    }
     if (game().hero && w.heroVisible()) {
         const bool walking = now - lastStepAt_ < 250;
         const int set = walking ? 1 + w.stepCount() % 2 : 0;
-        renderTile(renderer, game().hero->frame(set, w.facing()), dst(w.player().x, w.player().y));
+        std::uint16_t tile = game().hero->frame(set, w.facing());
+        // Attacking: the weapon's own pose of the hero.
+        if (w.attacking()) {
+            for (const auto& f : w.fighters()) {
+                if (f.character.type == 4 && f.item == w.weapon()) {
+                    const std::uint16_t pose = f.character.frame(1, w.facing());
+                    if (pose != data::kNoTile) {
+                        tile = pose;
+                    }
+                    break;
+                }
+            }
+        }
+        renderTile(renderer, tile, dst(w.player().x, w.player().y));
+    }
+    for (const auto& shot : w.shots()) {
+        if (shot.at.x >= camX && shot.at.x < endX && shot.at.y >= camY && shot.at.y < endY) {
+            renderTile(renderer, shot.tile, dst(shot.at.x, shot.at.y));
+        }
     }
     for (int cy = camY; cy < endY; ++cy) {
         for (int cx = camX; cx < endX; ++cx) {
@@ -528,6 +570,21 @@ void Viewer::renderInventory(SDL_Renderer* renderer, float x, float y) const {
         SDL_SetRenderDrawColor(renderer, 150, 154, 165, 255);
         SDL_RenderDebugText(renderer, x, y + kIcon + 4, itemName(inventory[selected_]).c_str());
     }
+}
+
+void Viewer::renderHealth(SDL_Renderer* renderer, float x, float y) const {
+    // The weapon in hand, then a health bar that turns from green to red.
+    const SDL_FRect icon{x, y, 16, 16};
+    renderTile(renderer, world_->weapon(), icon);
+    const float ratio = static_cast<float>(world_->health()) / static_cast<float>(world::kMaxHealth);
+    const SDL_FRect back{x + 22, y + 4, 74, 8};
+    SDL_SetRenderDrawColor(renderer, 40, 44, 54, 255);
+    SDL_RenderFillRect(renderer, &back);
+    const auto red = static_cast<Uint8>(std::clamp(255.0f * (1.0f - ratio) * 1.6f, 60.0f, 235.0f));
+    const auto green = static_cast<Uint8>(std::clamp(255.0f * ratio * 1.2f, 50.0f, 200.0f));
+    SDL_SetRenderDrawColor(renderer, red, green, 70, 255);
+    const SDL_FRect bar{back.x, back.y, back.w * ratio, back.h};
+    SDL_RenderFillRect(renderer, &bar);
 }
 
 void Viewer::renderMap(SDL_Renderer* renderer, float x, float y, float size) const {
@@ -665,6 +722,7 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
             std::snprintf(where, sizeof where, "Zone %d", world_->zoneIndex());
             text(renderer, x + size - static_cast<float>(std::strlen(where) * 8), statusY, where, 110);
             renderInventory(renderer, x, statusY + 14);
+            renderHealth(renderer, x + size - 96, statusY + 14);
             return;
         }
         std::snprintf(line, sizeof line, "Zone %d  (%d,%d)", world_->zoneIndex(), world_->player().x,

@@ -15,6 +15,8 @@ namespace {
 
 constexpr int kFloorLayer = 0;
 constexpr int kObjectLayer = 1;
+// Indy: Marcus at his desk in the town, who gives the mission.
+constexpr std::uint16_t kIndyMissionGiver = 794;
 
 data::Facing facingFor(Step step) {
     if (step.dy < 0) {
@@ -436,8 +438,27 @@ bool World::bumpBuiltIn(Position target) {
     if (object == data::kNoTile) {
         return false;
     }
-    // A trading character.
     const Site* here = site(zone_);
+    // Indy: the mission giver tells the mission and, the first time, hands
+    // over the item the first puzzle asks for; later he repeats the hint.
+    if (data_.layout() == data::Layout::Indy && object == kIndyMissionGiver && here != nullptr &&
+        here->kind == SiteKind::Town && map_.goalPuzzle >= 0) {
+        const bool briefed = goal(zone_).solved;
+        const std::string raw =
+            puzzleText(map_.goalPuzzle, briefed ? data::PuzzleText::Offer : data::PuzzleText::Mission);
+        if (!raw.empty()) {
+            effects_.push_back({Effect::Kind::Speech, speechText(raw), target, 0});
+            paused_ = true;
+        }
+        if (!briefed) {
+            setSolved(zone_);
+            if (map_.startItem != data::kNoTile) {
+                found(map_.startItem);
+            }
+        }
+        return true;
+    }
+    // A trading character.
     if (here != nullptr && here->npcZone == zone_ && object == here->npc) {
         const ZoneGoal g = goal(zone_);
         std::string raw;

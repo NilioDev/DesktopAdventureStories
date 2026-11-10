@@ -62,7 +62,7 @@ started from the repository root:
 ```
 
 You can also pass another folder or the game's `.zip` on the command line, set
-`DAS_GAMEDATA_DIR`, or drop a folder or zip on the window.
+`DAS_GAMEDATA_DIR`, drop a folder or zip on the window, or press *Choose game files* (title menu: *Add games*). On Android the picker takes a zip of the game folder, or its files.
 
 The first time a game is found it is imported into our own open format (see
 [docs/formats/pack.md](docs/formats/pack.md)) in the app's data folder. After
@@ -75,10 +75,14 @@ or `--library DIR` (or `DAS_LIBRARY_DIR`) to keep the library somewhere else.
 | Linux | `~/.local/share/DesktopAdventureStories/library` |
 | macOS | `~/Library/Application Support/DesktopAdventureStories/library` |
 
-For now this opens a data viewer (title screen, every zone and every tile),
-and you can walk around a zone: pick one and press Use. The zone scripts run:
-people talk to you in speech bubbles (Use for the next page), doors and
-switches react, and sound effects play.
+The title screen starts a new game in a generated world (pick the world
+size and difficulty), continues a saved one, or opens the options. The game
+saves itself when you go back to the title screen or close the app. The data
+viewer (title menu, desktop only) shows every zone and tile of the data.
+
+The screen is laid out for any window size: the play field is scaled in
+whole pixels, with a panel beside it (or below it on a tall screen) for
+health, the weapon and the inventory. See [docs/interface.md](docs/interface.md).
 
 Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
 
@@ -86,18 +90,18 @@ Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
 DAS_GAMEDATA_DIR=gamedata ctest --test-dir build --output-on-failure
 ```
 
-### Controls (for now)
+### Controls
 
-| Action | Keyboard | Gamepad |
-| --- | --- | --- |
-| Move (viewer: next zone or page, up/down jumps 10) | Arrow keys / WASD | D-pad / left stick |
-| Use, talk | Space / Enter | A (south) |
-| Attack | Ctrl / X | B (east) |
-| Previous / next item (viewer: switch game) | Q / E | LB / RB |
-| Map (viewer: title, zones, tiles) | M / Tab | Back / Select |
-| Menu (viewer: title screen) | Esc | Start |
+| Action | Keyboard | Gamepad | Mouse / touch |
+| --- | --- | --- | --- |
+| Move | Arrow keys / WASD | D-pad / left stick | Click or tap where to go |
+| Use the selected item, talk | Space / Enter | A (south) | Click the selected item again |
+| Attack | Ctrl / X | B (east) | |
+| Previous / next item | Q / E | LB / RB | Click an item |
+| Map | M / Tab | Back / Select | Map button |
+| Menu, back | Esc | Start (B goes back in menus) | Menu button |
 
-Controls will be rebindable.
+Every key and button can be changed under Options, Controls.
 
 ## Contributing
 

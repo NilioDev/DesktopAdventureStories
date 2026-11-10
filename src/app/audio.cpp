@@ -24,6 +24,12 @@ void Audio::open() {
     }
 }
 
+void Audio::setVolume(float volume) {
+    if (device_ != 0) {
+        SDL_SetAudioDeviceGain(device_, volume);
+    }
+}
+
 void Audio::play(const data::Bytes& wav) {
     if (device_ == 0 || wav.empty()) {
         return;

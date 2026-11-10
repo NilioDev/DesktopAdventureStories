@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace das::pack {
@@ -25,6 +26,13 @@ public:
 // A folder (searched a few levels deep) or a .zip archive. Returns nullptr
 // when `where` is neither.
 std::unique_ptr<Source> openSource(const std::filesystem::path& where);
+// A .zip archive already read into memory (for example from a file picker
+// that hands out contents, not paths). Throws when it is no zip.
+std::unique_ptr<Source> zipSource(const data::Bytes& archive);
+// Loose files already read into memory, by file name.
+std::unique_ptr<Source> filesSource(std::vector<std::pair<std::string, data::Bytes>> files);
+// Whether bytes start like a .zip archive.
+bool looksLikeZip(const data::Bytes& bytes);
 
 // Ids ("yoda", "indy") of the games whose data file is in the source, found
 // by file name only.

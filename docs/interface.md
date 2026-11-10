@@ -1,0 +1,84 @@
+# The interface
+
+The play field shows the original pixel art. Everything around it is our
+own, drawn with SDL's built-in 8x8 font and plain shapes, in one colour
+scheme (`src/app/ui.hpp`).
+
+## Layout
+
+Everything is drawn in interface units. One unit is a whole number of screen
+pixels, the interface scale, so text and lines stay sharp. The play field is
+288 x 288 game pixels (9 x 9 cells of 32 pixels). With *Scaling: Pixel* it
+is shown at a whole multiple of that; with *Fill* it takes all the space it
+has.
+
+- On a wide screen the panel (200 units) sits right of the play field, as
+  high as the field.
+- On a tall screen (a phone held upright) the panel sits below the field and
+  takes the rest of the screen.
+
+The interface scale is the largest one that does not make the play field
+smaller, for screens at least 320 units on their short side.
+
+## Screens
+
+- **Title:** the game's own title picture in the field; the menu in the
+  panel: Continue (when there is a save), New game, Game (when both games
+  are installed), World size, Difficulty, Options, Data viewer and Quit
+  (these two not on phones).
+- **Game:** the panel shows the puzzles solved, health, the weapon in hand,
+  the inventory as a grid (scrolling to the selected item), the selected
+  item's name, hints for the input device used last, and Map and Menu
+  buttons.
+- **Pause menu:** Resume, Map, Options, Save and quit. The game waits
+  while it is open.
+- **Options:** Fullscreen (desktop), Scaling (Pixel / Fill), Filter (Sharp,
+  Smooth, or Scanlines over the play field), Sound volume and Controls.
+- **Controls:** every action with its keys, or its gamepad buttons when a
+  gamepad was used last. Choosing one waits six seconds for the new key or
+  button (Esc cancels); it becomes the only one for that action and is taken
+  away from any other action. *Reset controls* brings back the defaults. The
+  Android back button always opens the menu.
+- **Map:** the world's sites coloured by kind (town, open puzzle, solved
+  puzzle, goal), with the hero's site blinking.
+
+## Pointer and touch
+
+A click or tap on a menu row selects it; on a value's left arrow it steps
+back. In the game:
+
+- tapping a cell walks there along the shortest free path, one step every
+  150 ms, and bumps into the cell when it cannot be walked on (to talk or
+  push);
+- tapping an item selects it, and tapping the selected item uses it;
+- a tap anywhere moves a speech bubble on, or closes the map.
+
+## The touch pad
+
+On a touch screen a direction pad and *Use* and *Hit* (attack) buttons show
+while the game is on screen: in the empty strips beside the field when the
+screen is held sideways, in a strip under the panel when it is held upright,
+and over the field's bottom corners otherwise. Several fingers work at once.
+A finger that starts on the pad keeps steering wherever it moves; in the
+pad's middle it holds nothing. Options, *Touch pad*: Auto (shown once the
+screen was touched), On or Off. Touches are read as fingers, not as a mouse.
+
+## Settings
+
+Kept in `settings.json` next to the library folder:
+
+```json
+{"fullscreen": false, "pixelPerfect": true, "filter": "sharp", "volume": 80, "touchPad": "auto",
+ "keys": {"use": ["Space", "Return"], ...}, "buttons": {"use": ["a"], ...}}
+```
+
+Keys use SDL's scancode names and buttons SDL's gamepad button names. An
+action missing from `keys` or `buttons` keeps its default controls. A
+missing or damaged file gives the defaults.
+
+## Testing options
+
+`--window WxH` sets the window size, `--menu pause|options|controls|map` opens a
+menu, `--device keyboard|gamepad|touch|touch-pad` picks the hints and `--tap X,Y`
+presses at a point (in units) after the first frame. With `--screenshot` they
+make pictures of every screen for checking a change.

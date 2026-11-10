@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The front end's state and input. Drawing is in viewer_draw.cpp.
 #include "viewer.hpp"
 
 #include "das/world/savegame.hpp"
@@ -18,9 +20,13 @@ namespace {
 constexpr int kAtlasColumns = 64;
 constexpr int kTile = 32;
 constexpr int kTilesPerPage = 9 * 9;
-// Speech bubble text: characters per line (8 px font) and lines per page.
-constexpr std::size_t kBubbleColumns = 33;
-constexpr std::size_t kBubbleLines = 12;
+constexpr Uint64 kWalkStepMs = 150; // walking to a tapped cell
+
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+constexpr bool kMobile = true;
+#else
+constexpr bool kMobile = false;
+#endif
 
 SDL_Texture* makeTexture(SDL_Renderer* renderer, int width, int height, const std::vector<std::uint32_t>& rgba) {
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
@@ -75,12 +81,70 @@ SDL_Texture* buildSetup(SDL_Renderer* renderer, const data::GameData& data, cons
     return makeTexture(renderer, data::kSetupScreenSize, data::kSetupScreenSize, pixels);
 }
 
-void text(SDL_Renderer* renderer, float x, float y, const std::string& line, Uint8 shade) {
-    SDL_SetRenderDrawColor(renderer, shade, shade, static_cast<Uint8>(std::min(255, shade + 8)), 255);
-    SDL_RenderDebugText(renderer, x, y, line.c_str());
+const char* sizeName(world::WorldSize size) {
+    switch (size) {
+    case world::WorldSize::Small: return "Small";
+    case world::WorldSize::Large: return "Large";
+    default: return "Medium";
+    }
 }
 
+const char* difficultyName(int d) { return d == 0 ? "Easy" : d == 2 ? "Hard" : "Normal"; }
+
+const char* filterName(Filter f) {
+    switch (f) {
+    case Filter::Smooth: return "Smooth";
+    case Filter::Scanlines: return "Scanlines";
+    default: return "Sharp";
+    }
+}
+
+Step facingStep(data::Facing facing) {
+    switch (facing) {
+    case data::Facing::Up: return {0, -1};
+    case data::Facing::Down: return {0, 1};
+    case data::Facing::Left:
+    case data::Facing::UpLeft:
+    case data::Facing::DownLeft: return {-1, 0};
+    default: return {1, 0};
+    }
+}
+
+int wrapAround(int value, int count) { return ((value % count) + count) % count; }
+
 } // namespace
+
+// Splits text into lines of at most `width` characters, at spaces.
+std::vector<std::string> wrapText(const std::string& text, std::size_t width) {
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t newline = text.find('\n', start);
+        const std::string paragraph =
+            text.substr(start, newline == std::string::npos ? std::string::npos : newline - start);
+        std::string line;
+        std::size_t i = 0;
+        while (i < paragraph.size()) {
+            std::size_t end = paragraph.find(' ', i);
+            if (end == std::string::npos) {
+                end = paragraph.size();
+            }
+            const std::string word = paragraph.substr(i, end - i);
+            if (!line.empty() && line.size() + 1 + word.size() > width) {
+                lines.push_back(line);
+                line.clear();
+            }
+            line += (line.empty() ? "" : " ") + word;
+            i = end + 1;
+        }
+        lines.push_back(line);
+        if (newline == std::string::npos) {
+            break;
+        }
+        start = newline + 1;
+    }
+    return lines;
+}
 
 LoadedGame::~LoadedGame() {
     if (atlas) {
@@ -117,26 +181,51 @@ void Viewer::add(SDL_Renderer* renderer, pack::Pack pack) {
     games_.push_back(std::move(game));
     current_ = games_.size() - 1;
     world_.reset();
-    mode_ = mode_ == ViewMode::Play ? ViewMode::Zone : mode_;
+    mode_ = mode_ == ViewMode::Play ? ViewMode::Title : mode_;
+    page_ = Page::Main;
     zone_ = 0;
     tilePage_ = 0;
+    applyFilter();
+}
+
+void Viewer::applyFilter() {
+    const bool smooth = settings_ && settings_->filter == Filter::Smooth;
+    for (const auto& g : games_) {
+        for (SDL_Texture* t : {g->atlas, g->setup}) {
+            if (t) {
+                SDL_SetTextureScaleMode(t, smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+            }
+        }
+    }
+}
+
+bool Viewer::takeSettingsChanged() {
+    const bool changed = settingsChanged_;
+    settingsChanged_ = false;
+    return changed;
+}
+
+void Viewer::startPlay() {
+    effects_.clear();
+    bubble_.reset();
+    waitUntil_ = 0;
+    banner_.clear();
+    lastUpdate_ = 0;
+    mode_ = ViewMode::Play;
+    page_ = Page::None;
+    selected_ = 0;
+    showMap_ = false;
+    walkTarget_.reset();
 }
 
 void Viewer::play() {
     if (games_.empty()) {
         return;
     }
-    effects_.clear();
-    bubble_.reset();
-    waitUntil_ = 0;
-    banner_.clear();
     world_.emplace(game().data);
-    lastUpdate_ = 0;
     world_->start(zone_);
-    mode_ = ViewMode::Play;
+    startPlay();
     generated_ = false;
-    selected_ = 0;
-    showMap_ = false;
 }
 
 void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
@@ -146,7 +235,6 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
     world::GeneratorOptions options;
     options.seed = seed;
     options.size = size;
-    options_ = options;
     world::WorldMap map;
     try {
         map = world::generateWorld(game().data, options);
@@ -156,20 +244,37 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
     }
     SDL_Log("New world: seed %u, goal puzzle %d, %d puzzles", static_cast<unsigned>(seed), map.goalPuzzle,
             map.puzzleCount);
-    effects_.clear();
-    bubble_.reset();
-    waitUntil_ = 0;
-    banner_.clear();
+    options_ = options;
     world_.emplace(game().data);
-    lastUpdate_ = 0;
     world_->setRandomSeed(seed);
     world_->setDifficulty(difficultyValue());
     world_->setMap(std::move(map));
     world_->begin();
-    mode_ = ViewMode::Play;
+    startPlay();
     generated_ = true;
-    selected_ = 0;
+}
+
+void Viewer::leavePlay() {
+    autosave();
+    zone_ = world_->zoneIndex();
+    world_.reset();
+    mode_ = generated_ ? ViewMode::Title : ViewMode::Zone;
+    page_ = Page::Main;
+    menuItem_ = 0;
+    generated_ = false;
     showMap_ = false;
+    walkTarget_.reset();
+}
+
+void Viewer::openMenu(bool options) {
+    if (mode_ == ViewMode::Play) {
+        page_ = Page::Pause;
+    }
+    if (options) {
+        optionsFrom_ = page_;
+        page_ = Page::Options;
+    }
+    menuItem_ = 0;
 }
 
 std::string Viewer::gameId() const { return game().game == data::Layout::Indy ? "indy" : "yoda"; }
@@ -231,118 +336,16 @@ bool Viewer::continueGame() {
         if (save.game != gameId()) {
             return false;
         }
-        effects_.clear();
-        bubble_.reset();
-        waitUntil_ = 0;
-        banner_.clear();
         world_.emplace(game().data);
-        lastUpdate_ = 0;
         world::restoreGame(*world_, game().data, save);
         options_ = save.options;
-        mode_ = ViewMode::Play;
+        startPlay();
         generated_ = true;
-        selected_ = 0;
-        showMap_ = false;
         return true;
     } catch (const std::exception& e) {
         SDL_Log("Could not load the saved game: %s", e.what());
         world_.reset();
         return false;
-    }
-}
-
-namespace {
-
-enum class MenuItem { Continue, NewGame, Size, Difficulty };
-
-std::vector<MenuItem> menuItems(bool canContinue) {
-    std::vector<MenuItem> items;
-    if (canContinue) {
-        items.push_back(MenuItem::Continue);
-    }
-    items.insert(items.end(), {MenuItem::NewGame, MenuItem::Size, MenuItem::Difficulty});
-    return items;
-}
-
-const char* sizeName(world::WorldSize size) {
-    switch (size) {
-    case world::WorldSize::Small: return "Small";
-    case world::WorldSize::Large: return "Large";
-    default: return "Medium";
-    }
-}
-
-const char* difficultyName(int d) { return d == 0 ? "Easy" : d == 2 ? "Hard" : "Normal"; }
-
-} // namespace
-
-void Viewer::updateTitle(const ActionState& actions, std::optional<Step> step) {
-    const auto items = menuItems(hasSave());
-    const int count = static_cast<int>(items.size());
-    menuItem_ = std::clamp(menuItem_, 0, count - 1);
-    if (step && step->dy != 0) {
-        menuItem_ = (menuItem_ + step->dy + count) % count;
-        return;
-    }
-    const MenuItem item = items[static_cast<std::size_t>(menuItem_)];
-    const int change = step ? step->dx : (actions.wasPressed(Action::Use) ? 1 : 0);
-    if (change == 0) {
-        return;
-    }
-    switch (item) {
-    case MenuItem::Continue:
-        if (actions.wasPressed(Action::Use)) {
-            continueGame();
-        }
-        break;
-    case MenuItem::NewGame:
-        if (actions.wasPressed(Action::Use)) {
-            newGame(static_cast<std::uint32_t>(SDL_GetPerformanceCounter()), size_);
-        }
-        break;
-    case MenuItem::Size: size_ = static_cast<world::WorldSize>((static_cast<int>(size_) + change + 3) % 3); break;
-    case MenuItem::Difficulty: difficulty_ = (difficulty_ + change + 3) % 3; break;
-    }
-}
-
-void Viewer::renderTitleMenu(SDL_Renderer* renderer, float x, float y, float size) const {
-    const auto items = menuItems(hasSave());
-    std::vector<std::string> labels;
-    for (const auto item : items) {
-        switch (item) {
-        case MenuItem::Continue: labels.emplace_back("Continue"); break;
-        case MenuItem::NewGame: labels.emplace_back("New game"); break;
-        case MenuItem::Size: labels.push_back(std::string("World size  < ") + sizeName(size_) + " >"); break;
-        case MenuItem::Difficulty: labels.push_back(std::string("Difficulty  < ") + difficultyName(difficulty_) + " >"); break;
-        }
-    }
-    std::size_t longest = 1;
-    for (const auto& l : labels) {
-        longest = std::max(longest, l.size());
-    }
-    // As large as fits the view, at most one and a half times the font.
-    constexpr auto kFont = static_cast<float>(SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE);
-    const float kScale = std::min(1.5f, (size - 56) / (kFont * static_cast<float>(longest)));
-    const float kChar = kFont * kScale;
-    const float rowH = 22;
-    const float boxW = kChar * static_cast<float>(longest) + 40;
-    const float boxH = rowH * static_cast<float>(items.size()) + 20;
-    const SDL_FRect box{x + (size - boxW) / 2, y + size - boxH - 24, boxW, boxH};
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, 14, 16, 24, 215);
-    SDL_RenderFillRect(renderer, &box);
-    for (std::size_t i = 0; i < items.size(); ++i) {
-        const float ry = box.y + 10 + rowH * static_cast<float>(i);
-        const bool active = static_cast<int>(i) == std::clamp(menuItem_, 0, static_cast<int>(items.size()) - 1);
-        if (active) {
-            SDL_SetRenderDrawColor(renderer, 235, 196, 90, 60);
-            const SDL_FRect bar{box.x + 8, ry, box.w - 16, rowH};
-            SDL_RenderFillRect(renderer, &bar);
-        }
-        SDL_SetRenderScale(renderer, kScale, kScale);
-        SDL_SetRenderDrawColor(renderer, active ? 245 : 190, active ? 215 : 194, active ? 120 : 205, 255);
-        SDL_RenderDebugText(renderer, (box.x + 20) / kScale, (ry + (rowH - kChar) / 2) / kScale, labels[i].c_str());
-        SDL_SetRenderScale(renderer, 1, 1);
     }
 }
 
@@ -382,7 +385,8 @@ void Viewer::walk(const std::string& path) {
 void Viewer::selectGame(data::Layout which) {
     world_.reset();
     if (mode_ == ViewMode::Play) {
-        mode_ = ViewMode::Zone;
+        mode_ = ViewMode::Title;
+        page_ = Page::Main;
     }
     for (std::size_t i = 0; i < games_.size(); ++i) {
         if (games_[i]->game == which) {
@@ -397,27 +401,239 @@ void Viewer::selectZone(int zone) {
     }
 }
 
-void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64 now) {
-    if (games_.empty()) {
+void Viewer::pointerPressed(float x, float y) { click_ = SDL_FPoint{x, y}; }
+
+// --- menus -----------------------------------------------------------------
+
+std::vector<Viewer::Row> Viewer::menuRows() const {
+    std::vector<Row> rows;
+    switch (page_) {
+    case Page::Main:
+        if (hasSave()) {
+            rows.push_back({RowId::Continue, "Continue", ""});
+        }
+        rows.push_back({RowId::NewGame, "New game", ""});
+        if (games_.size() > 1) {
+            rows.push_back({RowId::Game, "Game", game().game == data::Layout::Indy ? "Indy" : "Yoda"});
+        }
+        rows.push_back({RowId::Size, "World size", sizeName(size_)});
+        rows.push_back({RowId::Difficulty, "Difficulty", difficultyName(difficulty_)});
+        rows.push_back({RowId::Options, "Options", ""});
+        rows.push_back({RowId::AddGames, "Add games", ""});
+        if (!kMobile) {
+            rows.push_back({RowId::DataViewer, "Data viewer", ""});
+            rows.push_back({RowId::Quit, "Quit", ""});
+        }
+        break;
+    case Page::Pause:
+        rows.push_back({RowId::Resume, "Resume", ""});
+        if (generated_) {
+            rows.push_back({RowId::Map, "Map", ""});
+        }
+        rows.push_back({RowId::Options, "Options", ""});
+        rows.push_back({RowId::SaveAndQuit, generated_ ? "Save and quit" : "Back to viewer", ""});
+        break;
+    case Page::Options: {
+        const Settings s = settings_ ? *settings_ : Settings{};
+        if (!kMobile) {
+            rows.push_back({RowId::Fullscreen, "Fullscreen", s.fullscreen ? "On" : "Off"});
+        }
+        rows.push_back({RowId::Scaling, "Scaling", s.pixelPerfect ? "Pixel" : "Fill"});
+        rows.push_back({RowId::Filter, "Filter", filterName(s.filter)});
+        rows.push_back({RowId::Volume, "Sound", std::to_string(s.volume) + "%"});
+        rows.push_back({RowId::TouchPad, "Touch pad",
+                        s.touchPad == TouchPad::On ? "On" : s.touchPad == TouchPad::Off ? "Off" : "Auto"});
+        if (bindings_) {
+            rows.push_back({RowId::Controls, "Controls", ""});
+        }
+        rows.push_back({RowId::Back, "Back", ""});
+        break;
+    }
+    case Page::Controls: {
+        struct Named {
+            Action action;
+            const char* label;
+        };
+        static constexpr Named kActions[] = {
+            {Action::MoveUp, "Up"},          {Action::MoveDown, "Down"},     {Action::MoveLeft, "Left"},
+            {Action::MoveRight, "Right"},    {Action::Use, "Use"},           {Action::Attack, "Attack"},
+            {Action::InventoryPrev, "Prev item"}, {Action::InventoryNext, "Next item"}, {Action::Map, "Map"},
+            {Action::Menu, "Menu"},
+        };
+        const bool pad = device_ == InputDevice::Gamepad;
+        for (const auto& a : kActions) {
+            std::string value;
+            if (capture_ == a.action) {
+                value = pad ? "Press a button" : "Press a key";
+            } else if (bindings_) {
+                value = pad ? bindings_->buttonNames(a.action) : bindings_->keyNames(a.action);
+            }
+            rows.push_back({RowId::Bind, a.label, value, a.action});
+        }
+        rows.push_back({RowId::ResetControls, "Reset controls", ""});
+        rows.push_back({RowId::Back, "Back", ""});
+        break;
+    }
+    case Page::None: break;
+    }
+    return rows;
+}
+
+void Viewer::updateMenu(const ActionState& actions, std::optional<Step> step) {
+    const auto rows = menuRows();
+    if (rows.empty()) {
         return;
     }
+    const int count = static_cast<int>(rows.size());
+    menuItem_ = std::clamp(menuItem_, 0, count - 1);
+    if (capture_) {
+        return; // the next key or button goes to the bindings
+    }
+    if (actions.wasPressed(Action::Menu) || actions.wasPressed(Action::Attack)) {
+        menuBack();
+        return;
+    }
+    if (mode_ == ViewMode::Title && page_ == Page::Main && actions.wasPressed(Action::Map) && !kMobile) {
+        mode_ = ViewMode::Zone;
+        return;
+    }
+    if (step && step->dy != 0) {
+        menuItem_ = wrapAround(menuItem_ + step->dy, count);
+        return;
+    }
+    const Row& row = rows[static_cast<std::size_t>(menuItem_)];
+    if (step && step->dx != 0 && !row.value.empty()) {
+        menuActivate(row.id, step->dx);
+        return;
+    }
+    if (actions.wasPressed(Action::Use)) {
+        if (row.id == RowId::Bind) {
+            startCapture(row.action);
+        } else {
+            menuActivate(row.id, 1);
+        }
+    }
+}
+
+void Viewer::startCapture(Action action) {
+    capture_ = action;
+    captureUntil_ = SDL_GetTicks() + 6000;
+}
+
+void Viewer::menuActivate(RowId id, int change) {
+    auto changeSetting = [&](auto&& apply) {
+        if (settings_) {
+            apply(*settings_);
+            settingsChanged_ = true;
+        }
+    };
+    switch (id) {
+    case RowId::Continue: continueGame(); break;
+    case RowId::NewGame: newGame(static_cast<std::uint32_t>(SDL_GetPerformanceCounter()), size_); break;
+    case RowId::Game:
+        current_ = static_cast<std::size_t>(wrapAround(static_cast<int>(current_) + change, static_cast<int>(games_.size())));
+        zone_ = 0;
+        tilePage_ = 0;
+        break;
+    case RowId::Size: size_ = static_cast<world::WorldSize>(wrapAround(static_cast<int>(size_) + change, 3)); break;
+    case RowId::Difficulty: difficulty_ = wrapAround(difficulty_ + change, 3); break;
+    case RowId::Options:
+        optionsFrom_ = page_;
+        page_ = Page::Options;
+        menuItem_ = 0;
+        break;
+    case RowId::DataViewer: mode_ = ViewMode::Zone; break;
+    case RowId::AddGames: addGames_ = true; break;
+    case RowId::Quit: quit_ = true; break;
+    case RowId::Resume: page_ = Page::None; break;
+    case RowId::Map:
+        page_ = Page::None;
+        showMap_ = true;
+        break;
+    case RowId::SaveAndQuit: leavePlay(); break;
+    case RowId::Fullscreen: changeSetting([](Settings& s) { s.fullscreen = !s.fullscreen; }); break;
+    case RowId::Scaling: changeSetting([](Settings& s) { s.pixelPerfect = !s.pixelPerfect; }); break;
+    case RowId::Filter:
+        changeSetting([&](Settings& s) { s.filter = static_cast<Filter>(wrapAround(static_cast<int>(s.filter) + change, 3)); });
+        applyFilter();
+        break;
+    case RowId::Volume:
+        changeSetting([&](Settings& s) {
+            // Pressing on 100% starts again at 0; left and right stop at the ends.
+            if (change > 0 && s.volume >= 100) {
+                s.volume = 0;
+            } else {
+                s.volume = std::clamp(s.volume + 10 * change, 0, 100);
+            }
+        });
+        break;
+    case RowId::TouchPad:
+        changeSetting([&](Settings& s) { s.touchPad = static_cast<TouchPad>(wrapAround(static_cast<int>(s.touchPad) + change, 3)); });
+        break;
+    case RowId::Controls:
+        page_ = Page::Controls;
+        menuItem_ = 0;
+        break;
+    case RowId::Bind: break; // see updateMenu: it needs the row's action
+    case RowId::ResetControls:
+        changeSetting([](Settings& s) {
+            s.keys.clear();
+            s.buttons.clear();
+        });
+        break;
+    case RowId::Back: menuBack(); break;
+    }
+}
+
+void Viewer::menuBack() {
+    switch (page_) {
+    case Page::Controls:
+        page_ = Page::Options;
+        menuItem_ = 0;
+        break;
+    case Page::Options:
+        page_ = optionsFrom_;
+        menuItem_ = 0;
+        break;
+    case Page::Pause: page_ = Page::None; break;
+    case Page::Main:
+    case Page::None: break;
+    }
+}
+
+// --- input -----------------------------------------------------------------
+
+void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64 now) {
+    if (games_.empty()) {
+        click_.reset();
+        return;
+    }
+    if (capture_ && now > captureUntil_) {
+        capture_.reset(); // nothing pressed: keep the old controls
+    }
+    if (click_ && !capture_) {
+        handleClick(now);
+    }
+    click_.reset();
     if (mode_ == ViewMode::Play) {
         updatePlay(actions, step, now);
         return;
     }
-    if (mode_ == ViewMode::Title && (actions.wasPressed(Action::Use) || step)) {
-        updateTitle(actions, step);
+    if (mode_ == ViewMode::Title) {
+        updateMenu(actions, step);
         return;
     }
+    // The data viewer.
     if (mode_ == ViewMode::Zone && actions.wasPressed(Action::Use)) {
         play();
         return;
     }
     if (actions.wasPressed(Action::Map)) {
-        mode_ = mode_ == ViewMode::Title ? ViewMode::Zone : mode_ == ViewMode::Zone ? ViewMode::Tiles : ViewMode::Title;
+        mode_ = mode_ == ViewMode::Zone ? ViewMode::Tiles : ViewMode::Zone;
     }
-    if (actions.wasPressed(Action::Menu)) {
+    if (actions.wasPressed(Action::Menu) || actions.wasPressed(Action::Attack)) {
         mode_ = ViewMode::Title;
+        page_ = Page::Main;
     }
     if (games_.size() > 1 &&
         (actions.wasPressed(Action::InventoryNext) || actions.wasPressed(Action::InventoryPrev))) {
@@ -430,36 +646,193 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
     }
     const int delta = step->dx + step->dy * 10; // left/right: 1, up/down: 10
     if (mode_ == ViewMode::Zone) {
-        const int count = static_cast<int>(game().data.zones.size());
-        zone_ = ((zone_ + delta) % count + count) % count;
+        zone_ = wrapAround(zone_ + delta, static_cast<int>(game().data.zones.size()));
     } else if (mode_ == ViewMode::Tiles) {
         const int pages = (static_cast<int>(game().data.tiles.size()) + kTilesPerPage - 1) / kTilesPerPage;
-        tilePage_ = ((tilePage_ + delta) % pages + pages) % pages;
+        tilePage_ = wrapAround(tilePage_ + delta, pages);
     }
 }
 
-namespace {
-
-Step facingStep(data::Facing facing) {
-    switch (facing) {
-    case data::Facing::Up: return {0, -1};
-    case data::Facing::Down: return {0, 1};
-    case data::Facing::Left:
-    case data::Facing::UpLeft:
-    case data::Facing::DownLeft: return {-1, 0};
-    default: return {1, 0};
+void Viewer::handleClick(Uint64 now) {
+    const SDL_FPoint at = *click_;
+    click_.reset();
+    const Hit* hit = nullptr;
+    for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {
+        if (ui::contains(it->rect, at.x, at.y)) {
+            hit = &*it;
+            break;
+        }
+    }
+    const bool inMenu = mode_ == ViewMode::Title || (mode_ == ViewMode::Play && page_ != Page::None);
+    if (inMenu) {
+        if (hit && (hit->kind == Hit::Kind::Row || hit->kind == Hit::Kind::RowLeft)) {
+            const auto rows = menuRows();
+            if (hit->index >= 0 && hit->index < static_cast<int>(rows.size())) {
+                menuItem_ = hit->index;
+                const Row& row = rows[static_cast<std::size_t>(hit->index)];
+                if (row.id == RowId::Bind) {
+                    startCapture(row.action);
+                } else {
+                    menuActivate(row.id, hit->kind == Hit::Kind::RowLeft ? -1 : 1);
+                }
+            }
+        }
+        return;
+    }
+    if (mode_ == ViewMode::Zone) {
+        if (hit && hit->kind == Hit::Kind::Field) {
+            play();
+        }
+        return;
+    }
+    if (mode_ != ViewMode::Play || !world_) {
+        return;
+    }
+    if (hit && hit->kind == Hit::Kind::Menu) {
+        if (generated_) {
+            openMenu(false);
+        } else {
+            leavePlay();
+        }
+        return;
+    }
+    if (hit && hit->kind == Hit::Kind::Map) {
+        showMap_ = !showMap_;
+        return;
+    }
+    if (bubble_) {
+        ActionState tap; // a tap anywhere moves the speech on
+        tap.press(Action::Use);
+        handleEffects(tap, now);
+        return;
+    }
+    if (showMap_) {
+        showMap_ = false;
+        return;
+    }
+    if (!hit) {
+        return;
+    }
+    if (hit->kind == Hit::Kind::Slot) {
+        const auto index = static_cast<std::size_t>(hit->index);
+        if (index == selected_) {
+            useSelected(now);
+        } else if (index < world_->inventory().size()) {
+            selected_ = index;
+        }
+        return;
+    }
+    if (hit->kind == Hit::Kind::Field && waitUntil_ == 0) {
+        const world::Position target{camX_ + static_cast<int>(std::floor((at.x - hit->rect.x) / cell_)),
+                                     camY_ + static_cast<int>(std::floor((at.y - hit->rect.y) / cell_))};
+        if (world_->inside(target)) {
+            walkTarget_ = target;
+            nextWalkAt_ = 0;
+        }
     }
 }
 
-} // namespace
+std::optional<Step> Viewer::stepTowards(world::Position target) const {
+    const auto& w = *world_;
+    const world::Position from = w.player();
+    if (from == target) {
+        return std::nullopt;
+    }
+    const int dx = target.x - from.x;
+    const int dy = target.y - from.y;
+    if (std::abs(dx) + std::abs(dy) == 1) {
+        return Step{dx, dy}; // next to it: step (or bump) into it
+    }
+    // Breadth-first search over walkable cells, to the target or, when the
+    // target cannot be walked on, to a cell next to it.
+    const int width = w.zone().width;
+    const int height = w.zone().height;
+    const auto index = [&](world::Position p) { return static_cast<std::size_t>(p.y * width + p.x); };
+    std::vector<int> came(static_cast<std::size_t>(width * height), -1);
+    std::deque<world::Position> queue{from};
+    came[index(from)] = static_cast<int>(index(from));
+    const bool targetWalkable = w.walkable(target);
+    constexpr Step kSteps[4] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+    std::optional<world::Position> end;
+    while (!queue.empty() && !end) {
+        const world::Position p = queue.front();
+        queue.pop_front();
+        for (const Step s : kSteps) {
+            const world::Position n{p.x + s.dx, p.y + s.dy};
+            if (!w.inside(n) || came[index(n)] >= 0) {
+                continue;
+            }
+            if (n == target && !targetWalkable) {
+                end = p;
+                break;
+            }
+            if (!w.walkable(n)) {
+                continue;
+            }
+            came[index(n)] = static_cast<int>(index(p));
+            if (n == target) {
+                end = n;
+                break;
+            }
+            queue.push_back(n);
+        }
+    }
+    if (!end) {
+        return std::nullopt;
+    }
+    if (*end == from) {
+        return Step{dx, dy}; // cannot happen: the target would be next to us
+    }
+    // Back from the end to the first step.
+    world::Position p = *end;
+    for (;;) {
+        const int prev = came[index(p)];
+        const world::Position q{prev % width, prev / width};
+        if (q == from) {
+            return Step{p.x - from.x, p.y - from.y};
+        }
+        p = q;
+    }
+}
+
+void Viewer::useSelected(Uint64 now) {
+    const auto& inventory = world_->inventory();
+    if (inventory.empty() || bubble_ || waitUntil_ != 0) {
+        return;
+    }
+    selected_ = std::min(selected_, inventory.size() - 1);
+    const Step ahead = facingStep(world_->facing());
+    const world::Position at{world_->player().x + ahead.dx, world_->player().y + ahead.dy};
+    const std::uint16_t item = inventory[selected_];
+    // Using a weapon on nothing takes it in hand.
+    if (!world_->useItem(item, at) && world_->isWeapon(item)) {
+        world_->equip(item);
+    }
+    handleEffects(ActionState{}, now);
+}
 
 void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now) {
-    if (actions.wasPressed(Action::Menu) || (!generated_ && actions.wasPressed(Action::Map))) {
-        autosave();
-        zone_ = world_->zoneIndex();
-        world_.reset();
-        mode_ = generated_ ? ViewMode::Title : ViewMode::Zone;
-        generated_ = false;
+    if (mode_ != ViewMode::Play || !world_) {
+        return;
+    }
+    if (page_ != Page::None) {
+        updateMenu(actions, step); // the game waits while a menu is open
+        lastUpdate_ = now;
+        return;
+    }
+    if (actions.wasPressed(Action::Menu)) {
+        if (showMap_) {
+            showMap_ = false;
+        } else if (generated_) {
+            openMenu(false);
+            walkTarget_.reset();
+        } else {
+            leavePlay();
+        }
+        return;
+    }
+    if (!generated_ && actions.wasPressed(Action::Map)) {
+        leavePlay();
         return;
     }
     if (actions.wasPressed(Action::Map)) {
@@ -468,6 +841,10 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
     const bool hadBubble = bubble_.has_value();
     handleEffects(actions, now);
     if (showMap_) {
+        if (actions.wasPressed(Action::Attack) || actions.wasPressed(Action::Use)) {
+            showMap_ = false;
+        }
+        lastUpdate_ = now;
         return;
     }
     const auto& inventory = world_->inventory();
@@ -490,74 +867,54 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
     world_->update(elapsed);
     handleEffects(ActionState{}, now);
     if (bubble_ || waitUntil_ != 0) {
+        walkTarget_.reset();
         return;
     }
     if (actions.wasPressed(Action::Attack)) {
+        walkTarget_.reset();
         world_->attack();
         handleEffects(ActionState{}, now);
         return;
     }
     if (actions.wasPressed(Action::Use) && !inventory.empty()) {
-        const Step ahead = facingStep(world_->facing());
-        const world::Position at{world_->player().x + ahead.dx, world_->player().y + ahead.dy};
-        const std::uint16_t item = inventory[selected_];
-        // Using a weapon on nothing takes it in hand.
-        if (!world_->useItem(item, at) && world_->isWeapon(item)) {
-            world_->equip(item);
-        }
-        handleEffects(ActionState{}, now);
+        walkTarget_.reset();
+        useSelected(now);
         return;
     }
     if (step) {
-        const auto result = world_->move(*step);
+        walkTarget_.reset();
+        if (world_->move(*step) != world::MoveResult::Blocked) {
+            lastStepAt_ = now;
+        }
+        return;
+    }
+    if (walkTarget_ && now >= nextWalkAt_) {
+        const int zoneBefore = world_->zoneIndex();
+        const auto next = stepTowards(*walkTarget_);
+        if (!next) {
+            walkTarget_.reset();
+            return;
+        }
+        const auto result = world_->move(*next);
         if (result != world::MoveResult::Blocked) {
             lastStepAt_ = now;
         }
+        nextWalkAt_ = now + kWalkStepMs;
+        if (result == world::MoveResult::Blocked || world_->zoneIndex() != zoneBefore ||
+            world_->player() == *walkTarget_) {
+            walkTarget_.reset();
+        }
+        handleEffects(ActionState{}, now);
     }
 }
-
-namespace {
-
-// Splits text into lines of at most `width` characters, at spaces.
-std::vector<std::string> wrap(const std::string& text, std::size_t width) {
-    std::vector<std::string> lines;
-    std::size_t start = 0;
-    while (start <= text.size()) {
-        const std::size_t newline = text.find('\n', start);
-        const std::string paragraph = text.substr(start, newline == std::string::npos ? std::string::npos : newline - start);
-        std::string line;
-        std::size_t i = 0;
-        while (i < paragraph.size()) {
-            std::size_t end = paragraph.find(' ', i);
-            if (end == std::string::npos) {
-                end = paragraph.size();
-            }
-            const std::string word = paragraph.substr(i, end - i);
-            if (!line.empty() && line.size() + 1 + word.size() > width) {
-                lines.push_back(line);
-                line.clear();
-            }
-            line += (line.empty() ? "" : " ") + word;
-            i = end + 1;
-        }
-        lines.push_back(line);
-        if (newline == std::string::npos) {
-            break;
-        }
-        start = newline + 1;
-    }
-    return lines;
-}
-
-} // namespace
 
 void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
     for (auto& e : world_->takeEffects()) {
         effects_.push_back(std::move(e));
     }
     if (bubble_ && (actions.wasPressed(Action::Use) || actions.wasPressed(Action::Attack))) {
-        const std::size_t lines = wrap(bubble_->text, kBubbleColumns).size();
-        if (static_cast<std::size_t>(bubblePage_ + 1) * kBubbleLines < lines) {
+        const std::size_t lines = wrapText(bubble_->text, bubbleColumns_).size();
+        if (static_cast<std::size_t>(bubblePage_ + 1) * bubbleLines_ < lines) {
             ++bubblePage_;
         } else {
             bubble_.reset();
@@ -605,334 +962,12 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
             if (it != inventory.end()) {
                 selected_ = static_cast<std::size_t>(it - inventory.begin());
             }
-            bubble_ = world::Effect{world::Effect::Kind::Speech, "Found: " + itemName(static_cast<std::uint16_t>(e.value)),
-                                    std::nullopt, 0};
+            bubble_ = world::Effect{world::Effect::Kind::Speech,
+                                    "Found: " + itemName(static_cast<std::uint16_t>(e.value)), std::nullopt, 0};
             bubblePage_ = 0;
             break;
         }
         }
-    }
-}
-
-void Viewer::renderTile(SDL_Renderer* renderer, std::uint16_t tile, const SDL_FRect& dst) const {
-    if (tile == data::kNoTile || tile >= game().data.tiles.size()) {
-        return;
-    }
-    const SDL_FRect src{static_cast<float>((tile % kAtlasColumns) * kTile),
-                        static_cast<float>((tile / kAtlasColumns) * kTile), kTile, kTile};
-    SDL_RenderTexture(renderer, game().atlas, &src, &dst);
-}
-
-void Viewer::renderZone(SDL_Renderer* renderer, float x, float y, float size) const {
-    const auto& zone = game().data.zones[static_cast<std::size_t>(zone_)];
-    const int span = std::max<int>(zone.width, zone.height);
-    const float cell = std::floor(size / static_cast<float>(span));
-    const float ox = x + (size - cell * zone.width) / 2;
-    const float oy = y + (size - cell * zone.height) / 2;
-    for (int layer = 0; layer < 3; ++layer) {
-        for (int cy = 0; cy < zone.height; ++cy) {
-            for (int cx = 0; cx < zone.width; ++cx) {
-                const SDL_FRect dst{ox + static_cast<float>(cx) * cell, oy + static_cast<float>(cy) * cell, cell, cell};
-                renderTile(renderer, zone.at(cx, cy).layers[static_cast<std::size_t>(layer)], dst);
-            }
-        }
-    }
-}
-
-void Viewer::renderTiles(SDL_Renderer* renderer, float x, float y, float size) const {
-    const float cell = size / 9;
-    const int first = tilePage_ * kTilesPerPage;
-    for (int i = 0; i < kTilesPerPage; ++i) {
-        const int tile = first + i;
-        if (tile >= static_cast<int>(game().data.tiles.size())) {
-            break;
-        }
-        const SDL_FRect dst{x + static_cast<float>(i % 9) * cell, y + static_cast<float>(i / 9) * cell, cell, cell};
-        renderTile(renderer, static_cast<std::uint16_t>(tile), dst);
-    }
-}
-
-void Viewer::renderPlay(SDL_Renderer* renderer, float x, float y, float size, Uint64 now) const {
-    const auto& w = *world_;
-    const auto& zone = w.zone();
-    constexpr int kView = 9;
-    const float cell = size / kView;
-    // Camera: keep the player in the middle, without showing past the edges.
-    const int camX = std::clamp(w.player().x - kView / 2, 0, std::max(0, zone.width - kView));
-    const int camY = std::clamp(w.player().y - kView / 2, 0, std::max(0, zone.height - kView));
-    const auto dst = [&](int cx, int cy) {
-        return SDL_FRect{x + static_cast<float>(cx - camX) * cell, y + static_cast<float>(cy - camY) * cell, cell, cell};
-    };
-    const int endX = std::min<int>(zone.width, camX + kView);
-    const int endY = std::min<int>(zone.height, camY + kView);
-    for (int layer = 0; layer < 2; ++layer) {
-        for (int cy = camY; cy < endY; ++cy) {
-            for (int cx = camX; cx < endX; ++cx) {
-                renderTile(renderer, w.tile({cx, cy}, layer), dst(cx, cy));
-            }
-        }
-    }
-    for (const auto& [at, t] : w.overlays()) {
-        if (at.x >= camX && at.x < endX && at.y >= camY && at.y < endY) {
-            renderTile(renderer, t, dst(at.x, at.y));
-        }
-    }
-    for (const auto& m : w.monsters()) {
-        if (m.at.x >= camX && m.at.x < endX && m.at.y >= camY && m.at.y < endY) {
-            renderTile(renderer, m.tile, dst(m.at.x, m.at.y));
-        }
-    }
-    if (game().hero && w.heroVisible()) {
-        const bool walking = now - lastStepAt_ < 250;
-        const int set = walking ? 1 + w.stepCount() % 2 : 0;
-        std::uint16_t tile = game().hero->frame(set, w.facing());
-        // Attacking: the weapon's own pose of the hero.
-        if (w.attacking()) {
-            for (const auto& f : w.fighters()) {
-                if (f.character.type == 4 && f.item == w.weapon()) {
-                    const std::uint16_t pose = f.character.frame(1, w.facing());
-                    if (pose != data::kNoTile) {
-                        tile = pose;
-                    }
-                    break;
-                }
-            }
-        }
-        renderTile(renderer, tile, dst(w.player().x, w.player().y));
-    }
-    for (const auto& shot : w.shots()) {
-        if (shot.at.x >= camX && shot.at.x < endX && shot.at.y >= camY && shot.at.y < endY) {
-            renderTile(renderer, shot.tile, dst(shot.at.x, shot.at.y));
-        }
-    }
-    for (int cy = camY; cy < endY; ++cy) {
-        for (int cx = camX; cx < endX; ++cx) {
-            renderTile(renderer, w.tile({cx, cy}, 2), dst(cx, cy));
-        }
-    }
-    if (bubble_) {
-        renderBubble(renderer, x, y, size, cell, camX, camY);
-    }
-    if (showMap_) {
-        renderMap(renderer, x, y, size);
-    }
-    if (!banner_.empty()) {
-        const float w2 = static_cast<float>(banner_.size() * 16 + 32);
-        const SDL_FRect box{x + (size - w2) / 2, y + size / 2 - 24, w2, 48};
-        SDL_SetRenderDrawColor(renderer, 16, 18, 28, 230);
-        SDL_RenderFillRect(renderer, &box);
-        SDL_SetRenderScale(renderer, 2, 2);
-        text(renderer, (box.x + 16) / 2, (box.y + 16) / 2, banner_, 240);
-        SDL_SetRenderScale(renderer, 1, 1);
-    }
-}
-
-
-void Viewer::renderInventory(SDL_Renderer* renderer, float x, float y) const {
-    const auto& inventory = world_->inventory();
-    constexpr float kIcon = 16;
-    constexpr std::size_t kMax = 18;
-    const std::size_t first = selected_ >= kMax ? selected_ - kMax + 1 : 0;
-    for (std::size_t i = first; i < inventory.size() && i < first + kMax; ++i) {
-        const SDL_FRect dst{x + static_cast<float>(i - first) * (kIcon + 0), y, kIcon, kIcon};
-        if (i == selected_) {
-            SDL_SetRenderDrawColor(renderer, 235, 196, 90, 255);
-            const SDL_FRect frame{dst.x - 1, dst.y - 1, kIcon + 2, kIcon + 2};
-            SDL_RenderRect(renderer, &frame);
-        }
-        renderTile(renderer, inventory[i], dst);
-    }
-    if (inventory.empty()) {
-        SDL_SetRenderDrawColor(renderer, 110, 114, 125, 255);
-        SDL_RenderDebugText(renderer, x, y + 4, "Nothing carried");
-    } else {
-        SDL_SetRenderDrawColor(renderer, 150, 154, 165, 255);
-        SDL_RenderDebugText(renderer, x, y + kIcon + 4, itemName(inventory[selected_]).c_str());
-    }
-}
-
-void Viewer::renderHealth(SDL_Renderer* renderer, float x, float y) const {
-    // The weapon in hand, then a health bar that turns from green to red.
-    const SDL_FRect icon{x, y, 16, 16};
-    renderTile(renderer, world_->weapon(), icon);
-    const float ratio = static_cast<float>(world_->health()) / static_cast<float>(world::kMaxHealth);
-    const SDL_FRect back{x + 22, y + 4, 74, 8};
-    SDL_SetRenderDrawColor(renderer, 40, 44, 54, 255);
-    SDL_RenderFillRect(renderer, &back);
-    const auto red = static_cast<Uint8>(std::clamp(255.0f * (1.0f - ratio) * 1.6f, 60.0f, 235.0f));
-    const auto green = static_cast<Uint8>(std::clamp(255.0f * ratio * 1.2f, 50.0f, 200.0f));
-    SDL_SetRenderDrawColor(renderer, red, green, 70, 255);
-    const SDL_FRect bar{back.x, back.y, back.w * ratio, back.h};
-    SDL_RenderFillRect(renderer, &bar);
-}
-
-void Viewer::renderMap(SDL_Renderer* renderer, float x, float y, float size) const {
-    const auto& wm = world_->map();
-    // The map of the current zone: the one listing it, or the map with the
-    // site the zone belongs to.
-    const world::Map* map = &wm.world;
-    int hereX = -1;
-    int hereY = -1;
-    for (const world::Map* m : {&wm.world, &wm.dagobah}) {
-        for (int cy = 0; cy < m->height; ++cy) {
-            for (int cx = 0; cx < m->width; ++cx) {
-                const auto& zones = m->at(cx, cy).zones;
-                if (std::find(zones.begin(), zones.end(), world_->zoneIndex()) != zones.end()) {
-                    map = m;
-                    hereX = cx;
-                    hereY = cy;
-                }
-            }
-        }
-    }
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, 12, 14, 20, 225);
-    const SDL_FRect panel{x, y, size, size};
-    SDL_RenderFillRect(renderer, &panel);
-    const float cell = std::floor((size - 32) / static_cast<float>(std::max(map->width, map->height)));
-    const float ox = x + (size - cell * static_cast<float>(map->width)) / 2;
-    const float oy = y + (size - cell * static_cast<float>(map->height)) / 2;
-    for (int cy = 0; cy < map->height; ++cy) {
-        for (int cx = 0; cx < map->width; ++cx) {
-            const auto& site = map->at(cx, cy);
-            if (site.kind == world::SiteKind::None) {
-                continue;
-            }
-            const bool solved = world_->goal(site.zone).solved;
-            switch (site.kind) {
-            case world::SiteKind::Town: SDL_SetRenderDrawColor(renderer, 90, 150, 230, 255); break;
-            case world::SiteKind::Goal: SDL_SetRenderDrawColor(renderer, 220, 80, 70, 255); break;
-            case world::SiteKind::Puzzle:
-                if (solved) {
-                    SDL_SetRenderDrawColor(renderer, 110, 190, 110, 255);
-                } else {
-                    SDL_SetRenderDrawColor(renderer, 230, 180, 80, 255);
-                }
-                break;
-            default: SDL_SetRenderDrawColor(renderer, 70, 80, 72, 255); break;
-            }
-            const SDL_FRect box{ox + static_cast<float>(cx) * cell + 1, oy + static_cast<float>(cy) * cell + 1,
-                                cell - 2, cell - 2};
-            SDL_RenderFillRect(renderer, &box);
-            if (cx == hereX && cy == hereY) {
-                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                const SDL_FRect mark{box.x + cell / 2 - 4, box.y + cell / 2 - 4, 6, 6};
-                SDL_RenderFillRect(renderer, &mark);
-            }
-        }
-    }
-}
-
-void Viewer::renderBubble(SDL_Renderer* renderer, float x, float y, float size, float cell, int camX,
-                          int camY) const {
-    const world::Position speaker = bubble_->at.value_or(world_->player());
-    constexpr float kLine = 11;
-    constexpr float kPad = 8;
-    const float width = size - 8;
-    const auto all = wrap(bubble_->text, kBubbleColumns);
-    const std::size_t first = static_cast<std::size_t>(bubblePage_) * kBubbleLines;
-    const std::vector<std::string> lines(all.begin() + static_cast<std::ptrdiff_t>(std::min(first, all.size())),
-                                         all.begin() + static_cast<std::ptrdiff_t>(std::min(first + kBubbleLines, all.size())));
-    const bool more = first + kBubbleLines < all.size();
-    const float height = static_cast<float>(lines.size()) * kLine + 2 * kPad;
-    const float sx = x + (static_cast<float>(speaker.x - camX) + 0.5f) * cell;
-    const float sy = y + static_cast<float>(speaker.y - camY) * cell;
-    // Above the speaker when there is room, otherwise below.
-    float by = sy - height - 10;
-    const bool below = by < y;
-    if (below) {
-        by = sy + cell + 10;
-    }
-    const float bx = std::clamp(sx - width / 2, x + 4, x + size - width - 4);
-    by = std::clamp(by, y + 4, y + size - height - 4);
-
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 90);
-    const SDL_FRect shadow{bx + 3, by + 3, width, height};
-    SDL_RenderFillRect(renderer, &shadow);
-    SDL_SetRenderDrawColor(renderer, 250, 248, 240, 245);
-    const SDL_FRect box{bx, by, width, height};
-    SDL_RenderFillRect(renderer, &box);
-    // A small tail pointing at the speaker.
-    for (int i = 0; i < 6; ++i) {
-        const float tx = std::clamp(sx, bx + 10, bx + width - 10);
-        const float ty = below ? by - static_cast<float>(i) - 1 : by + height + static_cast<float>(i);
-        const SDL_FRect row{tx - static_cast<float>(6 - i), ty, static_cast<float>(2 * (6 - i)), 1};
-        SDL_RenderFillRect(renderer, &row);
-    }
-    SDL_SetRenderDrawColor(renderer, 30, 32, 44, 255);
-    SDL_RenderRect(renderer, &box);
-    for (std::size_t i = 0; i < lines.size(); ++i) {
-        SDL_SetRenderDrawColor(renderer, 30, 32, 44, 255);
-        SDL_RenderDebugText(renderer, bx + kPad, by + kPad + static_cast<float>(i) * kLine, lines[i].c_str());
-    }
-    if (more) {
-        // A small arrow: there is another page.
-        SDL_SetRenderDrawColor(renderer, 30, 32, 44, 255);
-        for (int i = 0; i < 4; ++i) {
-            const SDL_FRect row{bx + width - 14 + static_cast<float>(i), by + height - 9 + static_cast<float>(i),
-                                static_cast<float>(8 - 2 * i), 1};
-            SDL_RenderFillRect(renderer, &row);
-        }
-    }
-}
-
-void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float statusY, Uint64 now) const {
-    if (games_.empty()) {
-        return;
-    }
-    const auto& g = game();
-    char line[128];
-    char detail[128] = "";
-    switch (mode_) {
-    case ViewMode::Title: {
-        if (g.setup) {
-            const SDL_FRect dst{x, y, size, size};
-            SDL_RenderTexture(renderer, g.setup, nullptr, &dst);
-        }
-        renderTitleMenu(renderer, x, y, size);
-        std::snprintf(line, sizeof line, "Arrows: choose  Space/A: start  M: zones");
-        break;
-    }
-    case ViewMode::Play: {
-        renderPlay(renderer, x, y, size, now);
-        if (generated_) {
-            text(renderer, x, statusY, g.game == data::Layout::Indy ? "Indiana Jones" : "Yoda Stories", 220);
-            char where[64];
-            std::snprintf(where, sizeof where, "Zone %d", world_->zoneIndex());
-            text(renderer, x + size - static_cast<float>(std::strlen(where) * 8), statusY, where, 110);
-            renderInventory(renderer, x, statusY + 14);
-            renderHealth(renderer, x + size - 96, statusY + 14);
-            return;
-        }
-        std::snprintf(line, sizeof line, "Zone %d  (%d,%d)", world_->zoneIndex(), world_->player().x,
-                      world_->player().y);
-        std::snprintf(detail, sizeof detail, "Esc/Start: back to the viewer");
-        break;
-    }
-    case ViewMode::Zone: {
-        renderZone(renderer, x, y, size);
-        const auto& zone = g.data.zones[static_cast<std::size_t>(zone_)];
-        std::snprintf(line, sizeof line, "Zone %d/%zu  %dx%d  type %u", zone_, g.data.zones.size(), zone.width,
-                      zone.height, static_cast<unsigned>(zone.type));
-        std::snprintf(detail, sizeof detail, "Space/A: walk here.  %zu hotspots, %zu scripts",
-                      zone.hotspots ? zone.hotspots->size() : 0, zone.actions ? zone.actions->size() : 0);
-        break;
-    }
-    case ViewMode::Tiles: {
-        renderTiles(renderer, x, y, size);
-        const int first = tilePage_ * kTilesPerPage;
-        const int last = std::min<int>(first + kTilesPerPage, static_cast<int>(g.data.tiles.size())) - 1;
-        std::snprintf(line, sizeof line, "Tiles %d-%d of %zu", first, last, g.data.tiles.size());
-        break;
-    }
-    }
-    text(renderer, x, statusY, g.game == data::Layout::Indy ? "Indiana Jones" : "Yoda Stories", 220);
-    text(renderer, x, statusY + 14, line, 150);
-    if (!g.paletteFromGame) {
-        text(renderer, x, statusY + 28, "No .EXE found: showing greyscale", 150);
-    } else if (detail[0] != '\0') {
-        text(renderer, x, statusY + 28, detail, 150);
     }
 }
 

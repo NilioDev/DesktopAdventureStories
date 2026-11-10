@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "test.hpp"
 
+#include "das/pack/import.hpp"
 #include "das/util/json.hpp"
 #include "das/util/png.hpp"
 #include "das/util/text.hpp"
@@ -222,4 +223,18 @@ DAS_TEST("zip archives with stored and deflated entries are read") {
     damaged[30 + 15 + 1] ^= 1; // a byte of the stored file
     DAS_CHECK(throws([&] { (void)zip::read(damaged); }));
     DAS_CHECK(throws([] { (void)zip::read(bytes("not a zip at all, just some text here")); }));
+}
+
+DAS_TEST("games are found in a zip or loose files handed over in memory") {
+    const data::Bytes archive = makeZip({{"Yoda/YODESK.DTA", bytes("x")}, {"Yoda/readme.txt", bytes("hi")}});
+    DAS_CHECK(pack::looksLikeZip(archive));
+    DAS_CHECK(!pack::looksLikeZip(bytes("VERS")));
+    const auto zipped = pack::zipSource(archive);
+    DAS_CHECK(pack::gamesIn(*zipped) == std::vector<std::string>{"yoda"});
+    DAS_CHECK(zipped->read("Yoda/readme.txt") == bytes("hi"));
+
+    const auto loose = pack::filesSource({{"DESKTOP.DAW", bytes("y")}, {"DESKADV.EXE", bytes("z")}});
+    DAS_CHECK(pack::gamesIn(*loose) == std::vector<std::string>{"indy"});
+    DAS_CHECK(loose->read("DESKADV.EXE") == bytes("z"));
+    DAS_CHECK(throws([] { (void)pack::zipSource(bytes("not a zip at all, just some text here")); }));
 }

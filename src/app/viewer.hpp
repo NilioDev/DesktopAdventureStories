@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Data viewer: shows the title screen, zones and tiles of the original games
-// the player pointed us at. This is the phase 1 front end; it grows into the
-// game and, later, the editor.
+// The front end: the title screen and its menus, the game with its panel
+// (health, weapon, inventory), the pause menu, the options and the map. It
+// also keeps the data viewer for zones and tiles. Keyboard, gamepad, mouse
+// and touch all reach it as actions or pointer presses.
 #pragma once
 
+#include "das/data/character.hpp"
 #include "das/data/game_data.hpp"
 #include "das/data/palette.hpp"
-#include "das/data/character.hpp"
 #include "das/input.hpp"
 #include "das/pack/pack.hpp"
 #include "das/world/world.hpp"
 
 #include "audio.hpp"
+#include "input_bindings.hpp"
+#include "settings.hpp"
+#include "ui.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <deque>
-
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -27,6 +30,9 @@
 namespace das::app {
 
 enum class ViewMode { Title, Zone, Tiles, Play };
+
+// The device the player used last; the hints on screen follow it.
+enum class InputDevice { Keyboard, Gamepad, Touch };
 
 struct LoadedGame {
     data::Layout game = data::Layout::Yoda;
@@ -64,8 +70,35 @@ public:
     void placePlayer(int x, int y);
     // Walks a scripted path ("UDLR" letters) in play mode; for testing.
     void walk(const std::string& path);
+    // Opens the pause menu (or the options from it); for testing.
+    void openMenu(bool options);
+    void openMap() { showMap_ = true; }
+    void openControls() {
+        page_ = Page::Controls;
+        menuItem_ = 0;
+    }
 
     void setAudio(Audio* audio) { audio_ = audio; }
+    // The settings the options menu changes; owned by the app.
+    void setSettings(Settings* settings) { settings_ = settings; }
+    // Sets the tile filter of the settings on every game's textures.
+    void applyFilter();
+    // True once after the options menu changed a setting.
+    bool takeSettingsChanged();
+    bool quitRequested() const { return quit_; }
+    // True once after the player chose Add games in the menu.
+    bool takeAddGames() {
+        const bool asked = addGames_;
+        addGames_ = false;
+        return asked;
+    }
+    // The controls, for showing them and changing them in the menu.
+    void setBindings(const InputBindings* bindings) { bindings_ = bindings; }
+    // The action waiting for a new key or button, if any. The app hands
+    // the next key or button to the bindings and then calls endCapture().
+    std::optional<Action> capturing() const { return capture_; }
+    void endCapture() { capture_.reset(); }
+
     // Where games are saved; without it nothing is saved.
     void setSaveFolder(std::filesystem::path folder) { saveFolder_ = std::move(folder); }
     // Saves a game in progress so that Continue picks it up.
@@ -73,32 +106,94 @@ public:
     bool hasSave() const;
     bool continueGame();
 
+    void setInputDevice(InputDevice device) { device_ = device; }
+    InputDevice inputDevice() const { return device_; }
+    // Whether the game itself is on screen and takes moves (no menu, map or
+    // ending in the way): the time for the touch pad.
+    bool playing() const { return mode_ == ViewMode::Play && page_ == Page::None && !showMap_ && banner_.empty(); }
+    // A mouse click or a tap, in interface units.
+    void pointerPressed(float x, float y);
+
     void update(const ActionState& actions, std::optional<Step> step, Uint64 now);
-    // Draws the view into a square area of the logical canvas, and the status
-    // lines below it.
-    void render(SDL_Renderer* renderer, float x, float y, float size, float statusY, Uint64 now) const;
+    void render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now) const;
 
 private:
+    // Menus: the title screen's, the pause menu and the options.
+    enum class Page { None, Main, Pause, Options, Controls };
+    enum class RowId {
+        Continue,
+        NewGame,
+        Game,
+        Size,
+        Difficulty,
+        Options,
+        AddGames,
+        DataViewer,
+        Quit,
+        Resume,
+        Map,
+        SaveAndQuit,
+        Fullscreen,
+        Scaling,
+        Filter,
+        Volume,
+        TouchPad,
+        Controls,
+        Bind,
+        ResetControls,
+        Back,
+    };
+    struct Row {
+        RowId id;
+        std::string label;
+        std::string value; // empty for a plain button
+        Action action = Action::Count; // Bind: the action to change
+    };
+    // A place on screen the pointer can press, found while drawing.
+    struct Hit {
+        enum class Kind { Row, RowLeft, Field, Slot, Menu, Map } kind;
+        SDL_FRect rect;
+        int index = 0;
+    };
+
     LoadedGame& game() { return *games_[current_]; }
     const LoadedGame& game() const { return *games_[current_]; }
 
-    void renderTile(SDL_Renderer* renderer, std::uint16_t tile, const SDL_FRect& dst) const;
-    void renderZone(SDL_Renderer* renderer, float x, float y, float size) const;
-    void renderTiles(SDL_Renderer* renderer, float x, float y, float size) const;
-    void renderPlay(SDL_Renderer* renderer, float x, float y, float size, Uint64 now) const;
-    void renderBubble(SDL_Renderer* renderer, float x, float y, float size, float cell, int camX, int camY) const;
+    // viewer.cpp: state and input.
+    void startPlay();
+    void leavePlay();
+    std::vector<Row> menuRows() const;
+    void updateMenu(const ActionState& actions, std::optional<Step> step);
+    void menuActivate(RowId id, int change);
+    void menuBack();
+    void startCapture(Action action);
+    void updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now);
+    void handleClick(Uint64 now);
+    std::optional<Step> stepTowards(world::Position target) const;
     // Shows what the scripts asked for; resumes them when it is done.
     void handleEffects(const ActionState& actions, Uint64 now);
-    void updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now);
-    void renderInventory(SDL_Renderer* renderer, float x, float y) const;
-    void renderHealth(SDL_Renderer* renderer, float x, float y) const;
-    void renderMap(SDL_Renderer* renderer, float x, float y, float size) const;
+    void useSelected(Uint64 now);
     std::string itemName(std::uint16_t tile) const;
-    void updateTitle(const ActionState& actions, std::optional<Step> step);
-    void renderTitleMenu(SDL_Renderer* renderer, float x, float y, float size) const;
     std::filesystem::path savePath() const;
     std::string gameId() const;
     int difficultyValue() const;
+
+    // viewer_draw.cpp: drawing.
+    void renderTile(SDL_Renderer* renderer, std::uint16_t tile, const SDL_FRect& dst) const;
+    void renderZone(SDL_Renderer* renderer, const SDL_FRect& field) const;
+    void renderTiles(SDL_Renderer* renderer, const SDL_FRect& field) const;
+    void renderPlay(SDL_Renderer* renderer, const SDL_FRect& field, Uint64 now) const;
+    void renderScanlines(SDL_Renderer* renderer, const SDL_FRect& field, float scale) const;
+    void renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float cell, int camX, int camY) const;
+    void renderBanner(SDL_Renderer* renderer, const SDL_FRect& field) const;
+    void renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const;
+    void renderHud(SDL_Renderer* renderer, const SDL_FRect& panel) const;
+    void renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const char* heading) const;
+    void renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;
+    void renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;
+    void renderHints(SDL_Renderer* renderer, const SDL_FRect& panel) const;
+    std::string hintText() const;
+    void addHit(Hit::Kind kind, const SDL_FRect& rect, int index = 0) const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
     std::size_t current_ = 0;
@@ -109,6 +204,7 @@ private:
     Uint64 lastStepAt_ = 0;
     Uint64 lastUpdate_ = 0; // for letting game time pass
     Audio* audio_ = nullptr;
+    Settings* settings_ = nullptr;
     std::deque<world::Effect> effects_;
     std::optional<world::Effect> bubble_;
     int bubblePage_ = 0;
@@ -118,12 +214,34 @@ private:
     std::size_t selected_ = 0; // inventory slot
     bool showMap_ = false;
 
-    // Title menu and options.
+    // Menus and options.
+    Page page_ = Page::Main;
+    Page optionsFrom_ = Page::Main;
+    int menuItem_ = 0;
     std::filesystem::path saveFolder_;
     world::GeneratorOptions options_; // of the game being played
-    int menuItem_ = 0;
     world::WorldSize size_ = world::WorldSize::Medium;
     int difficulty_ = 1; // 0 easy, 1 normal, 2 hard
+    bool settingsChanged_ = false;
+    const InputBindings* bindings_ = nullptr;
+    std::optional<Action> capture_;
+    Uint64 captureUntil_ = 0;
+    bool quit_ = false;
+    bool addGames_ = false;
+
+    // Pointer input and walking to a tapped cell.
+    InputDevice device_ = InputDevice::Keyboard;
+    std::optional<SDL_FPoint> click_;
+    std::optional<world::Position> walkTarget_;
+    Uint64 nextWalkAt_ = 0;
+
+    // Filled while drawing, read by the next update.
+    mutable std::vector<Hit> hits_;
+    mutable int camX_ = 0;
+    mutable int camY_ = 0;
+    mutable float cell_ = 32;
+    mutable std::size_t bubbleColumns_ = 33;
+    mutable std::size_t bubbleLines_ = 12;
 };
 
 } // namespace das::app

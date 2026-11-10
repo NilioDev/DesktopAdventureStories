@@ -124,6 +124,23 @@ std::unique_ptr<Source> openSource(const fs::path& where) {
     return nullptr;
 }
 
+std::unique_ptr<Source> zipSource(const data::Bytes& archive) { return std::make_unique<ZipSource>(zip::read(archive)); }
+
+std::unique_ptr<Source> filesSource(std::vector<std::pair<std::string, data::Bytes>> files) {
+    std::vector<zip::Entry> entries;
+    for (auto& [name, content] : files) {
+        zip::Entry e;
+        e.name = name;
+        e.content = std::move(content);
+        entries.push_back(std::move(e));
+    }
+    return std::make_unique<ZipSource>(std::move(entries));
+}
+
+bool looksLikeZip(const data::Bytes& bytes) {
+    return bytes.size() >= 4 && bytes[0] == 'P' && bytes[1] == 'K' && bytes[2] == 3 && bytes[3] == 4;
+}
+
 std::vector<std::string> gamesIn(const Source& source) {
     const std::vector<std::string> paths = source.list();
     std::vector<std::string> out;

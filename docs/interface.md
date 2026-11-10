@@ -44,8 +44,8 @@ smaller, for screens at least 320 units on their short side.
   author and description below the menu. A mod that cannot be applied shows
   Error and the reason. *Open mods folder* (desktop) opens the folder in the
   file manager. See [formats/mod.md](formats/mod.md).
-- **Editor:** draws on a zone's layers, places hotspots, adds zones, tries a
-  zone out and saves the changes as a mod. See [editor.md](editor.md).
+- **Editor:** its own screen for changing zones, hotspots and tiles, trying
+  a zone out and saving the changes as a mod. See [editor.md](editor.md).
 - **Map:** the world's sites coloured by kind (town, open puzzle, solved
   puzzle, goal), with the hero's site blinking.
 

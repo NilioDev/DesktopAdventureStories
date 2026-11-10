@@ -399,8 +399,18 @@ void render(App& app, Uint64 now) {
     SDL_GetCurrentRenderOutputSize(r, &pw, &ph);
     app.pixelWidth = pw;
     app.pixelHeight = ph;
-    app.layout = das::app::ui::layout(pw, ph, app.settings.pixelPerfect,
-                                      app.touch.visible() ? das::app::TouchControls::kBottomRoom : 0);
+    app.layout = app.viewer.editing()
+                     ? das::app::ui::plainLayout(pw, ph, app.viewer.editorScale(pw, ph))
+                     : das::app::ui::layout(pw, ph, app.settings.pixelPerfect,
+                                            app.touch.visible() ? das::app::TouchControls::kBottomRoom : 0);
+    // The editor's text fields want the keyboard (on phones: the on-screen one).
+    if (app.viewer.editorTyping() != SDL_TextInputActive(app.window)) {
+        if (app.viewer.editorTyping()) {
+            SDL_StartTextInput(app.window);
+        } else {
+            SDL_StopTextInput(app.window);
+        }
+    }
     app.touch.place(app.layout);
     SDL_SetRenderScale(r, 1, 1);
     const auto bg = das::app::ui::color::background;
@@ -596,7 +606,26 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         // A tap needs the layout of a drawn frame: draw one first. The
         // last tap is handled by the first frame.
         render(*app, SDL_GetTicks());
-        app->viewer.pointerPressed(taps[i].x, taps[i].y);
+        if (app->viewer.editing()) {
+            // The editor takes a click as mouse events, a frame apart.
+            SDL_Event e;
+            SDL_zero(e);
+            e.type = SDL_EVENT_MOUSE_MOTION;
+            e.motion.x = taps[i].x;
+            e.motion.y = taps[i].y;
+            app->viewer.editorEvent(e);
+            SDL_zero(e);
+            e.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+            e.button.button = SDL_BUTTON_LEFT;
+            e.button.x = taps[i].x;
+            e.button.y = taps[i].y;
+            app->viewer.editorEvent(e);
+            render(*app, SDL_GetTicks());
+            e.type = SDL_EVENT_MOUSE_BUTTON_UP;
+            app->viewer.editorEvent(e);
+        } else {
+            app->viewer.pointerPressed(taps[i].x, taps[i].y);
+        }
         if (i + 1 < taps.size()) {
             update(*app, SDL_GetTicks(), 0);
             app->actions.endFrame();
@@ -632,10 +661,52 @@ bool captureControl(App& app, const SDL_Event& event) {
     return true;
 }
 
+// The editor reads the mouse and keyboard itself. A finger acts as the mouse.
+void forwardToEditor(App& app, const SDL_Event& event) {
+    SDL_Event e = event;
+    switch (event.type) {
+    case SDL_EVENT_MOUSE_MOTION:
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+    case SDL_EVENT_MOUSE_WHEEL:
+        if (event.type != SDL_EVENT_MOUSE_WHEEL && event.motion.which == SDL_TOUCH_MOUSEID) {
+            return;
+        }
+        SDL_ConvertEventToRenderCoordinates(app.renderer, &e);
+        break;
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_UP: {
+        const float x = event.tfinger.x * static_cast<float>(app.pixelWidth) / app.layout.scale;
+        const float y = event.tfinger.y * static_cast<float>(app.pixelHeight) / app.layout.scale;
+        SDL_zero(e);
+        if (event.type == SDL_EVENT_FINGER_MOTION) {
+            e.type = SDL_EVENT_MOUSE_MOTION;
+            e.motion.x = x;
+            e.motion.y = y;
+        } else {
+            e.type = event.type == SDL_EVENT_FINGER_DOWN ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+            e.button.button = SDL_BUTTON_LEFT;
+            e.button.x = x;
+            e.button.y = y;
+        }
+        break;
+    }
+    case SDL_EVENT_TEXT_INPUT:
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP: break;
+    default: return;
+    }
+    app.viewer.editorEvent(e);
+}
+
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     auto& app = *static_cast<App*>(appstate);
     if (captureControl(app, *event)) {
         return SDL_APP_CONTINUE;
+    }
+    if (app.viewer.editing()) {
+        forwardToEditor(app, *event);
     }
     switch (event->type) {
     case SDL_EVENT_QUIT: return SDL_APP_SUCCESS;
@@ -656,12 +727,6 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
             SDL_ConvertEventToRenderCoordinates(app.renderer, event);
             app.viewer.pointerPressed(event->button.x, event->button.y);
             welcomePress(app, event->button.x, event->button.y);
-        }
-        break;
-    case SDL_EVENT_MOUSE_MOTION:
-        if ((event->motion.state & SDL_BUTTON_LMASK) != 0 && event->motion.which != SDL_TOUCH_MOUSEID) {
-            SDL_ConvertEventToRenderCoordinates(app.renderer, event);
-            app.viewer.pointerDragged(event->motion.x, event->motion.y);
         }
         break;
     case SDL_EVENT_FINGER_DOWN:

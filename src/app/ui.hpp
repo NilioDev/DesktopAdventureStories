@@ -51,6 +51,8 @@ struct Layout {
 // whole multiple of that on screen. On a tall screen `bottomRoom` units are
 // kept free under the panel (for the touch pad).
 Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom = 0);
+// The whole screen at a given scale, without a play field (the editor).
+Layout plainLayout(int pixelWidth, int pixelHeight, float scale);
 
 // Starts drawing a frame in units.
 void begin(SDL_Renderer* renderer, const Layout& layout);

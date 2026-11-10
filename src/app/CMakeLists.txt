@@ -3,7 +3,10 @@ set(DAS_APP_SOURCES
     input_bindings.cpp
     viewer.cpp
     viewer_draw.cpp
-    viewer_edit.cpp
+    gui.cpp
+    editor.cpp
+    editor_zones.cpp
+    editor_tiles.cpp
     ui.cpp
     settings.cpp
     touch_controls.cpp

@@ -1,6 +1,6 @@
-# The zone editor
+# The editor
 
-*Editor* in the title menu opens the selected game's zones for editing.
+*Editor* in the title menu opens the selected game for editing.
 Changes are saved as a mod (see [formats/mod.md](formats/mod.md)) with the
 id `my-yoda` or `my-indy`, in the mods folder, and that mod is switched on.
 The original game and its pack are never changed.
@@ -11,46 +11,70 @@ holds only what was changed in the editor. To make a mod of your own, rename
 the saved folder and change `id`, `name` and `description` in its
 `mod.json`.
 
-## Drawing
+## The screen
 
-The play field shows the whole zone. The panel shows the tile in hand and
-the editor's menu.
+The editor has its own screen. Every button, list and field explains
+itself: point at it (or move the focus to it) and the bar at the bottom of
+the screen says what it does. Pointing at a cell of the zone names what is
+in it.
+
+- **Top bar:** the *Zones* and *Tiles* tabs, *Undo*, *Redo*, *Save* (`*`
+  means there are unsaved changes), *Try it out*, and on the right the
+  mod's name, *A-* / *A+* (smaller or larger interface) and *Leave* (with
+  unsaved changes it asks to be pressed again).
+- **Zones tab:** the zones on the left (search by number, kind, planet or
+  size; *New zone* and *Copy this zone* below), the zone in the middle,
+  and its properties, tools, layers and tiles on the right.
+- **Tiles tab:** all tiles on the left (filter by kind, search by number or
+  name), the chosen tile large in the middle with the zones that use it
+  (press one to open it), and its name and what it is on the right.
+
+## Controls
 
 | | Mouse / touch | Keyboard | Gamepad |
 | --- | --- | --- | --- |
-| Draw with the tool | Click or drag on the zone | Arrows, then Space | D-pad, then A |
-| Take the tile under the cursor | Tool *Pick* | Ctrl | B |
-| Choose a tile | *Tile* in the menu | M | Back |
-| Change layer | *Layer* in the menu | Q / E | LB / RB |
-| Menu | Click it | Esc | Start |
+| Use a button, field or cell | Click | Enter or Space | A |
+| Move the focus | | Tab, Shift+Tab, arrows | D-pad, stick |
+| Draw on the zone | Click or drag | Arrows move the cursor, Enter draws | D-pad, A |
+| Leave the zone (focus) | | Esc or Tab | B |
+| Take the tile under the mouse | Right-click, or tool *Pick* | | |
+| Change a value | `<` and `>`, or the wheel | Left and right | D-pad left and right |
+| Undo, redo, save | Top bar | Ctrl+Z, Ctrl+Y (or Ctrl+Shift+Z), Ctrl+S | Top bar |
 
-A drag is one step for *Undo*. Layers above the one being edited are drawn
-see-through.
+A drag is one step for *Undo* (up to 100 steps). Layers above the one being
+edited are drawn see-through; the boxes in front of the layers hide or show
+them.
 
-## The menu
+## Zones
 
-| Row | What it does |
+| Control | What it does |
 | --- | --- |
-| Zone | The zone being edited; left and right step through the zones |
+| Kind | The kind of zone, which the world generator chooses zones by; the help bar explains each |
+| Planet | Desert, Snow, Forest or Swamp |
+| 9 x 9, 18 x 18 | The zone's size; growing keeps what is there and fills the new cells with the tile in hand, shrinking cuts off the right and bottom |
+| Edit scripts | Opens the zone's scripts as text (see below) |
+| Tool | Paint, Erase, Pick (takes the tile or hotspot kind under the cursor), Fill (a rectangle: press, drag, let go) |
 | Layer | Floor, Objects, Roof, or Hotspots |
-| Tool | Paint, Erase, or Pick (takes the tile or hotspot type under the cursor) |
-| Tile | The tile to paint; pressing it opens the tile picker (9 x 9 tiles a page; Q / E or LB / RB turn pages) |
-| Type, Argument | On the Hotspots layer: the type that Paint places, and the argument of the hotspot under the cursor |
-| Zone type | The zone's type, which the world generator chooses zones by |
-| Scripts | The number of scripts in the zone; pressing it opens them as text in the system's text editor (desktop) |
-| Undo | Takes back the last change (up to 100) |
-| New zone | Adds a zone of the same size, type and planet, with its floor in the tile in hand |
-| Try it out | Plays the zone as it is now; Esc or the Back button returns to the editor |
-| Save mod | Saves all changes as the mod; `*` means there are unsaved changes |
-| Leave editor | Back to the title menu; with unsaved changes it asks to be chosen again |
+| New zone | Adds a zone of the same size, kind and planet, its floor all in the tile in hand |
+| Copy this zone | Adds a copy of the zone |
+
+## Tiles
+
+Tiles can be given a name and their flags changed: See-through, Floor,
+Blocks the way, Can be pushed, Roof, World map, Weapon, Person and Item.
+Bits the editor has no name for are shown and kept. *Add a copy as a new
+tile* adds a tile to change; its picture is a PNG in the mod's `tiles`
+folder (see [formats/mod.md](formats/mod.md)).
 
 ## Hotspots
 
 Hotspots are the places in a zone where something can happen: a door, a
-spot for an item, a place for a person. Paint places the chosen type (or
-changes the type of the hotspot already there), Erase removes it. The
-argument depends on the type, for example the zone behind a door. These
-are the names the editor uses:
+spot for an item, a place for a person. On the Hotspots layer, Paint places
+the kind chosen under *Hotspot to place* on an empty cell; clicking a
+hotspot selects it, and the panel then changes its kind, its argument and
+whether it is active at the start. Erase removes it. The argument depends
+on the kind, for example the zone behind a door (*Go to zone* opens it).
+These are the names the editor uses:
 
 | Type | Name | Meaning |
 | --- | --- | --- |
@@ -74,7 +98,7 @@ are the names the editor uses:
 `scripts/NNNN.txt` in the mod's folder and opens that file in the system's
 text editor. The format is in [formats/script-text.md](formats/script-text.md)
 and what each line does in [formats/scripts.md](formats/scripts.md). Save the
-file, then choose *Try it out* or *Save mod*: both read the scripts files
+file, then choose *Try it out* or *Save*: both read the scripts files
 again first. A mistake stops them and names the file and line.
 
 ## Not in the editor yet

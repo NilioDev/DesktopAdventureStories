@@ -359,7 +359,7 @@ void Layout::placeIslands(int count) {
                 const int innerY = line == 0 ? 1 : 8;
                 best = longestRun([&](int i) { return at(i, line); }, [&](int i) { return at(i, innerY); }, start);
             }
-            int& length = islandLength_[side];
+            int& length = islandLength_[static_cast<std::size_t>(side)];
             const bool shortOk = side < 2; // left and top accept a run of three
             if (best >= (shortOk ? 3 : 4) && !(best == 3 && start > 0 && start < 7)) {
                 if (best == 3) {
@@ -417,7 +417,7 @@ int Layout::assignPuzzles() {
     int count = 0;
     const auto slot = [&](int x, int y) {
         at(x, y) = Cell::PuzzleSlot;
-        puzzle[y * kSide + x] = static_cast<std::int16_t>(count);
+        puzzle[static_cast<std::size_t>(y * kSide + x)] = static_cast<std::int16_t>(count);
         ++count;
     };
     // The far end of what lies behind each blockade.
@@ -526,7 +526,7 @@ int Layout::assignPuzzles() {
     int lastY = -1;
     for (int y = 0; y < kSide && lastX < 0; ++y) {
         for (int x = 0; x < kSide; ++x) {
-            if (puzzle[y * kSide + x] == last && ring(x, y) < 3) {
+            if (puzzle[static_cast<std::size_t>(y * kSide + x)] == last && ring(x, y) < 3) {
                 lastX = x;
                 lastY = y;
                 break;
@@ -537,10 +537,10 @@ int Layout::assignPuzzles() {
         bool swapped = false;
         for (int y = 0; y < kSide && !swapped; ++y) {
             for (int x = 0; x < kSide; ++x) {
-                const int p = puzzle[y * kSide + x];
+                const int p = puzzle[static_cast<std::size_t>(y * kSide + x)];
                 if (p >= 0 && ring(x, y) >= 3 && p != last) {
-                    puzzle[y * kSide + x] = static_cast<std::int16_t>(last);
-                    puzzle[lastY * kSide + lastX] = static_cast<std::int16_t>(p);
+                    puzzle[static_cast<std::size_t>(y * kSide + x)] = static_cast<std::int16_t>(last);
+                    puzzle[static_cast<std::size_t>(lastY * kSide + lastX)] = static_cast<std::int16_t>(p);
                     swapped = true;
                     break;
                 }

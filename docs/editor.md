@@ -24,7 +24,8 @@ in it.
   unsaved changes it asks to be pressed again).
 - **Zones tab:** the zones on the left (search by number, kind, planet or
   size; *New zone* and *Copy this zone* below), the zone in the middle,
-  and its properties, tools, layers and tiles on the right.
+  and on the right either *Draw* (its properties, tools, layers and tiles)
+  or *Story* (what it asks for and gives).
 - **Tiles tab:** all tiles on the left (filter by kind, search by number or
   name), the chosen tile large in the middle with the zones that use it
   (press one to open it), and its name and what it is on the right.
@@ -54,7 +55,7 @@ them.
 | 9 x 9, 18 x 18 | The zone's size; growing keeps what is there and fills the new cells with the tile in hand, shrinking cuts off the right and bottom |
 | Edit scripts | Opens the zone's scripts as text (see below) |
 | Tool | Paint, Erase, Pick (takes the tile or hotspot kind under the cursor), Fill (a rectangle: press, drag, let go) |
-| Layer | Floor, Objects, Roof, or Hotspots |
+| Layer | Floor, Objects, Roof, Hotspots, or People |
 | New zone | Adds a zone of the same size, kind and planet, its floor all in the tile in hand |
 | Copy this zone | Adds a copy of the zone |
 
@@ -92,6 +93,30 @@ These are the names the editor uses:
 | 13 | Teleporter | |
 | 14, 15 | Ship out, Ship in | argument: the zone the ship flies to |
 
+## People
+
+On the People layer, Paint places the character chosen under *Person to
+place* on an empty cell; clicking someone selects them, and the panel then
+changes who it is or removes them. Erase removes, Pick takes the character
+under the cursor. The panel says what each character is and how it moves.
+The hero and weapons are not offered.
+
+## Story
+
+*Story* shows the zone's lists that the world generator builds a game
+from (see [world-generator.md](world-generator.md)):
+
+| List | What it holds |
+| --- | --- |
+| Asks for | Items the zone can ask the hero to bring; one is picked for each game |
+| Asks for second | Yoda Stories: the second item when the zone holds two puzzles |
+| Gives | Items the hero can find or get in the zone |
+| People | People who can stand on the zone's person spots |
+
+The lists of the rooms behind the zone's doors count too. Clicking a tile
+takes it off a list; *Add the tile in hand* adds the tile chosen below (it
+warns when that tile is not marked as an item or a person).
+
 ## Scripts
 
 *Scripts* saves the mod (when needed), writes the zone's scripts to
@@ -103,7 +128,6 @@ again first. A mistake stops them and names the file and line.
 
 ## Not in the editor yet
 
-Placed characters and the zone's item lists are kept as they are. They can
-be changed in the zone's JSON file in the mod (see
-[formats/pack.md](formats/pack.md)). New tiles and sounds are added as files
-to the mod.
+New tiles are drawn outside the editor and added as PNG files to the mod;
+sounds, puzzles and characters are added as files too (see
+[formats/mod.md](formats/mod.md)).

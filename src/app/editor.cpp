@@ -120,6 +120,34 @@ std::string hotspotHelp(std::uint32_t type) {
     }
 }
 
+std::string characterKind(std::uint16_t type) {
+    switch (type) {
+    case 1: return "the hero";
+    case 2: return "a monster or person";
+    case 4: return "a weapon";
+    default: return "kind " + std::to_string(type);
+    }
+}
+
+std::string movement(std::uint16_t movement) {
+    switch (movement) {
+    case 0: return "stands still";
+    case 1: return "goes for the hero";
+    case 2: return "goes for the hero when close, else wanders";
+    case 3: return "wanders";
+    case 4: return "stays put and attacks what comes close";
+    case 5: return "rolls after the hero";
+    case 6: return "goes for the hero when close, else stays";
+    case 7: return "moves like a droid";
+    case 8: return "hovers";
+    case 9: return "wanders and shoots";
+    case 10: return "patrols";
+    case 11: return "keeps away from the hero";
+    case 12: return "is part of the zone: never moves or attacks";
+    default: return "moves in way " + std::to_string(movement);
+    }
+}
+
 } // namespace names
 
 // --- setup -------------------------------------------------------------------
@@ -131,6 +159,31 @@ Editor::Editor(Host host, int zone) : host_(std::move(host)) {
     cursorY_ = z.height / 2;
     const auto t = z.at(cursorX_, cursorY_).layers[0];
     tile_ = t == data::kNoTile ? 0 : t;
+    for (const auto& entry : host_.data->characters) {
+        try {
+            characters_.push_back(data::parseCharacter(entry.body, host_.data->layout()));
+        } catch (const std::exception&) {
+            data::Character unknown;
+            for (auto& set : unknown.frames) {
+                set.fill(data::kNoTile);
+            }
+            characters_.push_back(unknown);
+        }
+    }
+    for (std::size_t i = 0; i < characters_.size(); ++i) {
+        if (characters_[i].type != 1 && characters_[i].type != 4) {
+            character_ = static_cast<int>(i);
+            break;
+        }
+    }
+}
+
+std::string Editor::characterName(int character) const {
+    if (character < 0 || static_cast<std::size_t>(character) >= characters_.size()) {
+        return "Character " + std::to_string(character);
+    }
+    const auto& name = characters_[static_cast<std::size_t>(character)].name;
+    return name.empty() ? "Character " + std::to_string(character) : name;
 }
 
 float Editor::scaleFor(int pixelWidth, int pixelHeight) const {

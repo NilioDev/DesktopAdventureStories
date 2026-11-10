@@ -614,7 +614,7 @@ float Editor::lineEditor(const std::string& id, float x, float y, float w, bool 
         }
         const bool tileLike = a == Arg::Tile || a == Arg::Item;
         const bool pointable = (a == Arg::X || a == Arg::X2);
-        const float side = tileLike || pointable ? 92 : 0;
+        const float side = tileLike || pointable ? 92.0f : 0.0f;
         const std::string aid = id + "-a" + std::to_string(i);
         std::string help = std::string("The ") + argLabel(a) + ". Left and right change it.";
         if (isPosition(a)) {

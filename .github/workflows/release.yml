@@ -1,8 +1,10 @@
 name: Release
 
 # A tag such as v0.2.0 builds every package and publishes them as a GitHub
-# release. Started by hand, or by a pull request that changes the packaging,
-# it only builds the packages (as workflow artifacts). See docs/releases.md.
+# release; the version comes from the tag. Started by hand with a tag, it
+# builds that tag again and adds the packages to its release. Started by hand
+# without one, or by a pull request that changes the packaging, it only
+# builds the packages (as workflow artifacts). See docs/releases.md.
 
 on:
   push:
@@ -14,9 +16,18 @@ on:
       - packaging/**
       - android/**
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release to build again, such as v0.2.0 (empty: only build)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
+
+env:
+  # The release being made, or empty when only building.
+  RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
 
 jobs:
   desktop:
@@ -40,16 +51,19 @@ jobs:
             configure: '"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || '' }}
 
-      - name: Check the tag against the version
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Take the version from the tag
+        if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          version=$(sed -n 's/^ *VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt | head -1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match the version $version in CMakeLists.txt"
+          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "The tag $RELEASE_TAG is not a version such as v1.2.3"
             exit 1
           fi
+          perl -pi -e 's/^(\s*VERSION )[0-9.]+$/${1}'"${RELEASE_TAG#v}"'/' CMakeLists.txt
+          grep -q "^ *VERSION ${RELEASE_TAG#v}$" CMakeLists.txt
 
       - name: Install SDL build dependencies (Linux)
         if: runner.os == 'Linux'
@@ -97,6 +111,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || '' }}
+
+      - name: Take the version from the tag
+        if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "The tag $RELEASE_TAG is not a version such as v1.2.3"
+            exit 1
+          fi
+          perl -pi -e 's/^(\s*VERSION )[0-9.]+$/${1}'"${RELEASE_TAG#v}"'/' CMakeLists.txt
+          grep -q "^ *VERSION ${RELEASE_TAG#v}$" CMakeLists.txt
 
       - uses: actions/setup-java@v4
         with:
@@ -136,7 +163,7 @@ jobs:
 
   publish:
     name: Publish
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/v')
     needs: [desktop, android]
     runs-on: ubuntu-24.04
     permissions:
@@ -166,15 +193,15 @@ jobs:
           NOTES
           # A release made on GitHub's release page (which also makes the
           # tag) gets the packages added; otherwise the release is made here.
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
             # Left without a title, GitHub shows the last commit message;
             # use the version instead.
-            title=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json name --jq .name)
+            title=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name --jq .name)
             if [ -z "$title" ]; then
-              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME"
+              gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "$RELEASE_TAG"
             fi
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-              --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes
+            gh release create "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" --notes-file notes.md --generate-notes
           fi

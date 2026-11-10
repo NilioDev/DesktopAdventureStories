@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(DesktopAdventureStories
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "Clean-room reimplementation of the Desktop Adventures engine"
     LANGUAGES C CXX)
 

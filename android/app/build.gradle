@@ -18,7 +18,7 @@ if (!sdlDir.exists()) {
 }
 
 // The version comes from the release (-PdasVersion=1.2.3), else the default.
-def dasVersion = project.findProperty("dasVersion") ?: "0.1.0"
+def dasVersion = project.findProperty("dasVersion") ?: "0.1.1"
 def versionParts = dasVersion.tokenize(".").collect { it.replaceAll("[^0-9]", "") as int }
 while (versionParts.size() < 3) {
     versionParts << 0

@@ -5,6 +5,7 @@
 // explains itself in the help bar at the bottom.
 #pragma once
 
+#include "das/data/character.hpp"
 #include "das/data/game_data.hpp"
 #include "das/data/palette.hpp"
 #include "das/input.hpp"
@@ -109,6 +110,15 @@ private:
     void fillRect(int x0, int y0, int x1, int y1);
     void newZone(bool copy);
     void resizeZone(int width, int height);
+    // The right panel's parts.
+    float hotspotPanel(float x, float y, float w);
+    float peoplePanel(float x, float y, float w);
+    void zoneStory(float x, float y, float w, const SDL_FRect& r);
+    // One of a zone's lists of tiles: shown, removed by clicking, added from
+    // the tile in hand. Returns the height used.
+    float tileList(std::string_view id, float x, float y, float w, std::string_view title, std::string_view help,
+                   std::vector<std::uint16_t>& list, bool people);
+    std::string characterName(int character) const;
 
     // editor_tiles.cpp
     void tilesTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
@@ -127,8 +137,11 @@ private:
     Tab tab_ = Tab::Zones;
     int zone_ = 0;
     std::uint16_t tile_ = 0; // the tile in hand (also the tile on the Tiles tab)
-    int layer_ = 0;           // 0 floor, 1 objects, 2 roof, 3 hotspots
-    std::array<bool, 4> shown_{true, true, true, true};
+    int layer_ = 0;           // 0 floor, 1 objects, 2 roof, 3 hotspots, 4 people
+    std::array<bool, 5> shown_{true, true, true, true, true};
+    bool storyView_ = false;  // the right panel shows what the zone asks and gives
+    int character_ = -1;      // the character Paint places on the People layer
+    std::vector<data::Character> characters_; // all characters, read once
     Tool tool_ = Tool::Paint;
     std::uint32_t spotType_ = 9;
     int cursorX_ = 0;
@@ -163,6 +176,8 @@ std::string zoneTypeHelp(std::uint32_t type);
 std::string planet(int planet);
 std::string hotspot(std::uint32_t type);
 std::string hotspotHelp(std::uint32_t type);
+std::string characterKind(std::uint16_t type);
+std::string movement(std::uint16_t movement);
 } // namespace names
 
 } // namespace das::app

@@ -11,6 +11,16 @@ holds only what was changed in the editor. To make a mod of your own, rename
 the saved folder and change `id`, `name` and `description` in its
 `mod.json`.
 
+## For beginners
+
+The first time a game is edited, a short tour shows the editor around; the
+*Tour* button starts it again. Every control explains itself in the bar at
+the bottom. *New from an example* (Zones tab) starts a zone from one of the
+game's own, and *New script...* (Scripts tab) offers ready-made scripts: a
+person who talks, a first visit, using an item to get another, a door that
+opens with an item, something that happens only once. *Check* finds what
+would go wrong.
+
 ## The screen
 
 The editor has its own screen. Every button, list and field explains
@@ -64,6 +74,7 @@ them.
 | Edit scripts | Opens the zone's scripts as text (see below) |
 | Tool | Paint, Erase, Pick (takes the tile or hotspot kind under the cursor), Fill (a rectangle: press, drag, let go) |
 | Layer | Floor, Objects, Roof, Hotspots, or People |
+| New from an example | Adds a copy of one of the game's own zones of a chosen kind (room, trade, item to find...), on the same planet when there is one |
 | New zone | Adds a zone of the same size, kind and planet, its floor all in the tile in hand |
 | Copy this zone | Adds a copy of the zone |
 
@@ -190,6 +201,22 @@ adds a new puzzle.
 the scripts and weapons that played it play the new one. *Add a sound...*
 adds one at the end of the list; its file name starts with its number. The
 tab also says which scripts and weapons play a sound.
+
+## Check
+
+The *Check* tab lists what it finds, each with *Show*, which goes there:
+
+- **Mistakes** go wrong in the game: a door that leads to no zone, a
+  hotspot or a place outside the zone, a script line about a tile or zone
+  that does not exist, a line the game does not know, no hero.
+- **Tips** may be what you want, but are worth a look: zones the world
+  generator cannot use (for example a trade zone without people, or an item
+  to find without an item spot; the rooms behind a zone's doors count too),
+  tiles on item lists that are not marked as items, script lines about a
+  person, hotspot or sound that is not there, scripts that do nothing.
+
+The original games give a few tips of their own; they play as they always
+did.
 
 ## Not in the editor yet
 

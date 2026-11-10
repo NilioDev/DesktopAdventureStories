@@ -84,7 +84,7 @@ public:
     };
 
 private:
-    enum class Tab { Zones, Tiles, Scripts, Characters, Puzzles, Sounds };
+    enum class Tab { Zones, Tiles, Scripts, Characters, Puzzles, Sounds, Check };
     enum class Tool { Paint, Erase, Pick, Fill };
 
     // What a change replaced, for Undo and Redo. Undoing swaps it with
@@ -113,6 +113,9 @@ private:
 
     // editor.cpp
     void topBar(const SDL_FRect& r);
+    // The tour for beginners, drawn over everything; takes the input while
+    // it runs.
+    void tour(const gui::Input& in, float width, float height);
     void helpBar(const SDL_FRect& r);
     // Call before a change: `zone` and `tile` (or -1) are what it changes;
     // `structure` when zones or tiles are added.
@@ -138,6 +141,7 @@ private:
     void fillRect(int x0, int y0, int x1, int y1);
     void newZone(bool copy);
     void resizeZone(int width, int height);
+    void zoneExamples(const SDL_FRect& r);
     // The right panel's parts.
     float hotspotPanel(float x, float y, float w);
     float peoplePanel(float x, float y, float w);
@@ -154,11 +158,35 @@ private:
     // The controls of the chosen line; returns the height used.
     float lineEditor(const std::string& id, float x, float y, float w, bool condition, data::ScriptLine& line);
     void scriptMap(const SDL_FRect& r);
+    // Ready-made scripts to start from; returns the height used.
+    float scriptTemplates(float x, float y, float w);
     // Call before changing scripts; changes with the same key in a row are
     // one step for Undo (typing, stepping a number).
     void changeScripts(const std::string& mergeKey = {});
     std::string argText(int kind, int value) const;
     std::string lineSentence(bool condition, const data::ScriptLine& line) const;
+    // For the check: per number of a line, x y t(ile) z(one) p(erson)
+    // h(otspot) s(ound) or '-'; and whether the line has text.
+    std::string lineArgKinds(bool condition, std::uint16_t opcode) const;
+    bool lineHasText(bool condition, std::uint16_t opcode) const;
+
+    // editor_check.cpp
+    struct Problem {
+        bool mistake = false; // else a tip
+        Tab tab = Tab::Zones;
+        int zone = -1;
+        int x = -1;
+        int y = -1;
+        int layer = -1;
+        bool story = false; // shown in the zone's Story view
+        int script = -1;
+        int line = -1;
+        int index = -1; // a character or puzzle
+        std::string text;
+    };
+    void runCheck();
+    void checkTab(const SDL_FRect& r);
+    std::vector<std::pair<char, int>> lineArgs(bool condition, const data::ScriptLine& line) const;
 
     // editor_characters.cpp
     void charactersTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
@@ -228,6 +256,13 @@ private:
     // player changed the file.
     std::map<int, std::string> scriptText_;
 
+    bool examplesOpen_ = false;
+    bool templatesOpen_ = false;
+    int tourStep_ = -1; // -1: no tour
+    SDL_FRect leftRect_{}, centerRect_{}, rightRect_{};
+    std::vector<Problem> problems_;
+    std::size_t checkedStamp_ = static_cast<std::size_t>(-1);
+    float checkScroll_ = 0;
     int sound_ = 0;
     float soundScroll_ = 0;
     std::shared_ptr<FileRequest> fileRequest_;

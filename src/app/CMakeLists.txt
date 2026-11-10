@@ -10,6 +10,7 @@ set(DAS_APP_SOURCES
     editor_characters.cpp
     editor_puzzles.cpp
     editor_sounds.cpp
+    editor_check.cpp
     editor_tiles.cpp
     ui.cpp
     settings.cpp

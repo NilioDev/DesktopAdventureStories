@@ -241,6 +241,40 @@ int opcodeOf(data::Layout layout, bool condition, const LineKind& k) {
 
 } // namespace
 
+std::string Editor::lineArgKinds(bool condition, std::uint16_t opcode) const {
+    const auto found = findKind(host_.data->layout(), condition, opcode);
+    std::string out = "-----";
+    if (!found.kind) {
+        return out;
+    }
+    for (std::size_t i = 0; i < found.kind->args.size(); ++i) {
+        switch (found.kind->args[i]) {
+        case Arg::X:
+        case Arg::X2: out[i] = 'x'; break;
+        case Arg::Y:
+        case Arg::Y2: out[i] = 'y'; break;
+        case Arg::Tile:
+        case Arg::Item: out[i] = 't'; break;
+        case Arg::Zone: out[i] = 'z'; break;
+        case Arg::Person: out[i] = 'p'; break;
+        case Arg::Hotspot: out[i] = 'h'; break;
+        case Arg::Sound: out[i] = 's'; break;
+        default: break;
+        }
+    }
+    // Places in another zone are not checked against this one.
+    if (std::find(found.kind->args.begin(), found.kind->args.end(), Arg::Zone) != found.kind->args.end()) {
+        std::replace(out.begin(), out.end(), 'x', '-');
+        std::replace(out.begin(), out.end(), 'y', '-');
+    }
+    return out;
+}
+
+bool Editor::lineHasText(bool condition, std::uint16_t opcode) const {
+    const auto found = findKind(host_.data->layout(), condition, opcode);
+    return found.kind && found.kind->text;
+}
+
 std::string Editor::argText(int kind, int value) const {
     const auto a = static_cast<Arg>(kind);
     const auto& d = *host_.data;
@@ -342,13 +376,11 @@ void Editor::scriptCards(const SDL_FRect& r) {
     float y = r.y + kPad;
 
     ui::text(renderer_, x, y, "Scripts of zone " + std::to_string(zone_), ui::color::accent);
-    if (gui_.button("script-new", {x + w - 110, y - 3, 110, gui::kRow}, "New script",
-                    "Add an empty script at the end. Then add When and Then lines to it.")) {
-        changeScripts();
-        scripts.emplace_back();
-        selScript_ = static_cast<int>(scripts.size()) - 1;
-        selLine_ = -1;
-        scriptScroll_ = 1e9f;
+    if (gui_.button("script-new", {x + w - 110, y - 3, 110, gui::kRow}, templatesOpen_ ? "Cancel" : "New script...",
+                    templatesOpen_ ? "Close the list of ready-made scripts."
+                                   : "Add a script: empty, or a ready-made one to change.",
+                    templatesOpen_)) {
+        templatesOpen_ = !templatesOpen_;
     }
     y += 14;
     y += gui_.paragraph(x, y, w,
@@ -356,6 +388,9 @@ void Editor::scriptCards(const SDL_FRect& r) {
                         "places are pointed out on the map on the right.",
                         ui::color::dim, 3) +
          kPad;
+    if (templatesOpen_) {
+        y += scriptTemplates(x, y, w);
+    }
 
     const SDL_FRect area{r.x, y, r.w - 1, r.y + r.h - y};
     gui_.beginScroll(area, scriptScroll_, scriptHeight_);
@@ -653,6 +688,95 @@ float Editor::lineEditor(const std::string& id, float x, float y, float w, bool 
         y += gui::kRow + 2;
     }
     return y - top + 2;
+}
+
+// --- ready-made scripts ---------------------------------------------------------
+
+float Editor::scriptTemplates(float x, float y, float w) {
+    const float top = y;
+    auto& z = host_.data->zones[static_cast<std::size_t>(zone_)];
+    const auto layout = host_.data->layout();
+    const auto cx = static_cast<std::int16_t>(cursorX_);
+    const auto cy = static_cast<std::int16_t>(cursorY_);
+    const auto objectHere = static_cast<std::int16_t>(z.at(cursorX_, cursorY_).layers[1]);
+    const auto hand = static_cast<std::int16_t>(tile_);
+    using Args = std::array<std::int16_t, 5>;
+    struct Line {
+        bool condition;
+        int id;
+        Args args;
+        const char* text;
+    };
+    struct Template {
+        const char* title;
+        const char* help;
+        std::vector<Line> lines;
+    };
+    const std::string at = std::to_string(cursorX_) + "," + std::to_string(cursorY_);
+    const std::vector<Template> templates = {
+        {"Empty script", "A script with no lines yet.", {}},
+        {"Someone talks",
+         "When the hero walks against what stands at the cursor, it says something.",
+         {{true, 2, Args{cx, cy, objectHere, 0, 0}, nullptr}, {false, 5, Args{cx, cy, 0, 0, 0}, "Hello there!"}}},
+        {"First visit",
+         "The first time the hero comes into the zone, the hero says something.",
+         {{true, 0, Args{}, nullptr}, {false, 4, Args{}, "What a place!"}}},
+        {"Use an item to get another",
+         "When the hero uses the tile in hand on what stands at the cursor, it is taken and the zone's item "
+         "appears there.",
+         {{true, 3, Args{cx, cy, 1, objectHere, hand}, nullptr},
+          {false, 29, Args{hand, 0, 0, 0, 0}, nullptr},
+          {false, 27, Args{-1, cx, cy, 0, 0}, nullptr},
+          {false, 30, Args{}, nullptr}}},
+        {"A door that opens with an item",
+         "When the hero uses the tile in hand on what stands at the cursor, it is taken and the thing at the "
+         "cursor disappears.",
+         {{true, 3, Args{cx, cy, 1, objectHere, hand}, nullptr},
+          {false, 29, Args{hand, 0, 0, 0, 0}, nullptr},
+          {false, 1, Args{cx, cy, 1, 0, 0}, nullptr},
+          {false, 4, Args{}, "It opened!"}}},
+        {"Only once",
+         "Something that happens only the first time: the zone's counter remembers it.",
+         {{true, 1, Args{}, nullptr},
+          {true, 5, Args{0, 0, 0, 0, 0}, nullptr},
+          {false, 4, Args{}, "This happens once."},
+          {false, 13, Args{1, 0, 0, 0, 0}, nullptr}}},
+    };
+    ui::text(renderer_, x, y, "Start from:", ui::color::accent);
+    y += 12;
+    for (std::size_t t = 0; t < templates.size(); ++t) {
+        const auto& tp = templates[t];
+        if (gui_.button("template-" + std::to_string(t), {x, y, w, gui::kRow}, tp.title,
+                        std::string(tp.help) + (tp.lines.empty() ? "" : " It uses the place " + at +
+                                                                        " (the cursor); change it afterwards."))) {
+            data::Action action;
+            for (const auto& l : tp.lines) {
+                const int op = l.condition ? script::opcode(layout, static_cast<Condition>(l.id))
+                                           : script::opcode(layout, static_cast<Instruction>(l.id));
+                if (op < 0) {
+                    continue; // this game has no such line
+                }
+                data::ScriptLine line;
+                line.opcode = static_cast<std::uint16_t>(op);
+                line.args = l.args;
+                if (l.text) {
+                    line.text = text::utf8ToWindows1252(l.text);
+                }
+                (l.condition ? action.conditions : action.instructions).push_back(std::move(line));
+            }
+            changeScripts();
+            if (!z.actions) {
+                z.actions.emplace();
+            }
+            z.actions->push_back(std::move(action));
+            selScript_ = static_cast<int>(z.actions->size()) - 1;
+            selLine_ = -1;
+            scriptScroll_ = 1e9f;
+            templatesOpen_ = false;
+        }
+        y += gui::kRow + 2;
+    }
+    return y - top + kPad;
 }
 
 // --- the map --------------------------------------------------------------------

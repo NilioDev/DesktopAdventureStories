@@ -159,6 +159,11 @@ Editor::Editor(Host host, int zone) : host_(std::move(host)) {
     cursorY_ = z.height / 2;
     const auto t = z.at(cursorX_, cursorY_).layers[0];
     tile_ = t == data::kNoTile ? 0 : t;
+    // The first time this game is edited: the tour.
+    std::error_code error;
+    if (!std::filesystem::exists(host_.modFolder, error)) {
+        tourStep_ = 0;
+    }
     readCharacters();
     for (std::size_t i = 0; i < characters_.size(); ++i) {
         if (characters_[i].type != 1 && characters_[i].type != 4) {
@@ -274,38 +279,44 @@ void Editor::frame(SDL_Renderer* renderer, const ui::Layout& layout) {
         }
     }
 
+    // While the tour runs, it alone takes the input.
+    const gui::Input raw = in;
+    if (tourStep_ >= 0) {
+        in = gui::Input{};
+    }
     gui_.begin(renderer, in);
     const float w = layout.width;
     const float h = layout.height;
     ui::fill(renderer, {0, 0, w, h}, ui::color::background);
     const float body = h - kTop - kBottom;
-    if (tab_ == Tab::Zones) {
-        const float left = std::min(170.0f, w * 0.22f);
-        const float right = std::min(230.0f, w * 0.3f);
-        zonesTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
-    } else if (tab_ == Tab::Sounds) {
-        const float left = std::min(240.0f, w * 0.28f);
-        const float right = std::min(260.0f, w * 0.3f);
-        soundsTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
-    } else if (tab_ == Tab::Puzzles) {
-        const float left = std::min(240.0f, w * 0.28f);
-        const float right = std::min(260.0f, w * 0.3f);
-        puzzlesTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
-    } else if (tab_ == Tab::Characters) {
-        const float left = std::min(220.0f, w * 0.26f);
-        const float right = std::min(260.0f, w * 0.3f);
-        charactersTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
-    } else if (tab_ == Tab::Scripts) {
-        const float left = std::min(170.0f, w * 0.22f);
-        const float right = std::min(260.0f, w * 0.3f);
-        scriptsTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
-    } else {
-        const float left = std::min(300.0f, w * 0.38f);
-        const float right = std::min(240.0f, w * 0.3f);
-        tilesTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
+    // The widths of the left and right panels of each tab.
+    float left = std::min(170.0f, w * 0.22f);
+    float right = std::min(230.0f, w * 0.3f);
+    switch (tab_) {
+    case Tab::Tiles: left = std::min(300.0f, w * 0.38f); right = std::min(240.0f, w * 0.3f); break;
+    case Tab::Scripts: right = std::min(260.0f, w * 0.3f); break;
+    case Tab::Characters: left = std::min(220.0f, w * 0.26f); right = std::min(260.0f, w * 0.3f); break;
+    case Tab::Puzzles:
+    case Tab::Sounds: left = std::min(240.0f, w * 0.28f); right = std::min(260.0f, w * 0.3f); break;
+    default: break;
+    }
+    leftRect_ = {0, kTop, left, body};
+    centerRect_ = {left, kTop, w - left - right, body};
+    rightRect_ = {w - right, kTop, right, body};
+    switch (tab_) {
+    case Tab::Zones: zonesTab(leftRect_, centerRect_, rightRect_); break;
+    case Tab::Tiles: tilesTab(leftRect_, centerRect_, rightRect_); break;
+    case Tab::Scripts: scriptsTab(leftRect_, centerRect_, rightRect_); break;
+    case Tab::Characters: charactersTab(leftRect_, centerRect_, rightRect_); break;
+    case Tab::Puzzles: puzzlesTab(leftRect_, centerRect_, rightRect_); break;
+    case Tab::Sounds: soundsTab(leftRect_, centerRect_, rightRect_); break;
+    case Tab::Check: checkTab({0, kTop, w, body}); break;
     }
     topBar({0, 0, w, kTop});
     helpBar({0, h - kBottom, w, kBottom});
+    if (tourStep_ >= 0) {
+        tour(raw, w, h);
+    }
     gui_.end();
 }
 
@@ -348,6 +359,13 @@ void Editor::topBar(const SDL_FRect& r) {
         tab_ = Tab::Sounds;
     }
     x += 8;
+    if (button("tab-check", "Check",
+               "Check the game for mistakes, such as a door to nowhere, and zones the world generator cannot use.",
+               tab_ == Tab::Check)) {
+        tab_ = Tab::Check;
+        checkedStamp_ = static_cast<std::size_t>(-1);
+    }
+    x += 8;
     if (button("undo", "Undo", "Take back the last change (Ctrl+Z).", false, !undo_.empty())) {
         undo();
     }
@@ -382,6 +400,9 @@ void Editor::topBar(const SDL_FRect& r) {
             leave_ = true;
         }
     }
+    if (rightButton("tour", "Tour", "A short tour of the editor, for when you are new to it.")) {
+        tourStep_ = 0;
+    }
     const int current = uiScale_ > 0 ? uiScale_ : 0;
     if (rightButton("bigger", "A+", "Make the editor larger.")) {
         uiScale_ = std::min(4, (current > 0 ? current : 1) + 1);
@@ -392,6 +413,131 @@ void Editor::topBar(const SDL_FRect& r) {
     const std::string title = "Mod: " + host_.info.id;
     if (rx - x > ui::textWidth(title) + 8) {
         ui::text(renderer_, rx - ui::textWidth(title) - 6, y + (bh - ui::kFont) / 2, title, ui::color::dim);
+    }
+}
+
+// --- the tour --------------------------------------------------------------------
+
+namespace {
+
+enum class Spot { None, Top, Left, Center, Right, Help };
+
+struct TourStep {
+    int tab; // Editor::Tab, as a number
+    Spot spot;
+    const char* title;
+    const char* text;
+};
+
+const TourStep kTour[] = {
+    {0, Spot::None, "Welcome to the editor",
+     "Here you change the game: its zones, tiles, scripts, characters, puzzles and sounds. Everything you change is "
+     "saved as a mod, so the original game always stays as it was. This short tour shows you around."},
+    {0, Spot::Top, "Tabs and buttons",
+     "The tabs choose what to work on. Undo takes back a change, Save keeps your work as a mod, and Try it out "
+     "plays the zone you are on right now. Check finds mistakes."},
+    {0, Spot::Left, "Zones",
+     "The game is made of zones: the screens the hero walks through. Choose one here; search finds them by number "
+     "or kind. New from an example starts a zone from one of the game's own."},
+    {0, Spot::Center, "Drawing",
+     "Draw on the zone: click or drag. Right-click takes the tile under the mouse. Every zone has layers: the "
+     "floor, objects on it, a roof over the hero, hotspots and people."},
+    {0, Spot::Right, "Tools and tiles",
+     "Choose the tool, the layer and the tile to draw with. Story shows what the zone asks for and gives, which "
+     "the game uses to build its puzzles."},
+    {2, Spot::Center, "Scripts",
+     "Scripts make things happen: people talk, doors open, items appear. Each line reads as a sentence; click one "
+     "to change it. New script... has ready-made ones to start from."},
+    {2, Spot::Right, "The map",
+     "The places a script talks about are marked on this map. Click it to set a place."},
+    {0, Spot::Help, "Help is everywhere",
+     "Point at anything, or move to it with the keyboard or a gamepad, and this bar says what it does. You can "
+     "start this tour again with the Tour button. Have fun!"},
+};
+
+} // namespace
+
+void Editor::tour(const gui::Input& in, float width, float height) {
+    const int count = static_cast<int>(std::size(kTour));
+    if (tourStep_ >= count) {
+        tourStep_ = -1;
+        return;
+    }
+    const auto& step = kTour[tourStep_];
+    if (static_cast<int>(tab_) != step.tab) {
+        tab_ = static_cast<Tab>(step.tab); // drawn from the next frame on
+    }
+    SDL_FRect spot{0, 0, 0, 0};
+    switch (step.spot) {
+    case Spot::Top: spot = {0, 0, width, kTop}; break;
+    case Spot::Left: spot = leftRect_; break;
+    case Spot::Center: spot = centerRect_; break;
+    case Spot::Right: spot = rightRect_; break;
+    case Spot::Help: spot = {0, height - kBottom, width, kBottom}; break;
+    default: break;
+    }
+    // Everything but the spot is darkened.
+    const ui::Color shade{0, 0, 0, 170};
+    if (spot.w > 0) {
+        ui::fill(renderer_, {0, 0, width, spot.y}, shade);
+        ui::fill(renderer_, {0, spot.y + spot.h, width, height - spot.y - spot.h}, shade);
+        ui::fill(renderer_, {0, spot.y, spot.x, spot.h}, shade);
+        ui::fill(renderer_, {spot.x + spot.w, spot.y, width - spot.x - spot.w, spot.h}, shade);
+        ui::outline(renderer_, spot, ui::color::accent);
+        ui::outline(renderer_, {spot.x + 1, spot.y + 1, spot.w - 2, spot.h - 2}, ui::color::accent);
+    } else {
+        ui::fill(renderer_, {0, 0, width, height}, shade);
+    }
+    // The box: in the middle of the spot, or below or above a thin one.
+    const float bw = std::min(360.0f, width - 32);
+    const auto lines = gui::wrap(step.text, static_cast<std::size_t>((bw - 20) / ui::kFont));
+    const float bh = 44 + static_cast<float>(lines.size()) * 10 + gui::kRow;
+    float bx = (width - bw) / 2;
+    float by = (height - bh) / 2;
+    if (spot.w > 0) {
+        bx = std::clamp(spot.x + (spot.w - bw) / 2, 8.0f, width - bw - 8);
+        if (spot.h < bh + 20) {
+            by = spot.y + spot.h + 12 + bh < height ? spot.y + spot.h + 12 : spot.y - bh - 12;
+        } else {
+            by = spot.y + (spot.h - bh) / 2;
+        }
+    }
+    const SDL_FRect box{bx, by, bw, bh};
+    ui::fill(renderer_, box, ui::color::panelLight);
+    ui::outline(renderer_, box, ui::color::accent);
+    ui::text(renderer_, bx + 10, by + 8, step.title, ui::color::accent);
+    ui::textRight(renderer_, bx + bw - 10, by + 8,
+                  std::to_string(tourStep_ + 1) + " / " + std::to_string(count), ui::color::faint);
+    float ty = by + 24;
+    for (const auto& line : lines) {
+        ui::text(renderer_, bx + 10, ty, line, ui::color::text);
+        ty += 10;
+    }
+    // Back, Skip, Next: drawn and answered here, as the rest of the screen
+    // gets no input while the tour runs.
+    const float buttonY = by + bh - gui::kRow - 8;
+    const SDL_FRect back{bx + 10, buttonY, 60, gui::kRow};
+    const SDL_FRect skip{bx + bw / 2 - 40, buttonY, 80, gui::kRow};
+    const SDL_FRect next{bx + bw - 70, buttonY, 60, gui::kRow};
+    const auto draw = [&](const SDL_FRect& b, const char* label, bool main) {
+        const bool over = ui::contains(b, in.mouseX, in.mouseY);
+        ui::fill(renderer_, b, over ? ui::color::border : ui::color::panel);
+        ui::outline(renderer_, b, main ? ui::color::accent : ui::color::border);
+        ui::textCentered(renderer_, b.x + b.w / 2, b.y + (b.h - ui::kFont) / 2, label,
+                         main ? ui::color::accent : ui::color::text);
+        return over && in.mousePressed;
+    };
+    const bool last = tourStep_ == count - 1;
+    if (tourStep_ > 0 && (draw(back, "Back", false) || in.navX < 0)) {
+        --tourStep_;
+    } else if (draw(next, last ? "Done" : "Next", true) || in.activate || in.enter || in.navX > 0) {
+        tourStep_ = last ? -1 : tourStep_ + 1;
+        if (tourStep_ < 0) {
+            tab_ = Tab::Zones;
+        }
+    } else if (draw(skip, "Skip tour", false) || in.escape || in.back) {
+        tourStep_ = -1;
+        tab_ = Tab::Zones;
     }
 }
 
@@ -407,6 +553,8 @@ void Editor::helpBar(const SDL_FRect& r) {
         text = tab_ == Tab::Zones
                    ? "Choose a zone on the left, a tile on the right, and draw on the zone. Point at anything to see "
                      "what it does."
+                   : tab_ == Tab::Check
+                   ? "Mistakes go wrong in the game; tips are worth a look. Show takes you to the place."
                    : tab_ == Tab::Sounds
                    ? "Choose a sound on the left to listen to it or replace it. Point at anything to see what it does."
                    : tab_ == Tab::Puzzles

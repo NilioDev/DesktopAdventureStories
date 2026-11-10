@@ -3,6 +3,8 @@
 // The front end's state and input. Drawing is in viewer_draw.cpp.
 #include "viewer.hpp"
 
+#include "das/pack/names.hpp"
+
 #include "das/world/savegame.hpp"
 
 #include "das/util/text.hpp"
@@ -330,6 +332,30 @@ void Viewer::openEditor() {
     host.base = &g.base;
     host.modsFolder = modsFolder_;
     LoadedGame* loaded = &g;
+    host.tileChanged = [loaded](int tile) {
+        if (!loaded->atlas || tile < 0 || static_cast<std::size_t>(tile) >= loaded->data.tiles.size()) {
+            return;
+        }
+        std::vector<std::uint32_t> pixels(static_cast<std::size_t>(kTile * kTile));
+        const auto& t = loaded->data.tiles[static_cast<std::size_t>(tile)];
+        for (std::size_t i = 0; i < pixels.size(); ++i) {
+            pixels[i] = rgba(loaded->palette, t.pixels[i], true);
+        }
+        const SDL_Rect r{(tile % kAtlasColumns) * kTile, (tile / kAtlasColumns) * kTile, kTile, kTile};
+        SDL_UpdateTexture(loaded->atlas, &r, pixels.data(), kTile * 4);
+    };
+    host.playSound = [this](const data::Bytes& sound) {
+        if (audio_) {
+            audio_->play(sound);
+        }
+    };
+    host.soundsChanged = [loaded](const pack::Files& files) {
+        loaded->sounds.clear();
+        for (const auto& name : loaded->data.sounds) {
+            const auto it = files.find("sounds/" + pack::detail::soundFileName(name));
+            loaded->sounds.push_back(it != files.end() ? it->second : data::Bytes{});
+        }
+    };
     host.tilesChanged = [this, loaded] {
         if (loaded->atlas) {
             SDL_DestroyTexture(loaded->atlas);

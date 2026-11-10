@@ -159,7 +159,7 @@ void Editor::tilesTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_
                      (cx + cy) % 2 ? ui::Color{60, 64, 76} : ui::Color{44, 48, 58});
         }
     }
-    drawTile(tile_, big);
+    pixelCanvas(big);
     ui::outline(renderer_, {big.x - 1, big.y - 1, big.w + 2, big.h + 2}, ui::color::border);
     float y = big.y + big.h + kPad;
     const float x = center.x + kPad * 2;
@@ -270,10 +270,159 @@ void Editor::tileInspector(const SDL_FRect& r) {
     }
     y += kPad;
     if (gui_.button("add-tile", {x, y, w, gui::kRow}, "Add a copy as a new tile",
-                    "Add a new tile at the end, a copy of this one. Draw it in any paint program as a 32 x 32 PNG "
-                    "and put it in the mod's tiles folder (see docs/formats/mod.md).")) {
+                    "Add a new tile at the end, a copy of this one, to draw on.")) {
         addTile();
     }
+    y += gui::kRow + kPad + 2;
+    paletteBox(x, y, w);
+}
+
+void Editor::pixelCanvas(const SDL_FRect& big) {
+    drawTile(tile_, big);
+    auto& tile = host_.data->tiles[tile_];
+    const float px = big.w / 32;
+    const auto& in = gui_.input();
+    std::optional<std::pair<int, int>> hover;
+    if (gui_.hovered(big)) {
+        const int hx = static_cast<int>((in.mouseX - big.x) / px);
+        const int hy = static_cast<int>((in.mouseY - big.y) / px);
+        if (hx >= 0 && hy >= 0 && hx < 32 && hy < 32) {
+            hover = std::make_pair(hx, hy);
+        }
+    }
+    const bool clicked = gui_.area("tile-pixels", big,
+                                   "Draw on the tile with the brush and colour on the right. Right-click takes the "
+                                   "colour under the mouse.");
+    if (!in.mouseDown) {
+        stroke_ = false;
+    }
+    if (!hover) {
+        return;
+    }
+    const auto [hx, hy] = *hover;
+    const auto at = static_cast<std::size_t>(hy * 32 + hx);
+    ui::outline(renderer_, {big.x + F(hx) * px, big.y + F(hy) * px, px, px}, ui::color::text);
+    const int under = tile.pixels[at];
+    gui_.setHelp("Pixel " + std::to_string(hx) + "," + std::to_string(hy) + ": colour " + std::to_string(under) +
+                 (under == 0 ? " (see-through)" : "") + ". Click to draw; right-click takes the colour.");
+    if (in.rightPressed) {
+        color_ = under;
+        return;
+    }
+    const auto changed = [&] {
+        dirty_ = true;
+        ++changes_;
+        if (host_.tileChanged) {
+            host_.tileChanged(tile_);
+        }
+    };
+    if (clicked && in.mousePressed) {
+        if (brush_ == Brush::Pick) {
+            color_ = under;
+            brush_ = Brush::Pencil;
+            return;
+        }
+        if (under == color_) {
+            stroke_ = brush_ == Brush::Pencil;
+            if (brush_ == Brush::Pencil) {
+                remember(-1, tile_);
+            }
+            return;
+        }
+        remember(-1, tile_);
+        auto& pixels = host_.data->tiles[tile_].pixels;
+        if (brush_ == Brush::Fill) {
+            // Every pixel of the same colour that touches this one.
+            const auto from = static_cast<std::uint8_t>(under);
+            std::vector<std::pair<int, int>> todo{{hx, hy}};
+            while (!todo.empty()) {
+                const auto [fx, fy] = todo.back();
+                todo.pop_back();
+                if (fx < 0 || fy < 0 || fx >= 32 || fy >= 32) {
+                    continue;
+                }
+                auto& p = pixels[static_cast<std::size_t>(fy * 32 + fx)];
+                if (p != from) {
+                    continue;
+                }
+                p = static_cast<std::uint8_t>(color_);
+                todo.push_back({fx + 1, fy});
+                todo.push_back({fx - 1, fy});
+                todo.push_back({fx, fy + 1});
+                todo.push_back({fx, fy - 1});
+            }
+        } else {
+            pixels[at] = static_cast<std::uint8_t>(color_);
+            stroke_ = true;
+        }
+        changed();
+    } else if (stroke_ && in.mouseDown && tile.pixels[at] != color_) {
+        tile.pixels[at] = static_cast<std::uint8_t>(color_);
+        changed();
+    }
+}
+
+float Editor::paletteBox(float x, float y, float w) {
+    const float top = y;
+    ui::text(renderer_, x, y, "Draw", ui::color::accent);
+    y += 12;
+    struct BrushButton {
+        Brush brush;
+        const char* label;
+        const char* help;
+    };
+    static constexpr BrushButton brushes[] = {
+        {Brush::Pencil, "Pencil", "Pencil: draw pixels by clicking or dragging on the tile."},
+        {Brush::Fill, "Fill", "Fill: colour every touching pixel of the same colour."},
+        {Brush::Pick, "Pick", "Pick: take the colour of the pixel you click. Right-click does it too."},
+    };
+    const float third = (w - 4) / 3;
+    for (std::size_t i = 0; i < std::size(brushes); ++i) {
+        if (gui_.button(std::string("brush-") + brushes[i].label, {x + F(static_cast<int>(i)) * (third + 2), y, third, gui::kRow},
+                        brushes[i].label, brushes[i].help, brush_ == brushes[i].brush)) {
+            brush_ = brushes[i].brush;
+        }
+    }
+    y += gui::kRow + 4;
+    const auto& colors = host_.palette->colors;
+    const auto swatch = [&](int index, const SDL_FRect& c) {
+        if (index == 0) {
+            ui::fill(renderer_, c, ui::Color{60, 64, 76});
+            ui::fill(renderer_, {c.x, c.y, c.w / 2, c.h / 2}, ui::Color{44, 48, 58});
+            ui::fill(renderer_, {c.x + c.w / 2, c.y + c.h / 2, c.w / 2, c.h / 2}, ui::Color{44, 48, 58});
+        } else {
+            const auto& col = colors[static_cast<std::size_t>(index)];
+            ui::fill(renderer_, c, ui::Color{col.r, col.g, col.b});
+        }
+    };
+    swatch(color_, {x, y, gui::kRow, gui::kRow});
+    ui::outline(renderer_, {x - 1, y - 1, gui::kRow + 2, gui::kRow + 2}, ui::color::border);
+    int pick = color_;
+    if (gui_.stepper("color", {x + gui::kRow + 4, y, w - gui::kRow - 4, gui::kRow}, "Colour", pick, 0, 255,
+                     pick == 0 ? "0 see-through" : std::to_string(pick),
+                     "The colour to draw with. Colour 0 is see-through. Or click a colour below.")) {
+        color_ = pick;
+    }
+    y += gui::kRow + 4;
+    const float cell = std::floor(w / 16);
+    for (int i = 0; i < 256; ++i) {
+        const SDL_FRect c{x + F(i % 16) * cell, y + F(i / 16) * cell, cell - 1, cell - 1};
+        swatch(i, c);
+        if (i == color_) {
+            ui::outline(renderer_, {c.x - 1, c.y - 1, c.w + 2, c.h + 2}, ui::color::text);
+        }
+        if (gui_.hovered(c)) {
+            gui_.setHelp("Colour " + std::to_string(i) + (i == 0 ? " (see-through)" : "") + ". Click to draw with it.");
+            if (gui_.input().mousePressed) {
+                color_ = i;
+                if (brush_ == Brush::Pick) {
+                    brush_ = Brush::Pencil;
+                }
+            }
+        }
+    }
+    y += cell * 16;
+    return y - top;
 }
 
 void Editor::addTile() {

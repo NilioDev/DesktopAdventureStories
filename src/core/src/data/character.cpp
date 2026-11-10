@@ -32,6 +32,37 @@ Character parseCharacter(ByteView body, Layout layout) {
     return character;
 }
 
+Bytes writeCharacter(const Character& character, Layout layout, ByteView original) {
+    const std::size_t extra = layout == Layout::Yoda ? 6 : 0;
+    const std::size_t size = kNameField + 4 + extra + kFrameSets * kFacingCount * 2;
+    Bytes body(size, 0);
+    if (original.size() == size) {
+        std::copy(original.begin(), original.end(), body.begin());
+    }
+    // The name: kept byte for byte when unchanged (the field may hold more
+    // after the zero), else written with zeros after it.
+    const auto oldEnd = std::find(body.begin(), body.begin() + kNameField, std::uint8_t{0});
+    if (std::string(body.begin(), oldEnd) != character.name) {
+        std::fill(body.begin(), body.begin() + kNameField, std::uint8_t{0});
+        const std::size_t length = std::min(character.name.size(), kNameField - 1);
+        std::copy(character.name.begin(), character.name.begin() + static_cast<std::ptrdiff_t>(length), body.begin());
+    }
+    ByteWriter writer;
+    writer.u16(character.type);
+    writer.u16(character.movement);
+    const Bytes head = std::move(writer).take();
+    std::copy(head.begin(), head.end(), body.begin() + kNameField);
+    ByteWriter frames;
+    for (const auto& set : character.frames) {
+        for (const auto tile : set) {
+            frames.u16(tile);
+        }
+    }
+    const Bytes tail = std::move(frames).take();
+    std::copy(tail.begin(), tail.end(), body.begin() + static_cast<std::ptrdiff_t>(kNameField + 4 + extra));
+    return body;
+}
+
 std::optional<Character> findHero(const GameData& data) {
     for (const auto& entry : data.characters) {
         Character character = parseCharacter(entry.body, data.layout());

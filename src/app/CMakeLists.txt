@@ -7,6 +7,9 @@ set(DAS_APP_SOURCES
     editor.cpp
     editor_zones.cpp
     editor_scripts.cpp
+    editor_characters.cpp
+    editor_puzzles.cpp
+    editor_sounds.cpp
     editor_tiles.cpp
     ui.cpp
     settings.cpp

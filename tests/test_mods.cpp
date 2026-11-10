@@ -5,6 +5,7 @@
 // DAS_GAMEDATA_DIR is set.
 #include "test.hpp"
 
+#include "das/data/character.hpp"
 #include "das/data/game_files.hpp"
 #include "das/pack/import.hpp"
 #include "das/pack/mod.hpp"
@@ -286,4 +287,25 @@ DAS_TEST("a mod with a new zone and tile works on the real games") {
         w.begin();
         DAS_CHECK(w.zoneIndex() == start);
     }
+}
+
+DAS_TEST("a character is written back with its name, kind and frames") {
+    das::data::Character c;
+    c.name = "Guard";
+    c.type = 2;
+    c.movement = 3;
+    for (auto& set : c.frames) {
+        set.fill(7);
+    }
+    c.frames[1][2] = 9;
+    const auto body = das::data::writeCharacter(c, das::data::Layout::Yoda);
+    const auto back = das::data::parseCharacter(body, das::data::Layout::Yoda);
+    DAS_CHECK(back.name == "Guard");
+    DAS_CHECK(back.type == 2 && back.movement == 3);
+    DAS_CHECK(back.frames == c.frames);
+    c.name = "Old guard";
+    const auto renamed = das::data::parseCharacter(das::data::writeCharacter(c, das::data::Layout::Yoda, body),
+                                                   das::data::Layout::Yoda);
+    DAS_CHECK(renamed.name == "Old guard");
+    DAS_CHECK(das::data::writeCharacter(c, das::data::Layout::Indy).size() + 6 == body.size());
 }

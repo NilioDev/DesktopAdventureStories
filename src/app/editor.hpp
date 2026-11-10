@@ -8,6 +8,7 @@
 #include "das/data/character.hpp"
 #include "das/data/game_data.hpp"
 #include "das/data/palette.hpp"
+#include "das/data/puzzle.hpp"
 #include "das/input.hpp"
 #include "das/pack/mod.hpp"
 
@@ -21,6 +22,8 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -41,6 +44,9 @@ public:
         pack::ModInfo info;
         std::vector<int> scriptZones; // zones whose scripts the mod keeps as text
         std::function<void()> tilesChanged; // remake the atlas
+        std::function<void(int)> tileChanged; // redraw one tile of the atlas
+        std::function<void(const data::Bytes&)> playSound;
+        std::function<void(const pack::Files&)> soundsChanged;
         std::function<void(const pack::Mod&)> saved;
     };
 
@@ -69,8 +75,16 @@ public:
     // Reads back scripts opened as text; false (with a notice) on a mistake.
     bool syncScripts();
 
+    // A file chosen in the system's open dialog, which answers later.
+    struct FileRequest {
+        std::mutex mutex;
+        std::string path;
+        bool done = false;
+        int replace = -1; // the sound to replace, or -1 to add one
+    };
+
 private:
-    enum class Tab { Zones, Tiles, Scripts };
+    enum class Tab { Zones, Tiles, Scripts, Characters, Puzzles, Sounds };
     enum class Tool { Paint, Erase, Pick, Fill };
 
     // What a change replaced, for Undo and Redo. Undoing swaps it with
@@ -85,6 +99,16 @@ private:
         std::optional<std::vector<data::Zone>> zones;
         std::optional<std::vector<data::Tile>> tiles;
         std::optional<std::vector<data::TileName>> names;
+        // Characters and puzzles: all of them.
+        std::optional<std::vector<data::TaggedEntry>> characters;
+        std::optional<std::vector<data::CharacterValues>> weapons;
+        std::optional<std::vector<data::CharacterValues>> aux;
+        std::optional<std::vector<data::TaggedEntry>> puzzles;
+        // One sound file, and the list of sound names.
+        bool sound = false;
+        std::vector<std::string> soundNames;
+        std::string soundKey;
+        std::optional<data::Bytes> soundBytes;
     };
 
     // editor.cpp
@@ -94,6 +118,9 @@ private:
     // `structure` when zones or tiles are added.
     void remember(int zone, int tile, bool structure = false);
     void swapSnapshot(Snapshot& s);
+    // Call before changing characters or puzzles.
+    void rememberStory();
+    void readCharacters();
     void undo();
     void redo();
     void save();
@@ -133,12 +160,35 @@ private:
     std::string argText(int kind, int value) const;
     std::string lineSentence(bool condition, const data::ScriptLine& line) const;
 
+    // editor_characters.cpp
+    void charactersTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
+    void characterList(const SDL_FRect& r);
+    void characterInspector(const SDL_FRect& r);
+    // Writes characters_[i] back into the data.
+    void storeCharacter(int i);
+    // The CHWP or CAUX entry of a character, made when missing.
+    data::CharacterValues& characterValues(std::vector<data::CharacterValues>& list, int character);
+
+    // editor_sounds.cpp
+    void soundsTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
+    void chooseSoundFile(int replace);
+    void takeSoundFile();
+    void rememberSound(const std::string& key);
+
+    // editor_puzzles.cpp
+    void puzzlesTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
+    void readPuzzles();
+    void storePuzzle(int i);
+
     // editor_tiles.cpp
     void tilesTab(const SDL_FRect& left, const SDL_FRect& center, const SDL_FRect& right);
     // A scrolling, filtered grid of tiles; returns the tile clicked.
     std::optional<std::uint16_t> tileBrowser(const SDL_FRect& r, std::string_view id, float cell);
     void tileInspector(const SDL_FRect& r);
     void addTile();
+    // The tile's pixels, large, to draw on; and the colours to draw with.
+    void pixelCanvas(const SDL_FRect& r);
+    float paletteBox(float x, float y, float w);
 
     Host host_;
     gui::InputCollector collector_;
@@ -177,6 +227,22 @@ private:
     // The scripts text last written or read per zone, to see whether the
     // player changed the file.
     std::map<int, std::string> scriptText_;
+
+    int sound_ = 0;
+    float soundScroll_ = 0;
+    std::shared_ptr<FileRequest> fileRequest_;
+    std::vector<data::Puzzle> puzzles_; // all puzzles, read when needed
+    int puzzle_ = 0;
+    std::string puzzleSearch_;
+    float puzzleScroll_ = 0;
+    std::string characterSearch_;
+    float characterScroll_ = 0;
+
+    // Drawing tiles.
+    enum class Brush { Pencil, Fill, Pick };
+    Brush brush_ = Brush::Pencil;
+    int color_ = 1;          // palette index; 0 is see-through
+    bool stroke_ = false;    // the mouse is drawing on the tile
 
     std::vector<Snapshot> undo_;
     std::vector<Snapshot> redo_;

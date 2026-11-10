@@ -29,8 +29,14 @@ in it.
 - **Scripts tab:** the zones on the left, the zone's scripts as cards of
   plain sentences in the middle, and a map of the zone on the right.
 - **Tiles tab:** all tiles on the left (filter by kind, search by number or
-  name), the chosen tile large in the middle with the zones that use it
-  (press one to open it), and its name and what it is on the right.
+  name), the chosen tile large in the middle to draw on, with the zones
+  that use it (press one to open it), and its name, what it is and the
+  colours on the right.
+- **Characters tab:** the hero, monsters, people and weapons: their names,
+  how they move and fight, and their pictures.
+- **Puzzles tab:** the items a game is built from and what people say
+  about them.
+- **Sounds tab:** listen to the sounds, replace them and add new ones.
 
 ## Controls
 
@@ -66,8 +72,13 @@ them.
 Tiles can be given a name and their flags changed: See-through, Floor,
 Blocks the way, Can be pushed, Roof, World map, Weapon, Person and Item.
 Bits the editor has no name for are shown and kept. *Add a copy as a new
-tile* adds a tile to change; its picture is a PNG in the mod's `tiles`
-folder (see [formats/mod.md](formats/mod.md)).
+tile* adds a tile to change.
+
+To draw, choose a brush under *Draw* (*Pencil*, *Fill* for every touching
+pixel of the same colour, or *Pick* to take a colour) and a colour from the
+game's palette; colour 0 is see-through. Click or drag on the large tile;
+right-click takes the colour under the mouse. A stroke is one step for
+*Undo*. Changed tiles are saved in the mod as PNG files.
 
 ## Hotspots
 
@@ -150,8 +161,37 @@ file in the system's text editor. The format is in
 out* or *Save*: both read the scripts files again first, when they were
 changed. A mistake stops them and names the file and line.
 
+## Characters
+
+| Control | What it does |
+| --- | --- |
+| Name | The name the editor shows (at most 15 letters) |
+| Kind | Hero, Monster or person, or Weapon |
+| Moves | How it moves, from standing still to going for the hero; the help bar says what each does |
+| Health, Weapon | Monsters and people: the hits they take, and the weapon they fight with |
+| Damage, Sound | Weapons: how hard they hit, and the sound they make |
+| Pictures | A tile for each of 8 directions, standing and in two steps of walking. Click one to give it the tile in hand; right-click takes its tile |
+
+*Add a copy* adds a new character to change.
+
+## Puzzles
+
+A puzzle is an item with what people say about it. Its *Kind* says how the
+world generator uses it: *Trade* (asked for and handed out on the way),
+*Offer*, *Final* (hands out an item the goal zone asks for), *Goal* (the
+mission of a game, with a hint and a briefing) or *Switched off*. *Tile in
+hand* and *None* set the item; the texts are typed in place. *Add a copy*
+adds a new puzzle.
+
+## Sounds
+
+*Listen* plays a sound. *Replace with a file...* takes a `.wav` sound or a
+`.mid` song from the computer; the sound keeps its number and name, so
+the scripts and weapons that played it play the new one. *Add a sound...*
+adds one at the end of the list; its file name starts with its number. The
+tab also says which scripts and weapons play a sound.
+
 ## Not in the editor yet
 
-New tiles are drawn outside the editor and added as PNG files to the mod;
-sounds, puzzles and characters are added as files too (see
-[formats/mod.md](formats/mod.md)).
+The title screen (`setup.png`) is changed by putting a picture in the mod
+(see [formats/mod.md](formats/mod.md)).

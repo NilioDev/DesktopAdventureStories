@@ -53,7 +53,7 @@ u16  planet
 u32  size              bytes that follow, up to the next entry
 u16  index             the zone's own number
 IZON block
-records                hotspots, IZAX, IZX2, IZX3, IZX4, IACT (not decoded yet)
+records                hotspots, IZAX, IZX2, IZX3, IZX4, IACT; see zone-records.md
 ```
 
 ### IZON block
@@ -72,3 +72,28 @@ grid                   width * height cells, row by row
 
 Each cell is three `u16` tile numbers, drawn in order: floor, object, overlay.
 `0xFFFF` means empty.
+
+## PUZ2 and CHAR: puzzles and characters
+
+Both are lists:
+
+```
+repeat:
+  u16  id              0xFFFF ends the list
+  char tag[4]          "IPUZ" (PUZ2) or "ICHA" (CHAR)
+  u32  size
+  u8   body[size]
+```
+
+Yoda Stories has 205 puzzles and 77 characters, Indy 157 and 27. The bodies
+are decoded in a later phase. Character names are zero-terminated but the
+fixed field after the zero can hold leftover bytes, which must be kept.
+
+## CHWP and CAUX: character values
+
+```
+CHWP repeat:  u16 character (0xFFFF ends), u16 reference, u16 value
+CAUX repeat:  u16 character (0xFFFF ends), u16 value
+```
+
+What the values mean (weapon, health, damage) is still to be confirmed.

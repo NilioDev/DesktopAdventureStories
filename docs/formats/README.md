@@ -9,11 +9,11 @@ writing an original file gives back the exact same bytes.
 | --- | --- |
 | [container.md](container.md) | The section list, and how the two games differ |
 | [sections.md](sections.md) | VERS, STUP, SNDS, TILE, TNAM, ZONE (grid) |
+| [zone-records.md](zone-records.md) | Hotspots, placed characters, item lists, scripts |
 | [palette.md](palette.md) | Where the colours come from |
 
 All numbers are little-endian. `u16`/`u32` are unsigned, `i16` is signed.
 
-Status: sections not listed in sections.md are kept as raw bytes for now
-(PUZ2, CHAR, CHWP, CAUX, and the zone records: hotspots, IZAX, IZX2, IZX3,
-IZX4, IACT scripts; in Indy also ZAUX, ZAX2, ZAX3, ZAX4, HTSP, ACTN, ZNAM,
-PNAM, ANAM).
+Status: the bodies of puzzles (IPUZ) and characters (ICHA) are kept as raw
+bytes for now, and so are Indy's name sections ZNAM, PNAM and ANAM. Everything
+else is decoded.

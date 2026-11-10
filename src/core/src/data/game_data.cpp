@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "das/data/game_data.hpp"
 
+#include "zone_records.hpp"
+
 #include <algorithm>
 
 namespace das::data {
@@ -91,6 +93,72 @@ void replacePayload(Container& container, std::string_view tag, Bytes payload) {
     if (auto* section = container.find(tag)) {
         section->payload = std::move(payload);
     }
+}
+
+// PUZ2 and CHAR: (u16 id, tag, u32 size, body)* then 0xFFFF.
+std::vector<TaggedEntry> parseTaggedList(ByteView payload, std::string_view tag) {
+    ByteReader reader(payload);
+    std::vector<TaggedEntry> entries;
+    for (;;) {
+        const std::uint16_t id = reader.u16();
+        if (id == kListEnd) {
+            break;
+        }
+        if (reader.tag() != tag) {
+            throw DataError("expected " + std::string(tag) + " in list at offset " + std::to_string(reader.position() - 4));
+        }
+        const auto body = reader.bytes(reader.u32());
+        entries.push_back({id, Bytes(body.begin(), body.end())});
+    }
+    requireEnd(reader, std::string(tag).c_str());
+    return entries;
+}
+
+Bytes writeTaggedList(const std::vector<TaggedEntry>& entries, std::string_view tag) {
+    ByteWriter writer;
+    for (const auto& entry : entries) {
+        writer.u16(entry.id);
+        writer.tag(tag);
+        writer.u32(static_cast<std::uint32_t>(entry.body.size()));
+        writer.bytes(entry.body);
+    }
+    writer.u16(kListEnd);
+    return std::move(writer).take();
+}
+
+// CHWP: (u16 character, u16 reference, u16 value)*; CAUX: (u16 character,
+// u16 value)*; both end with 0xFFFF.
+std::vector<CharacterValues> parseCharacterValues(ByteView payload, bool withReference, const char* tag) {
+    ByteReader reader(payload);
+    std::vector<CharacterValues> values;
+    for (;;) {
+        const std::uint16_t character = reader.u16();
+        if (character == kListEnd) {
+            break;
+        }
+        CharacterValues v;
+        v.character = character;
+        if (withReference) {
+            v.reference = reader.u16();
+        }
+        v.value = reader.u16();
+        values.push_back(v);
+    }
+    requireEnd(reader, tag);
+    return values;
+}
+
+Bytes writeCharacterValues(const std::vector<CharacterValues>& values, bool withReference) {
+    ByteWriter writer;
+    for (const auto& v : values) {
+        writer.u16(v.character);
+        if (withReference) {
+            writer.u16(v.reference);
+        }
+        writer.u16(v.value);
+    }
+    writer.u16(kListEnd);
+    return std::move(writer).take();
 }
 
 } // namespace
@@ -203,8 +271,8 @@ std::vector<Zone> parseZones(ByteView payload, Layout layout) {
         Zone zone = readIzon(entry, layout);
         zone.planet = planet;
         zone.index = index;
-        const auto extra = entry.bytes(entry.remaining());
-        zone.extra.assign(extra.begin(), extra.end());
+        detail::readYodaZoneRecords(entry, zone);
+        requireEnd(entry, "zone entry");
         zones.push_back(std::move(zone));
     }
     requireEnd(reader, "ZONE");
@@ -224,7 +292,7 @@ Bytes writeZones(const std::vector<Zone>& zones, Layout layout) {
         writer.u32(0);
         writer.u16(zone.index);
         writeIzon(writer, zone, layout);
-        writer.bytes(zone.extra);
+        detail::writeYodaZoneRecords(writer, zone);
         writer.patchU32(sizeAt, static_cast<std::uint32_t>(writer.size() - sizeAt - 4));
     }
     return std::move(writer).take();
@@ -257,6 +325,21 @@ GameData parseGameData(ByteView file) {
     if (const auto* zone = data.container.find("ZONE")) {
         data.zones = parseZones(zone->payload, layout);
     }
+    if (layout == Layout::Indy) {
+        detail::readIndyZoneSections(data.container, data.zones);
+    }
+    if (const auto* puz2 = data.container.find("PUZ2")) {
+        data.puzzles = parseTaggedList(puz2->payload, "IPUZ");
+    }
+    if (const auto* chars = data.container.find("CHAR")) {
+        data.characters = parseTaggedList(chars->payload, "ICHA");
+    }
+    if (const auto* chwp = data.container.find("CHWP")) {
+        data.characterWeapons = parseCharacterValues(chwp->payload, true, "CHWP");
+    }
+    if (const auto* caux = data.container.find("CAUX")) {
+        data.characterAux = parseCharacterValues(caux->payload, false, "CAUX");
+    }
     return data;
 }
 
@@ -273,6 +356,13 @@ Bytes writeGameData(const GameData& data) {
     replacePayload(container, "TILE", writeTiles(data.tiles));
     replacePayload(container, "TNAM", writeTileNames(data.tileNames, layout));
     replacePayload(container, "ZONE", writeZones(data.zones, layout));
+    if (layout == Layout::Indy) {
+        detail::writeIndyZoneSections(container, data.zones);
+    }
+    replacePayload(container, "PUZ2", writeTaggedList(data.puzzles, "IPUZ"));
+    replacePayload(container, "CHAR", writeTaggedList(data.characters, "ICHA"));
+    replacePayload(container, "CHWP", writeCharacterValues(data.characterWeapons, true));
+    replacePayload(container, "CAUX", writeCharacterValues(data.characterAux, false));
     return writeContainer(container);
 }
 

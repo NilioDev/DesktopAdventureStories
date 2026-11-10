@@ -211,6 +211,7 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
     }
     const auto& g = game();
     char line[128];
+    char detail[128] = "";
     switch (mode_) {
     case ViewMode::Title: {
         if (g.setup) {
@@ -225,6 +226,9 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
         const auto& zone = g.data.zones[static_cast<std::size_t>(zone_)];
         std::snprintf(line, sizeof line, "Zone %d/%zu  %dx%d  type %u", zone_, g.data.zones.size(), zone.width,
                       zone.height, static_cast<unsigned>(zone.type));
+        std::snprintf(detail, sizeof detail, "%zu hotspots, %zu scripts, %zu characters",
+                      zone.hotspots ? zone.hotspots->size() : 0, zone.actions ? zone.actions->size() : 0,
+                      zone.monsters.size());
         break;
     }
     case ViewMode::Tiles: {
@@ -239,6 +243,8 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
     text(renderer, x, statusY + 14, line, 150);
     if (!g.paletteFromGame) {
         text(renderer, x, statusY + 28, "No .EXE found: showing greyscale", 150);
+    } else if (detail[0] != '\0') {
+        text(renderer, x, statusY + 28, detail, 150);
     }
 }
 

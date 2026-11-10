@@ -7,6 +7,7 @@ add_library(das_core STATIC
     src/data/game_data.cpp
     src/data/game_files.cpp
     src/data/palette.cpp
+    src/data/zone_records.cpp
 )
 add_library(das::core ALIAS das_core)
 

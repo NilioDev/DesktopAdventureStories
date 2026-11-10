@@ -115,9 +115,48 @@ DAS_TEST("container reads both layouts and writes them back unchanged") {
     append(yoda, bytes({0, 2, 0, 0}));
     appendText(yoda, "ZONE");
     const Bytes zoneYoda = izon(Layout::Yoda, 9);
-    append(yoda, bytes({1, 0, 2, 0, static_cast<int>(zoneYoda.size() + 2 + 3), 0, 0, 0, 4, 0}));
+    // Records after the grid: one hotspot, empty IZAX, IZX2 with one tile,
+    // empty IZX3, IZX4, and one action with one condition.
+    ByteWriter records;
+    records.u16(1);
+    records.u32(5); // hotspot type
+    records.u16(3);
+    records.u16(4);
+    records.u16(1);
+    records.u16(0xffff);
+    records.tag("IZAX");
+    records.u32(16);
+    for (int i = 0; i < 4; ++i) {
+        records.u16(0);
+    }
+    records.tag("IZX2");
+    records.u32(12);
+    records.u16(1);
+    records.u16(77);
+    records.tag("IZX3");
+    records.u32(10);
+    records.u16(0);
+    records.tag("IZX4");
+    records.u32(2);
+    records.u16(1);
+    records.u16(1); // one action
+    records.tag("IACT");
+    records.u32(2 + 14 + 2 + 2);
+    records.u16(1); // one condition
+    records.u16(6);
+    for (int i = 0; i < 5; ++i) {
+        records.i16(static_cast<std::int16_t>(-i));
+    }
+    records.u16(2);
+    records.u8('h');
+    records.u8('i');
+    records.u16(0); // no instructions
+    const Bytes recordBytes = std::move(records).take();
+
+    const auto entrySize = static_cast<int>(2 + zoneYoda.size() + recordBytes.size());
+    append(yoda, bytes({1, 0, 2, 0, entrySize & 0xff, entrySize >> 8, 0, 0, 4, 0}));
     append(yoda, zoneYoda);
-    append(yoda, bytes({0xaa, 0xbb, 0xcc})); // records after the grid
+    append(yoda, recordBytes);
     appendText(yoda, "ENDF");
     append(yoda, bytes({0, 0, 0, 0}));
 
@@ -125,7 +164,13 @@ DAS_TEST("container reads both layouts and writes them back unchanged") {
     DAS_CHECK(gy.layout() == Layout::Yoda);
     DAS_CHECK(gy.zones.size() == 1);
     DAS_CHECK(gy.zones[0].planet == 2 && gy.zones[0].index == 4 && gy.zones[0].izonPlanet == 2);
-    DAS_CHECK(gy.zones[0].extra == bytes({0xaa, 0xbb, 0xcc}));
+    const Zone& z = gy.zones[0];
+    DAS_CHECK(z.hotspots && z.hotspots->size() == 1 && (*z.hotspots)[0].type == 5 && (*z.hotspots)[0].y == 4);
+    DAS_CHECK(z.providedItems == std::vector<std::uint16_t>{77});
+    DAS_CHECK(z.npcs.empty() && z.izx4 == 1);
+    DAS_CHECK(z.actions && z.actions->size() == 1);
+    const auto& line = (*z.actions)[0].conditions.at(0);
+    DAS_CHECK(line.opcode == 6 && line.args[4] == -4 && line.text == "hi");
     DAS_CHECK(writeGameData(gy) == yoda);
 }
 

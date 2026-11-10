@@ -40,9 +40,19 @@ DAS_TEST("original data files round-trip byte for byte") {
 
         const GameData data = parseGameData(original);
         DAS_CHECK(writeGameData(data) == original);
-        std::printf("       %s: %zu tiles, %zu zones, %zu sounds, %zu tile names\n",
-                    std::string(layoutName(data.layout())).c_str(), data.tiles.size(), data.zones.size(),
-                    data.sounds.size(), data.tileNames.size());
+        std::size_t hotspots = 0;
+        std::size_t actions = 0;
+        std::size_t monsters = 0;
+        for (const auto& zone : data.zones) {
+            hotspots += zone.hotspots ? zone.hotspots->size() : 0;
+            actions += zone.actions ? zone.actions->size() : 0;
+            monsters += zone.monsters.size();
+        }
+        std::printf("       %s: %zu tiles, %zu zones, %zu hotspots, %zu actions, %zu placed characters,\n"
+                    "       %zu puzzles, %zu characters, %zu sounds, %zu tile names\n",
+                    std::string(layoutName(data.layout())).c_str(), data.tiles.size(), data.zones.size(), hotspots,
+                    actions, monsters, data.puzzles.size(), data.characters.size(), data.sounds.size(),
+                    data.tileNames.size());
     }
 }
 

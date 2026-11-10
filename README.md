@@ -101,7 +101,7 @@ DAS_GAMEDATA_DIR=gamedata ctest --test-dir build --output-on-failure
 | Map | M / Tab | Back / Select | Map button |
 | Menu, back | Esc | Start (B goes back in menus) | Menu button |
 
-Controls will be rebindable.
+Every key and button can be changed under Options, Controls.
 
 ## Contributing
 

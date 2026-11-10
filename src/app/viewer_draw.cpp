@@ -99,7 +99,7 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
             const SDL_FRect box{std::floor(field.x + (field.w - w) / 2), std::floor(field.y + (field.h - h) / 2), w, h};
             ui::panel(renderer, box);
             renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad},
-                       page_ == Page::Options ? "Options" : "Paused");
+                       page_ == Page::Options ? "Options" : page_ == Page::Controls ? "Controls" : "Paused");
         }
         break;
     }
@@ -367,22 +367,36 @@ void Viewer::renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float 
 
 // --- the panel --------------------------------------------------------------
 
-void Viewer::renderHints(SDL_Renderer* renderer, const SDL_FRect& area) const {
-    std::string hint;
+std::string Viewer::hintText() const {
     const bool menu = mode_ == ViewMode::Title || page_ != Page::None;
-    switch (device_) {
-    case InputDevice::Gamepad:
-        hint = menu ? "D-pad choose\nA select  B back"
-                    : "A use  B attack\nLB/RB items\nBack map  Start menu";
-        break;
-    case InputDevice::Touch:
-        hint = menu ? "Tap to choose" : "Tap to walk and talk\nTap an item twice\nto use it";
-        break;
-    case InputDevice::Keyboard:
-        hint = menu ? "Arrows choose\nEnter select  Esc back"
-                    : "Arrows walk  X attack\nSpace use  Q/E items\nM map  Esc menu";
-        break;
+    if (capture_) {
+        return device_ == InputDevice::Gamepad ? "Press the new button" : "Press the new key\nEsc cancels";
     }
+    // The first key or button of an action.
+    const auto key = [&](Action a) {
+        if (!bindings_) {
+            return std::string("?");
+        }
+        const std::string names = device_ == InputDevice::Gamepad ? bindings_->buttonNames(a) : bindings_->keyNames(a);
+        return names.substr(0, names.find(','));
+    };
+    switch (device_) {
+    case InputDevice::Touch: return menu ? "Tap to choose" : "Tap to walk and talk\nTap an item twice\nto use it";
+    case InputDevice::Gamepad:
+        return menu ? "D-pad choose\n" + key(Action::Use) + " select  " + key(Action::Attack) + " back"
+                    : key(Action::Use) + " use  " + key(Action::Attack) + " attack\n" + key(Action::InventoryPrev) +
+                          "/" + key(Action::InventoryNext) + " items\n" + key(Action::Map) + " map  " +
+                          key(Action::Menu) + " menu";
+    case InputDevice::Keyboard: break;
+    }
+    return menu ? "Arrows choose\n" + key(Action::Use) + " select  " + key(Action::Menu) + " back"
+                : "Arrows walk  " + key(Action::Attack) + " attack\n" + key(Action::Use) + " use  " +
+                      key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) + " items\n" + key(Action::Map) +
+                      " map  " + key(Action::Menu) + " menu";
+}
+
+void Viewer::renderHints(SDL_Renderer* renderer, const SDL_FRect& area) const {
+    const std::string hint = hintText();
     const auto lines = wrapText(hint, static_cast<std::size_t>(area.w / ui::kFont));
     float y = area.y + area.h - static_cast<float>(lines.size()) * 10;
     if (y < area.y) {
@@ -414,10 +428,13 @@ void Viewer::renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const cha
         ui::text(renderer, rect.x + 8, ty, row.label, on ? ui::color::accent : ui::color::text);
         addHit(Hit::Kind::Row, rect, static_cast<int>(i));
         if (!row.value.empty()) {
-            const std::string value = on ? "< " + row.value + " >" : row.value + "  ";
+            // Long values (a list of keys) are cut to the room left.
+            const float room = rect.w - 6 - 8 - ui::textWidth(row.label) - 2 * ui::kFont - 4 * ui::kFont;
+            const std::string shown = fit(row.value, room);
+            const std::string value = on ? "< " + shown + " >" : shown + "  ";
             ui::textRight(renderer, rect.x + rect.w - 6, ty, value, on ? ui::color::text : ui::color::dim);
             // The left arrow (or the left part of the value) steps back.
-            const float valueX = rect.x + rect.w - 6 - ui::textWidth("< " + row.value + " >");
+            const float valueX = rect.x + rect.w - 6 - ui::textWidth(value);
             addHit(Hit::Kind::RowLeft, {valueX - 4, rect.y, 2 * ui::kFont + 4, rect.h}, static_cast<int>(i));
         }
         y += kRow;
@@ -435,8 +452,9 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
     ui::text(renderer, x, y, fit(indy ? "Desktop Adventures" : "Star Wars", w), ui::color::dim);
     y += 18;
     const float rows = static_cast<float>(menuRows().size());
-    renderMenu(renderer, {x, y, w, rows * kRow}, page_ == Page::Options ? "Options" : nullptr);
-    y += rows * kRow + (page_ == Page::Options ? 18 : 0) + kPad;
+    const char* heading = page_ == Page::Options ? "Options" : page_ == Page::Controls ? "Controls" : nullptr;
+    renderMenu(renderer, {x, y, w, rows * kRow}, heading);
+    y += rows * kRow + (heading ? 18 : 0) + kPad;
     if (!game().paletteFromGame) {
         ui::text(renderer, x, y, fit("No .EXE found: greyscale", w), ui::color::danger);
     }

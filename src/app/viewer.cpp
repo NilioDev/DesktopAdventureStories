@@ -440,6 +440,34 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Scaling, "Scaling", s.pixelPerfect ? "Pixel" : "Fill"});
         rows.push_back({RowId::Filter, "Filter", filterName(s.filter)});
         rows.push_back({RowId::Volume, "Sound", std::to_string(s.volume) + "%"});
+        if (bindings_) {
+            rows.push_back({RowId::Controls, "Controls", ""});
+        }
+        rows.push_back({RowId::Back, "Back", ""});
+        break;
+    }
+    case Page::Controls: {
+        struct Named {
+            Action action;
+            const char* label;
+        };
+        static constexpr Named kActions[] = {
+            {Action::MoveUp, "Up"},          {Action::MoveDown, "Down"},     {Action::MoveLeft, "Left"},
+            {Action::MoveRight, "Right"},    {Action::Use, "Use"},           {Action::Attack, "Attack"},
+            {Action::InventoryPrev, "Prev item"}, {Action::InventoryNext, "Next item"}, {Action::Map, "Map"},
+            {Action::Menu, "Menu"},
+        };
+        const bool pad = device_ == InputDevice::Gamepad;
+        for (const auto& a : kActions) {
+            std::string value;
+            if (capture_ == a.action) {
+                value = pad ? "Press a button" : "Press a key";
+            } else if (bindings_) {
+                value = pad ? bindings_->buttonNames(a.action) : bindings_->keyNames(a.action);
+            }
+            rows.push_back({RowId::Bind, a.label, value, a.action});
+        }
+        rows.push_back({RowId::ResetControls, "Reset controls", ""});
         rows.push_back({RowId::Back, "Back", ""});
         break;
     }
@@ -455,6 +483,9 @@ void Viewer::updateMenu(const ActionState& actions, std::optional<Step> step) {
     }
     const int count = static_cast<int>(rows.size());
     menuItem_ = std::clamp(menuItem_, 0, count - 1);
+    if (capture_) {
+        return; // the next key or button goes to the bindings
+    }
     if (actions.wasPressed(Action::Menu) || actions.wasPressed(Action::Attack)) {
         menuBack();
         return;
@@ -473,8 +504,17 @@ void Viewer::updateMenu(const ActionState& actions, std::optional<Step> step) {
         return;
     }
     if (actions.wasPressed(Action::Use)) {
-        menuActivate(row.id, 1);
+        if (row.id == RowId::Bind) {
+            startCapture(row.action);
+        } else {
+            menuActivate(row.id, 1);
+        }
     }
+}
+
+void Viewer::startCapture(Action action) {
+    capture_ = action;
+    captureUntil_ = SDL_GetTicks() + 6000;
 }
 
 void Viewer::menuActivate(RowId id, int change) {
@@ -523,12 +563,27 @@ void Viewer::menuActivate(RowId id, int change) {
             }
         });
         break;
+    case RowId::Controls:
+        page_ = Page::Controls;
+        menuItem_ = 0;
+        break;
+    case RowId::Bind: break; // see updateMenu: it needs the row's action
+    case RowId::ResetControls:
+        changeSetting([](Settings& s) {
+            s.keys.clear();
+            s.buttons.clear();
+        });
+        break;
     case RowId::Back: menuBack(); break;
     }
 }
 
 void Viewer::menuBack() {
     switch (page_) {
+    case Page::Controls:
+        page_ = Page::Options;
+        menuItem_ = 0;
+        break;
     case Page::Options:
         page_ = optionsFrom_;
         menuItem_ = 0;
@@ -546,9 +601,13 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
         click_.reset();
         return;
     }
-    if (click_) {
+    if (capture_ && now > captureUntil_) {
+        capture_.reset(); // nothing pressed: keep the old controls
+    }
+    if (click_ && !capture_) {
         handleClick(now);
     }
+    click_.reset();
     if (mode_ == ViewMode::Play) {
         updatePlay(actions, step, now);
         return;
@@ -603,7 +662,12 @@ void Viewer::handleClick(Uint64 now) {
             const auto rows = menuRows();
             if (hit->index >= 0 && hit->index < static_cast<int>(rows.size())) {
                 menuItem_ = hit->index;
-                menuActivate(rows[static_cast<std::size_t>(hit->index)].id, hit->kind == Hit::Kind::RowLeft ? -1 : 1);
+                const Row& row = rows[static_cast<std::size_t>(hit->index)];
+                if (row.id == RowId::Bind) {
+                    startCapture(row.action);
+                } else {
+                    menuActivate(row.id, hit->kind == Hit::Kind::RowLeft ? -1 : 1);
+                }
             }
         }
         return;

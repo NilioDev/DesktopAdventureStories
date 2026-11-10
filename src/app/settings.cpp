@@ -11,6 +11,33 @@
 
 namespace das::app {
 
+namespace {
+
+std::map<std::string, std::vector<std::string>> readControls(const json::Value& v) {
+    std::map<std::string, std::vector<std::string>> out;
+    for (const auto& [action, list] : v.asObject()) {
+        auto& names = out[action];
+        for (const auto& name : list.asArray()) {
+            names.push_back(name.asString());
+        }
+    }
+    return out;
+}
+
+json::Value writeControls(const std::map<std::string, std::vector<std::string>>& controls) {
+    json::Object out;
+    for (const auto& [action, names] : controls) {
+        json::Array list;
+        for (const auto& name : names) {
+            list.emplace_back(name);
+        }
+        out.emplace_back(action, std::move(list));
+    }
+    return out;
+}
+
+} // namespace
+
 Settings loadSettings(const std::filesystem::path& file) {
     Settings s;
     std::string text;
@@ -40,6 +67,12 @@ Settings loadSettings(const std::filesystem::path& file) {
         if (const auto* x = v.find("volume")) {
             s.volume = std::clamp(x->as<int>(), 0, 100);
         }
+        if (const auto* x = v.find("keys")) {
+            s.keys = readControls(*x);
+        }
+        if (const auto* x = v.find("buttons")) {
+            s.buttons = readControls(*x);
+        }
     } catch (const std::exception& e) {
         SDL_Log("Settings not read, using the defaults: %s", e.what());
         return Settings{};
@@ -54,6 +87,8 @@ void saveSettings(const Settings& s, const std::filesystem::path& file) {
         {"pixelPerfect", s.pixelPerfect},
         {"filter", filter},
         {"volume", s.volume},
+        {"keys", writeControls(s.keys)},
+        {"buttons", writeControls(s.buttons)},
     });
     std::error_code ec;
     std::filesystem::create_directories(file.parent_path(), ec);

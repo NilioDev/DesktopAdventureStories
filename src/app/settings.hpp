@@ -4,6 +4,9 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace das::app {
 
@@ -16,6 +19,11 @@ struct Settings {
     bool pixelPerfect = true;
     Filter filter = Filter::Sharp;
     int volume = 80; // 0 to 100
+    // Controls, per action (by its actionName): keys by SDL scancode name
+    // and gamepad buttons by SDL button name. A missing action keeps its
+    // default controls.
+    std::map<std::string, std::vector<std::string>> keys;
+    std::map<std::string, std::vector<std::string>> buttons;
 
     friend bool operator==(const Settings&, const Settings&) = default;
 };

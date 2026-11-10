@@ -33,7 +33,12 @@ smaller, for screens at least 320 units on their short side.
 - **Pause menu:** Resume, Map, Options, Save and quit. The game waits
   while it is open.
 - **Options:** Fullscreen (desktop), Scaling (Pixel / Fill), Filter (Sharp,
-  Smooth, or Scanlines over the play field) and Sound volume.
+  Smooth, or Scanlines over the play field), Sound volume and Controls.
+- **Controls:** every action with its keys, or its gamepad buttons when a
+  gamepad was used last. Choosing one waits six seconds for the new key or
+  button (Esc cancels); it becomes the only one for that action and is taken
+  away from any other action. *Reset controls* brings back the defaults. The
+  Android back button always opens the menu.
 - **Map:** the world's sites coloured by kind (town, open puzzle, solved
   puzzle, goal), with the hero's site blinking.
 
@@ -53,14 +58,17 @@ back. In the game:
 Kept in `settings.json` next to the library folder:
 
 ```json
-{"fullscreen": false, "pixelPerfect": true, "filter": "sharp", "volume": 80}
+{"fullscreen": false, "pixelPerfect": true, "filter": "sharp", "volume": 80,
+ "keys": {"use": ["Space", "Return"], ...}, "buttons": {"use": ["a"], ...}}
 ```
 
-A missing or damaged file gives these defaults.
+Keys use SDL's scancode names and buttons SDL's gamepad button names. An
+action missing from `keys` or `buttons` keeps its default controls. A
+missing or damaged file gives the defaults.
 
 ## Testing options
 
-`--window WxH` sets the window size, `--menu pause|options|map` opens a
+`--window WxH` sets the window size, `--menu pause|options|controls|map` opens a
 menu, `--device keyboard|gamepad|touch` picks the hints and `--tap X,Y`
 presses at a point (in units) after the first frame. With `--screenshot` they
 make pictures of every screen for checking a change.

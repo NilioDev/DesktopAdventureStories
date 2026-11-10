@@ -8,7 +8,7 @@
 //          [--seed N] [--size small|medium|large]
 //          [--at X,Y] [--walk UDLR...] [--library DIR] [--reimport]
 //        For screenshots and tests:
-//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|map]
+//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map]
 //          [--device keyboard|gamepad|touch] [--tap X,Y]
 //
 // The first time a game is found it is imported into our own open format in
@@ -185,6 +185,7 @@ void applySettings(App& app) {
     SDL_SetWindowFullscreen(app.window, app.settings.fullscreen);
     app.audio.setVolume(static_cast<float>(app.settings.volume) / 100.0f);
     app.viewer.applyFilter();
+    app.bindings.configure(app.settings);
 }
 
 void update(App& app, Uint64 now, Uint32 elapsedMs) {
@@ -256,6 +257,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     app->audio.open();
     app->viewer.setAudio(&app->audio);
     app->viewer.setSettings(&app->settings);
+    app->viewer.setBindings(&app->bindings);
 
     // Command line.
     std::string dataPath;
@@ -386,8 +388,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         }
         app->viewer.walk(walkPath);
     }
-    if (menu == "pause" || menu == "options") {
-        app->viewer.openMenu(menu == "options");
+    if (menu == "pause" || menu == "options" || menu == "controls") {
+        app->viewer.openMenu(menu != "pause");
+        if (menu == "controls") {
+            app->viewer.openControls();
+        }
     } else if (menu == "map") {
         app->viewer.openMap();
     }
@@ -408,8 +413,34 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     return SDL_APP_CONTINUE;
 }
 
+// While the controls menu waits for a new key or button: takes it.
+bool captureControl(App& app, const SDL_Event& event) {
+    const auto action = app.viewer.capturing();
+    if (!action) {
+        return false;
+    }
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+        if (event.key.scancode != SDL_SCANCODE_ESCAPE && event.key.scancode != SDL_SCANCODE_AC_BACK) {
+            app.bindings.bindKey(app.settings, *action, event.key.scancode);
+        }
+    } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        app.bindings.bindButton(app.settings, *action, static_cast<SDL_GamepadButton>(event.gbutton.button));
+    } else {
+        return false;
+    }
+    app.viewer.endCapture();
+    app.bindings.configure(app.settings);
+    if (!app.settingsFile.empty()) {
+        das::app::saveSettings(app.settings, app.settingsFile);
+    }
+    return true;
+}
+
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     auto& app = *static_cast<App*>(appstate);
+    if (captureControl(app, *event)) {
+        return SDL_APP_CONTINUE;
+    }
     switch (event->type) {
     case SDL_EVENT_QUIT: return SDL_APP_SUCCESS;
     case SDL_EVENT_GAMEPAD_ADDED: openGamepad(app, event->gdevice.which); break;

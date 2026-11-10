@@ -14,6 +14,7 @@
 #include "das/world/world.hpp"
 
 #include "audio.hpp"
+#include "input_bindings.hpp"
 #include "settings.hpp"
 #include "ui.hpp"
 
@@ -72,6 +73,10 @@ public:
     // Opens the pause menu (or the options from it); for testing.
     void openMenu(bool options);
     void openMap() { showMap_ = true; }
+    void openControls() {
+        page_ = Page::Controls;
+        menuItem_ = 0;
+    }
 
     void setAudio(Audio* audio) { audio_ = audio; }
     // The settings the options menu changes; owned by the app.
@@ -81,6 +86,12 @@ public:
     // True once after the options menu changed a setting.
     bool takeSettingsChanged();
     bool quitRequested() const { return quit_; }
+    // The controls, for showing them and changing them in the menu.
+    void setBindings(const InputBindings* bindings) { bindings_ = bindings; }
+    // The action waiting for a new key or button, if any. The app hands
+    // the next key or button to the bindings and then calls endCapture().
+    std::optional<Action> capturing() const { return capture_; }
+    void endCapture() { capture_.reset(); }
 
     // Where games are saved; without it nothing is saved.
     void setSaveFolder(std::filesystem::path folder) { saveFolder_ = std::move(folder); }
@@ -98,7 +109,7 @@ public:
 
 private:
     // Menus: the title screen's, the pause menu and the options.
-    enum class Page { None, Main, Pause, Options };
+    enum class Page { None, Main, Pause, Options, Controls };
     enum class RowId {
         Continue,
         NewGame,
@@ -115,12 +126,16 @@ private:
         Scaling,
         Filter,
         Volume,
+        Controls,
+        Bind,
+        ResetControls,
         Back,
     };
     struct Row {
         RowId id;
         std::string label;
         std::string value; // empty for a plain button
+        Action action = Action::Count; // Bind: the action to change
     };
     // A place on screen the pointer can press, found while drawing.
     struct Hit {
@@ -139,6 +154,7 @@ private:
     void updateMenu(const ActionState& actions, std::optional<Step> step);
     void menuActivate(RowId id, int change);
     void menuBack();
+    void startCapture(Action action);
     void updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now);
     void handleClick(Uint64 now);
     std::optional<Step> stepTowards(world::Position target) const;
@@ -164,6 +180,7 @@ private:
     void renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;
     void renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;
     void renderHints(SDL_Renderer* renderer, const SDL_FRect& panel) const;
+    std::string hintText() const;
     void addHit(Hit::Kind kind, const SDL_FRect& rect, int index = 0) const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
@@ -194,6 +211,9 @@ private:
     world::WorldSize size_ = world::WorldSize::Medium;
     int difficulty_ = 1; // 0 easy, 1 normal, 2 hard
     bool settingsChanged_ = false;
+    const InputBindings* bindings_ = nullptr;
+    std::optional<Action> capture_;
+    Uint64 captureUntil_ = 0;
     bool quit_ = false;
 
     // Pointer input and walking to a tapped cell.

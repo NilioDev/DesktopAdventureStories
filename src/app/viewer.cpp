@@ -206,6 +206,10 @@ void Viewer::rebuild(LoadedGame& g) {
         }
     }
 
+    install(g, std::move(pack));
+}
+
+void Viewer::install(LoadedGame& g, pack::Pack pack) {
     g.data = std::move(pack.data);
     g.palette = pack.palette;
     g.paletteFromGame = pack.palette.colors != data::greyscalePalette().colors;
@@ -340,6 +344,16 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
 }
 
 void Viewer::leavePlay() {
+    if (edit_.testing) {
+        // Back to the editor, on the zone that was being edited.
+        world_.reset();
+        edit_.testing = false;
+        mode_ = ViewMode::Edit;
+        page_ = Page::None;
+        showMap_ = false;
+        walkTarget_.reset();
+        return;
+    }
     autosave();
     zone_ = world_->zoneIndex();
     world_.reset();
@@ -515,6 +529,9 @@ void Viewer::pointerPressed(float x, float y) { click_ = SDL_FPoint{x, y}; }
 // --- menus -----------------------------------------------------------------
 
 std::vector<Viewer::Row> Viewer::menuRows() const {
+    if (mode_ == ViewMode::Edit) {
+        return editorRows();
+    }
     std::vector<Row> rows;
     switch (page_) {
     case Page::Main:
@@ -531,6 +548,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         if (!modsFolder_.empty()) {
             const auto on = game().mods.size();
             rows.push_back({RowId::Mods, "Mods", on > 0 ? std::to_string(on) + " on" : ""});
+            rows.push_back({RowId::Editor, "Editor", ""});
         }
         rows.push_back({RowId::AddGames, "Add games", ""});
         if (!kMobile) {
@@ -611,6 +629,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Back, "Back", ""});
         break;
     }
+    case Page::Editor:
     case Page::None: break;
     }
     return rows;
@@ -723,6 +742,19 @@ void Viewer::menuActivate(const Row& row, int change) {
         });
         break;
     case RowId::Mods: openMods(); break;
+    case RowId::Editor: openEditor(); break;
+    case RowId::EditZone:
+    case RowId::EditLayer:
+    case RowId::EditTool:
+    case RowId::EditTile:
+    case RowId::EditSpotType:
+    case RowId::EditSpotArgument:
+    case RowId::EditZoneType:
+    case RowId::EditUndo:
+    case RowId::EditNewZone:
+    case RowId::EditTest:
+    case RowId::EditSave:
+    case RowId::EditLeave: editorActivate(row, change); break;
     case RowId::Mod: {
         const auto list = gameMods();
         if (!settings_ || row.index < 0 || static_cast<std::size_t>(row.index) >= list.size()) {
@@ -771,6 +803,7 @@ void Viewer::menuBack() {
         page_ = Page::Main;
         menuItem_ = 0;
         break;
+    case Page::Editor: page_ = Page::None; break;
     case Page::Main:
     case Page::None: break;
     }
@@ -790,6 +823,11 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
         handleClick(now);
     }
     click_.reset();
+    if (mode_ == ViewMode::Edit) {
+        updateEditor(actions, step);
+        return;
+    }
+    drag_.reset();
     if (mode_ == ViewMode::Play) {
         updatePlay(actions, step, now);
         return;
@@ -845,6 +883,12 @@ void Viewer::handleClick(Uint64 now) {
             hit = &*it;
             break;
         }
+    }
+    if (mode_ == ViewMode::Edit) {
+        if (hit) {
+            editorClick(*hit, at, false);
+        }
+        return;
     }
     const bool inMenu = mode_ == ViewMode::Title || (mode_ == ViewMode::Play && page_ != Page::None);
     if (inMenu) {

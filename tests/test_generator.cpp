@@ -83,6 +83,7 @@ DAS_TEST("the generator chains puzzles to the goal") {
         DAS_SKIP("set DAS_GAMEDATA_DIR to run");
     }
     for (const auto& game : games) {
+        const bool yoda = game.layout() == data::Layout::Yoda;
         const auto puzzles = data::parsePuzzles(game);
         std::set<int> goalsSeen;
         for (std::uint32_t seed = 1; seed <= 60; ++seed) {
@@ -92,8 +93,10 @@ DAS_TEST("the generator chains puzzles to the goal") {
             const auto map = world::generateWorld(game, options);
             goalsSeen.insert(map.goalPuzzle);
             DAS_CHECK(puzzles.at(static_cast<std::size_t>(map.goalPuzzle)).kind() == data::PuzzleType::Goal);
-            DAS_CHECK(connected(map.world));
             DAS_CHECK(map.startZone >= 0);
+            if (!yoda) {
+                DAS_CHECK(connected(map.world)); // Yoda Stories has islands
+            }
 
             // Every required item is handed out somewhere, and each item is
             // handed out once.
@@ -101,36 +104,80 @@ DAS_TEST("the generator chains puzzles to the goal") {
             std::set<std::uint16_t> needed;
             std::set<int> zones;
             int puzzleSites = 0;
-            for (const auto& s : map.world.sites) {
-                for (const int z : s.zones) {
-                    DAS_CHECK(zones.insert(z).second); // no zone twice
-                }
-                if (s.findItem != data::kNoTile) {
-                    found.insert(s.findItem);
-                    DAS_CHECK(s.offerPuzzle >= 0);
-                    DAS_CHECK(puzzles[static_cast<std::size_t>(s.offerPuzzle)].item1 == s.findItem);
-                }
-                for (const auto item : {s.requiredItem, s.requiredItem2}) {
-                    if (item != data::kNoTile) {
-                        needed.insert(item);
+            for (const auto* m : {&map.world, &map.dagobah}) {
+                for (const auto& s : m->sites) {
+                    if (s.zone < 0) {
+                        continue;
+                    }
+                    DAS_CHECK(zones.insert(s.zone).second); // no zone twice
+                    for (const auto item : {s.findItem, s.findItem2}) {
+                        if (item != data::kNoTile) {
+                            found.insert(item);
+                        }
+                    }
+                    for (const auto item : {s.requiredItem, s.requiredItem2}) {
+                        if (item != data::kNoTile) {
+                            needed.insert(item);
+                        }
+                    }
+                    if (yoda) {
+                        puzzleSites += m == &map.world && (s.role == 10 || s.role == 15 || s.role == 16) ? 1 : 0;
+                        if (s.role >= 2 && s.role <= 18 && m == &map.world) {
+                            const auto& z = game.zones.at(static_cast<std::size_t>(s.zone));
+                            DAS_CHECK(z.type == s.role || (s.role == 17 && z.type == 18));
+                        }
+                    } else if (s.kind == world::SiteKind::Puzzle) {
+                        ++puzzleSites;
+                        const auto& z = game.zones.at(static_cast<std::size_t>(s.zone));
+                        DAS_CHECK(z.type == 15 || z.type == 16 || z.type == 17);
+                        if (s.findItem != data::kNoTile) {
+                            DAS_CHECK(s.offerPuzzle >= 0);
+                            DAS_CHECK(puzzles[static_cast<std::size_t>(s.offerPuzzle)].item1 == s.findItem);
+                        }
                     }
                 }
-                if (s.kind == world::SiteKind::Puzzle) {
-                    ++puzzleSites;
-                    const auto& z = game.zones.at(static_cast<std::size_t>(s.zone));
-                    DAS_CHECK(z.type == 15 || z.type == 16 || z.type == 17);
-                }
             }
-            DAS_CHECK(puzzleSites == map.puzzleCount);
+            DAS_CHECK(puzzleSites == map.puzzleCount + (yoda ? 1 : 0));
             DAS_CHECK(map.puzzleCount >= 3);
             for (const auto item : needed) {
                 DAS_CHECK(found.count(item) == 1);
             }
-            DAS_CHECK(found.size() == needed.size());
+            DAS_CHECK(found.size() == needed.size() || yoda); // Yoda Stories also hides extra items
         }
         std::printf("       %s: %zu different goals in 60 worlds\n",
                     std::string(data::layoutName(game.layout())).c_str(), goalsSeen.size());
         DAS_CHECK(goalsSeen.size() >= 5);
+    }
+}
+
+DAS_TEST("a Yoda Stories seed always gives the same world") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        world::GeneratorOptions options;
+        options.seed = 7;
+        options.planet = 1;
+        options.size = world::WorldSize::Medium;
+        const auto a = world::generateWorld(game, options);
+        const auto b = world::generateWorld(game, options);
+        std::string zones;
+        for (const auto& s : a.world.sites) {
+            zones += std::to_string(s.zone) + " ";
+        }
+        std::string again;
+        for (const auto& s : b.world.sites) {
+            again += std::to_string(s.zone) + " ";
+        }
+        DAS_CHECK(zones == again);
+        // Pinned so that a change to the port shows up; see
+        // docs/world-generator.md.
+        DAS_CHECK(a.goalPuzzle == 85);
+        DAS_CHECK(a.world.at(4, 5).zone == 2); // the town
+        DAS_CHECK(a.world.at(6, 9).zone == 277); // the goal zone
+        DAS_CHECK(a.world.at(4, 0).zone == 83);
+        DAS_CHECK(a.world.at(0, 9).zone == 106);
     }
 }
 

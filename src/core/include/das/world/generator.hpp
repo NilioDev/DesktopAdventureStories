@@ -47,6 +47,10 @@ struct GeneratorOptions {
     int planet = -1;
     // A goal puzzle index; -1: any.
     int goal = -1;
+    // Yoda Stories keeps two goals back until the player has won games, and
+    // avoids the goals of the last games on a planet (oldest first).
+    int gamesWon = 0;
+    std::vector<int> recentGoals;
 };
 
 enum class SiteKind { None, Empty, Town, Puzzle, Goal, Dagobah };
@@ -55,11 +59,14 @@ enum class SiteKind { None, Empty, Town, Puzzle, Goal, Dagobah };
 // puzzle the generator gave it.
 struct Site {
     SiteKind kind = SiteKind::None;
+    // What the zone does here (a ZoneType value): a blockade, a trade, ...
+    std::uint32_t role = 0;
     int zone = -1;
     std::vector<int> zones; // zone and its rooms
     std::uint16_t requiredItem = data::kNoTile;
     std::uint16_t requiredItem2 = data::kNoTile;
     std::uint16_t findItem = data::kNoTile;
+    std::uint16_t findItem2 = data::kNoTile;
     int requestPuzzle = -1; // its Request text asks for requiredItem
     int offerPuzzle = -1;   // its Offer text offers findItem
     // A character that stands in the zone and trades.
@@ -81,13 +88,24 @@ struct Map {
     bool inside(int x, int y) const { return x >= 0 && y >= 0 && x < width && y < height; }
 };
 
+// A hotspot whose argument the generator set (an item, a character), which
+// also turns it on.
+struct HotspotChange {
+    int zone = -1;
+    int spot = -1;
+    std::uint16_t argument = data::kNoTile;
+};
+
 struct WorldMap {
+    std::uint32_t seed = 0; // the seed the world was made from
     int planet = 0;
     int goalPuzzle = -1;
     Map world;   // the planet, 10 x 10
     Map dagobah; // Yoda Stories only: where a game starts, 2 x 2
     int startZone = -1;
     int puzzleCount = 0; // puzzle sites, the goal not counted
+    std::vector<HotspotChange> hotspots;
+    std::vector<int> recentGoals; // GeneratorOptions::recentGoals for the next game
 
     // Finds the map cell of an outdoor zone. Returns false when the zone is
     // not on a map (rooms, unused zones).

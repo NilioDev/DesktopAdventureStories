@@ -11,6 +11,8 @@ add_library(das_core STATIC
     src/data/character.cpp
     src/data/puzzle.cpp
     src/world/generator.cpp
+    src/world/yoda_generator.cpp
+    src/world/yoda_layout.cpp
     src/world/world.cpp
     src/world/scripts.cpp
     src/script/opcodes.cpp

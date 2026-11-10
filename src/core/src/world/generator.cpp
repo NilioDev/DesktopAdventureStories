@@ -3,6 +3,8 @@
 
 #include "das/script/opcodes.hpp"
 
+#include "yoda_generator.hpp"
+
 #include <algorithm>
 #include <cstdlib>
 #include <map>
@@ -60,6 +62,43 @@ bool handsOutFindItem(const data::Zone& zone, data::Layout layout) {
         }
     }
     return false;
+}
+
+// Dagobah, where a Yoda Stories game starts: the landing zone and the
+// empty zones around it.
+void buildDagobah(const data::GameData& data_, WorldMap& world) {
+    Map& map = world.dagobah;
+    map.width = kDagobahSize;
+    map.height = kDagobahSize;
+    map.sites.assign(kDagobahSize * kDagobahSize, Site{});
+    std::vector<int> empties;
+    int landing = -1;
+    for (std::size_t i = 0; i < data_.zones.size(); ++i) {
+        const auto& z = data_.zones[i];
+        if (z.planet != kDagobahPlanet || z.width != kOutdoorWidth) {
+            continue;
+        }
+        if (z.type == static_cast<std::uint32_t>(ZoneType::TravelStart)) {
+            landing = static_cast<int>(i);
+        } else if (z.type == static_cast<std::uint32_t>(ZoneType::Empty)) {
+            empties.push_back(static_cast<int>(i));
+        }
+    }
+    if (landing < 0) {
+        return;
+    }
+    // The landing zone sits bottom right, the others around it.
+    std::vector<int> cells{landing};
+    cells.insert(cells.end(), empties.begin(), empties.end());
+    const std::pair<int, int> spots[] = {{1, 1}, {0, 0}, {1, 0}, {0, 1}};
+    for (std::size_t i = 0; i < cells.size() && i < 4; ++i) {
+        Site s;
+        s.kind = SiteKind::Dagobah;
+        s.zone = cells[i];
+        s.zones = zoneCluster(data_, cells[i]);
+        map.at(spots[i].first, spots[i].second) = std::move(s);
+    }
+    world.startZone = landing;
 }
 
 class Generator {
@@ -490,47 +529,12 @@ private:
         }
 
         if (data_.layout() == data::Layout::Yoda) {
-            buildDagobah(world);
+            buildDagobah(data_, world);
         }
         if (world.startZone < 0) {
             world.startZone = town.zone;
         }
         return world;
-    }
-
-    void buildDagobah(WorldMap& world) {
-        Map& map = world.dagobah;
-        map.width = kDagobahSize;
-        map.height = kDagobahSize;
-        map.sites.assign(kDagobahSize * kDagobahSize, Site{});
-        std::vector<int> empties;
-        int landing = -1;
-        for (std::size_t i = 0; i < data_.zones.size(); ++i) {
-            const auto& z = data_.zones[i];
-            if (z.planet != kDagobahPlanet || z.width != kOutdoorWidth) {
-                continue;
-            }
-            if (z.type == static_cast<std::uint32_t>(ZoneType::TravelStart)) {
-                landing = static_cast<int>(i);
-            } else if (z.type == static_cast<std::uint32_t>(ZoneType::Empty)) {
-                empties.push_back(static_cast<int>(i));
-            }
-        }
-        if (landing < 0) {
-            return;
-        }
-        // The landing zone sits bottom right, the others around it.
-        std::vector<int> cells{landing};
-        cells.insert(cells.end(), empties.begin(), empties.end());
-        const std::pair<int, int> spots[] = {{1, 1}, {0, 0}, {1, 0}, {0, 1}};
-        for (std::size_t i = 0; i < cells.size() && i < 4; ++i) {
-            Site s;
-            s.kind = SiteKind::Dagobah;
-            s.zone = cells[i];
-            s.zones = zoneCluster(data_, cells[i]);
-            map.at(spots[i].first, spots[i].second) = std::move(s);
-        }
-        world.startZone = landing;
     }
 
     const data::GameData& data_;
@@ -588,7 +592,10 @@ bool WorldMap::locate(int zone, const Map*& map, int& x, int& y) const {
 }
 
 WorldMap generateWorld(const data::GameData& data, const GeneratorOptions& options) {
-    return Generator(data, options).run();
+    if (data.layout() != data::Layout::Yoda) {
+        return Generator(data, options).run();
+    }
+    return yoda::generate(data, options);
 }
 
 } // namespace das::world

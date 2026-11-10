@@ -51,6 +51,8 @@ struct GeneratorOptions {
     // avoids the goals of the last games on a planet (oldest first).
     int gamesWon = 0;
     std::vector<int> recentGoals;
+    // Indy only: zones the last game used, which this game leaves out.
+    std::vector<int> recentZones;
 };
 
 enum class SiteKind { None, Empty, Town, Puzzle, Goal, Dagobah };
@@ -104,8 +106,12 @@ struct WorldMap {
     Map dagobah; // Yoda Stories only: where a game starts, 2 x 2
     int startZone = -1;
     int puzzleCount = 0; // puzzle sites, the goal not counted
+    // Indy only: the item the mission giver in the town hands over with the
+    // briefing, which the first puzzle of the chain asks for.
+    std::uint16_t startItem = data::kNoTile;
     std::vector<HotspotChange> hotspots;
     std::vector<int> recentGoals; // GeneratorOptions::recentGoals for the next game
+    std::vector<int> recentZones; // Indy: GeneratorOptions::recentZones for the next game
 
     // Finds the map cell of an outdoor zone. Returns false when the zone is
     // not on a map (rooms, unused zones).

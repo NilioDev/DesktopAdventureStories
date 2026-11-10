@@ -30,34 +30,6 @@ std::vector<data::GameData> loadGames() {
     return out;
 }
 
-// Every site is reachable from the town over neighbouring cells.
-bool connected(const world::Map& map) {
-    int total = 0;
-    int sx = -1;
-    int sy = -1;
-    for (int y = 0; y < map.height; ++y) {
-        for (int x = 0; x < map.width; ++x) {
-            if (map.at(x, y).kind != world::SiteKind::None) {
-                ++total;
-                if (map.at(x, y).kind == world::SiteKind::Town || sx < 0) {
-                    sx = x;
-                    sy = y;
-                }
-            }
-        }
-    }
-    std::set<std::pair<int, int>> seen;
-    std::vector<std::pair<int, int>> todo{{sx, sy}};
-    while (!todo.empty()) {
-        const auto [x, y] = todo.back();
-        todo.pop_back();
-        if (!map.inside(x, y) || map.at(x, y).kind == world::SiteKind::None || !seen.insert({x, y}).second) {
-            continue;
-        }
-        todo.insert(todo.end(), {{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}});
-    }
-    return static_cast<int>(seen.size()) == total;
-}
 
 } // namespace
 
@@ -94,9 +66,8 @@ DAS_TEST("the generator chains puzzles to the goal") {
             goalsSeen.insert(map.goalPuzzle);
             DAS_CHECK(puzzles.at(static_cast<std::size_t>(map.goalPuzzle)).kind() == data::PuzzleType::Goal);
             DAS_CHECK(map.startZone >= 0);
-            if (!yoda) {
-                DAS_CHECK(connected(map.world)); // Yoda Stories has islands
-            }
+            // Both games leave islands that only a vehicle reaches, so the
+            // map need not be connected.
 
             // Every required item is handed out somewhere, and each item is
             // handed out once.
@@ -120,29 +91,23 @@ DAS_TEST("the generator chains puzzles to the goal") {
                             needed.insert(item);
                         }
                     }
-                    if (yoda) {
-                        puzzleSites += m == &map.world && (s.role == 10 || s.role == 15 || s.role == 16) ? 1 : 0;
-                        if (s.role >= 2 && s.role <= 18 && m == &map.world) {
-                            const auto& z = game.zones.at(static_cast<std::size_t>(s.zone));
-                            DAS_CHECK(z.type == s.role || (s.role == 17 && z.type == 18));
-                        }
-                    } else if (s.kind == world::SiteKind::Puzzle) {
-                        ++puzzleSites;
+                    puzzleSites += m == &map.world && (s.role == 10 || s.role == 15 || s.role == 16) ? 1 : 0;
+                    if (s.role >= 2 && s.role <= 18 && m == &map.world) {
                         const auto& z = game.zones.at(static_cast<std::size_t>(s.zone));
-                        DAS_CHECK(z.type == 15 || z.type == 16 || z.type == 17);
-                        if (s.findItem != data::kNoTile) {
-                            DAS_CHECK(s.offerPuzzle >= 0);
-                            DAS_CHECK(puzzles[static_cast<std::size_t>(s.offerPuzzle)].item1 == s.findItem);
-                        }
+                        DAS_CHECK(z.type == s.role || (s.role == 17 && z.type == 18));
                     }
                 }
             }
-            DAS_CHECK(puzzleSites == map.puzzleCount + (yoda ? 1 : 0));
-            DAS_CHECK(map.puzzleCount >= 3);
+            // Indy: the mission giver in the town hands out the first item.
+            DAS_CHECK(yoda == (map.startItem == data::kNoTile));
+            if (map.startItem != data::kNoTile) {
+                found.insert(map.startItem);
+            }
+            DAS_CHECK(puzzleSites == map.puzzleCount + 1);
+            DAS_CHECK(map.puzzleCount >= (yoda ? 3 : 1)); // a small Indy world can have a single puzzle
             for (const auto item : needed) {
                 DAS_CHECK(found.count(item) == 1);
             }
-            DAS_CHECK(found.size() == needed.size() || yoda); // Yoda Stories also hides extra items
         }
         std::printf("       %s: %zu different goals in 60 worlds\n",
                     std::string(data::layoutName(game.layout())).c_str(), goalsSeen.size());
@@ -177,6 +142,31 @@ DAS_TEST("a Yoda Stories seed always gives the same world") {
         DAS_CHECK(a.world.at(4, 5).zone == 2); // the town
         DAS_CHECK(a.world.at(6, 9).zone == 277); // the goal zone
         DAS_CHECK(a.world.at(4, 0).zone == 83);
+        DAS_CHECK(a.world.at(0, 9).zone == 106);
+    }
+}
+
+DAS_TEST("an Indiana Jones seed always gives the same world") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Indy) {
+            continue;
+        }
+        world::GeneratorOptions options;
+        options.seed = 7;
+        options.size = world::WorldSize::Medium;
+        const auto a = world::generateWorld(game, options);
+        const auto b = world::generateWorld(game, options);
+        for (std::size_t i = 0; i < a.world.sites.size(); ++i) {
+            DAS_CHECK(a.world.sites[i].zone == b.world.sites[i].zone);
+        }
+        // Pinned so that a change to the port shows up; see
+        // docs/world-generator.md.
+        DAS_CHECK(a.goalPuzzle == 15);
+        DAS_CHECK(a.puzzleCount == 4);
+        DAS_CHECK(a.world.at(4, 5).zone == 120); // the town
+        DAS_CHECK(a.world.at(5, 9).zone == 259); // the goal zone
+        DAS_CHECK(a.world.at(1, 0).zone == 141);
         DAS_CHECK(a.world.at(0, 9).zone == 106);
     }
 }

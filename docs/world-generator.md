@@ -4,8 +4,8 @@ A new game of Yoda Stories gets a world that is made on the spot: a planet map
 of 10 x 10 cells, a goal (the mission), two chains of puzzles that lead to the
 goal, and a zone for each cell. This document says how the original game does
 that, in our own words, worked out by observing the original program. It is
-the specification for `src/core/src/world/yoda_layout.cpp` and
-`yoda_generator.cpp`.
+the specification for `src/core/src/world/yoda_layout.cpp`,
+`zone_rules.cpp` and `yoda_generator.cpp`.
 
 Our version follows the original step by step and draws from the same random
 number sequence in the same order. A seed, a planet and a world size therefore
@@ -13,8 +13,10 @@ give the same world as in the original game. Where the original has a quirk
 that changes the outcome (reading a row where a column is meant, an item that
 is unmarked twice), we keep it and say so.
 
-Indiana Jones and His Desktop Adventures has its own generator. Until that one
-is specified, it gets a world from our own algorithm (`generator.cpp`).
+Yoda Stories grew out of Indiana Jones and His Desktop Adventures, and so did
+its generator. The Indy generator uses the same map layout and the same zone
+rules, with one chain of puzzles instead of two and no Dagobah. Section 9
+lists where it differs; it is the specification for `indy_generator.cpp`.
 
 ## Terms
 
@@ -297,6 +299,108 @@ or, in the hut, on the spot at (3,3) (the other helper at (3,2)).
 ## 8. Our own choices
 
 - When the planet is left open: `1 + seed % 3`.
-- When a seed fails: the next seed comes from the old one (section 5).
+- When a seed fails: the next seed comes from the old one (section 5), in both
+  games.
 - The original's map cells keep a few values from the previous game; we start
   each world clean.
+
+## 9. Indiana Jones and His Desktop Adventures
+
+Everything above holds for Indy as well, except for what this section says.
+The zone setups of section 4 (blockades, use, trade, find, empty, town) are
+shared and live in `zone_rules.cpp`.
+
+### Seed
+
+The random function is the same, but it is seeded with 16 bits only: the low
+half of the seed, negated (as a 16 bit number) when the seed read as a signed
+32 bit number is negative. Seeds that share their low 16 bits give the same
+world.
+
+### Inputs
+
+There is one planet. The original keeps two histories in its settings file:
+the goals of the last games, and the zones the last game used. A new
+installation has neither.
+
+### Layout
+
+The opening draws and the layout are those of sections 1 and 2, with other
+ring sizes. There are no preset cells besides the town.
+
+| size   | inner ring | middle ring | outer ring | edge |
+|--------|-----------|-------------|------------|------|
+| small  | 5..8      | 4..6        | 1..1       | 1..1 |
+| medium | 6..12     | 6..12       | 6..11      | 4..11 |
+| large  | 7..12     | 7..14       | 8..17      | 5..12 |
+
+### History and goal
+
+With N puzzle slots there is one chain of N + 1 entries: the puzzles from
+index 0 up, and the goal at index N.
+
+Unless a goal is fixed, the zones of the last game count as used before
+anything is placed (so this world uses other zones), and the recent goals are
+loaded. A list of more than ten loses its oldest entry. If the list is then
+empty, goal 134 is put in it, which keeps that goal out of a first game; the
+more-than-ten rule is applied once more.
+
+The goal is the fixed one, or a puzzle chosen as in section 3 among all
+puzzles of the goal kind (type 3), leaving out the recent goals (unless a goal
+was fixed) and goal 134 until ten games were won. It goes to the end of the
+chain, counts as used and is added to the recent goals.
+
+### Choosing a puzzle and shuffling
+
+Use, trade and goal-step puzzles are chosen as in section 3 (types 1, 0 and
+2). The shuffle differs in its second pass: going from the last entry to the
+first, only entries that the first pass did not move yet are placed, each by
+drawing until a free place is hit. (Yoda Stories also draws for entries that
+are already gone.)
+
+When a use, trade or goal zone draws the item it asks for, the zone's list A
+is used (then its rooms). For the first puzzle of the chain (index 0), items
+540, 542 and 543 are left out.
+
+### The goal zone
+
+The goal zone asks for the item of the chain's last puzzle and hands out the
+goal's item: the setup of section 4, but with the one chain and only the first
+goal item. Choosing the zone itself is as for use and trade: it must hand out
+the item of the goal, and draws a free item from list A for the puzzle before
+it (a goal-step puzzle, type 2).
+
+### Order of the whole run
+
+1. Seed, opening draws and layout.
+2. History and goal (above).
+3. **Travel**, as step 3 of section 5.
+4. **The chain**, from the goal down: for index N down to 1, the cell with
+   puzzle number index - 1 gets a zone that hands out the item of the puzzle
+   at that index. The first step takes the goal zone; the others draw 2 (0:
+   use, else trade) and try the other kind when that fails. Any failure ends
+   the attempt. The item the first puzzle asks for does not join the items to
+   find: the mission giver in the town hands it over with the briefing (see
+   below).
+5. **Town and blockades**, as step 6 of section 5.
+6. **Items to find**: first draw 5 picks one of 450, 450, 515, 454, 438,
+   which joins the list for ring 2; then 443 joins it for ring 1 (new entries
+   go to the front). Each item gets a cell and a find zone as in step 7 of
+   section 5.
+7. **Empty zones** on every remaining plain, behind and island cell, row by
+   row; islands and the two inner rings take zones without hotspots. A cell
+   for which no zone is left stays empty (it does not end the attempt). There
+   is no spacing rule for teleporters. If exactly one placed empty zone has a
+   teleporter, that cell gets a zone without hotspots instead.
+8. The zones the world used, minus the ones that came from the history and
+   minus empty zones, become the zone history for the next game. The original
+   makes two more draws while it writes its settings file; nothing after them
+   depends on them.
+
+### The start
+
+The game starts in the town. The first talk with the mission giver there
+shows one of the goal puzzle's texts and hands over the item the first puzzle
+of the chain asks for; later talks show another of its texts. The generator
+reports that item as the world's start item. (Handing it over is the game's
+job, not the generator's.)

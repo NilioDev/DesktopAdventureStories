@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Our own icon: a golden compass rose, the same as the Android and window icon. Made for this project. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 108 108">
+  <rect width="108" height="108" rx="20" fill="#12141A"/>
+  <path fill="#ECC45C" d="M54,14 L94,54 L54,94 L14,54 Z"/>
+  <path fill="#12141A" d="M54,30 L78,54 L54,78 L30,54 Z"/>
+  <path fill="#ECC45C" d="M54,43 L65,54 L54,65 L43,54 Z"/>
+</svg>

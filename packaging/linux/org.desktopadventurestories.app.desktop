@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DesktopAdventureStories
+GenericName=Adventure game engine
+Comment=Play Indiana Jones and His Desktop Adventures and Star Wars: Yoda Stories with your own game files
+Exec=DesktopAdventureStories
+Icon=org.desktopadventurestories.app
+Terminal=false
+Categories=Game;AdventureGame;
+Keywords=Indiana Jones;Yoda Stories;Desktop Adventures;adventure;

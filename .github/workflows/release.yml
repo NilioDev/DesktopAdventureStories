@@ -159,7 +159,13 @@ jobs:
           # tag) gets the packages added; otherwise the release is made here.
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            # Left without a title, GitHub shows the last commit message;
+            # use the version instead.
+            title=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json name --jq .name)
+            if [ -z "$title" ]; then
+              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME"
+            fi
           else
             gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-              --title "DesktopAdventureStories ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes
+              --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes
           fi

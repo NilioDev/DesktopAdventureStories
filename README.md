@@ -61,10 +61,22 @@ started from the repository root:
 ./build/src/app/DesktopAdventureStories
 ```
 
-You can also pass another folder on the command line, set `DAS_GAMEDATA_DIR`,
-or drop a folder on the window.
+You can also pass another folder or the game's `.zip` on the command line, set
+`DAS_GAMEDATA_DIR`, or drop a folder or zip on the window.
 
-For now this opens a data viewer: the title screen, every zone and every tile.
+The first time a game is found it is imported into our own open format (see
+[docs/formats/pack.md](docs/formats/pack.md)) in the app's data folder. After
+that the original files are no longer needed. Use `--reimport` to import again,
+or `--library DIR` (or `DAS_LIBRARY_DIR`) to keep the library somewhere else.
+
+| System | Library folder |
+| --- | --- |
+| Windows | `%APPDATA%\DesktopAdventureStories\library` |
+| Linux | `~/.local/share/DesktopAdventureStories/library` |
+| macOS | `~/Library/Application Support/DesktopAdventureStories/library` |
+
+For now this opens a data viewer (title screen, every zone and every tile),
+and you can walk around a zone: pick one and press Use.
 
 Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
 

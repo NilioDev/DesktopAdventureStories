@@ -83,50 +83,55 @@ LoadedGame::~LoadedGame() {
     }
 }
 
-std::string Viewer::load(SDL_Renderer* renderer, const std::filesystem::path& where) {
-    const auto found = data::findGameFiles(where);
-    if (found.empty()) {
-        return "No game files found in " + where.string();
+void Viewer::add(SDL_Renderer* renderer, pack::Pack pack) {
+    auto game = std::make_unique<LoadedGame>();
+    game->game = pack.data.layout();
+    game->data = std::move(pack.data);
+    game->palette = pack.palette;
+    game->paletteFromGame = pack.palette.colors != data::greyscalePalette().colors;
+    try {
+        game->hero = data::findHero(game->data);
+    } catch (const std::exception& e) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No hero sprite: %s", e.what());
     }
-    std::string summary;
-    for (const auto& files : found) {
-        try {
-            auto game = std::make_unique<LoadedGame>();
-            game->files = files;
-            game->data = data::parseGameData(data::readFile(files.dataFile));
-            if (!files.executable.empty()) {
-                if (auto palette = data::findPalette(data::readFile(files.executable))) {
-                    game->palette = *palette;
-                    game->paletteFromGame = true;
-                }
-            }
-            if (!game->paletteFromGame) {
-                game->palette = data::greyscalePalette();
-            }
-            game->atlas = buildAtlas(renderer, game->data, game->palette);
-            game->setup = buildSetup(renderer, game->data, game->palette);
+    game->atlas = buildAtlas(renderer, game->data, game->palette);
+    game->setup = buildSetup(renderer, game->data, game->palette);
 
-            // Replace an earlier copy of the same game.
-            std::erase_if(games_, [&](const auto& g) { return g->files.game == files.game; });
-            games_.push_back(std::move(game));
-            SDL_Log("Loaded %s from %s", std::string(data::layoutName(files.game)).c_str(),
-                    files.dataFile.string().c_str());
-            summary += std::string(summary.empty() ? "" : ", ") + std::string(data::layoutName(files.game));
-        } catch (const std::exception& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not load %s: %s", files.dataFile.string().c_str(),
-                         e.what());
-            summary += std::string(summary.empty() ? "" : ", ") + "error: " + e.what();
-        }
-    }
-    current_ = games_.empty() ? 0 : games_.size() - 1;
+    std::erase_if(games_, [&](const auto& g) { return g->game == game->game; });
+    games_.push_back(std::move(game));
+    current_ = games_.size() - 1;
+    world_.reset();
+    mode_ = mode_ == ViewMode::Play ? ViewMode::Zone : mode_;
     zone_ = 0;
     tilePage_ = 0;
-    return summary;
+}
+
+void Viewer::play() {
+    if (games_.empty()) {
+        return;
+    }
+    world_.emplace(game().data);
+    world_->start(zone_);
+    mode_ = ViewMode::Play;
+}
+
+void Viewer::walk(const std::string& path) {
+    if (!world_) {
+        return;
+    }
+    for (const char c : path) {
+        const Step step = c == 'U' ? Step{0, -1} : c == 'D' ? Step{0, 1} : c == 'L' ? Step{-1, 0} : Step{1, 0};
+        world_->move(step);
+    }
 }
 
 void Viewer::selectGame(data::Layout which) {
+    world_.reset();
+    if (mode_ == ViewMode::Play) {
+        mode_ = ViewMode::Zone;
+    }
     for (std::size_t i = 0; i < games_.size(); ++i) {
-        if (games_[i]->files.game == which) {
+        if (games_[i]->game == which) {
             current_ = i;
         }
     }
@@ -138,8 +143,27 @@ void Viewer::selectZone(int zone) {
     }
 }
 
-void Viewer::update(const ActionState& actions, std::optional<Step> step) {
+void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64 now) {
     if (games_.empty()) {
+        return;
+    }
+    if (mode_ == ViewMode::Play) {
+        if (actions.wasPressed(Action::Menu) || actions.wasPressed(Action::Map)) {
+            zone_ = world_->zoneIndex();
+            world_.reset();
+            mode_ = ViewMode::Zone;
+            return;
+        }
+        if (step) {
+            const auto result = world_->move(*step);
+            if (result != world::MoveResult::Blocked) {
+                lastStepAt_ = now;
+            }
+        }
+        return;
+    }
+    if (mode_ == ViewMode::Zone && actions.wasPressed(Action::Use)) {
+        play();
         return;
     }
     if (actions.wasPressed(Action::Map)) {
@@ -205,7 +229,39 @@ void Viewer::renderTiles(SDL_Renderer* renderer, float x, float y, float size) c
     }
 }
 
-void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float statusY) const {
+void Viewer::renderPlay(SDL_Renderer* renderer, float x, float y, float size, Uint64 now) const {
+    const auto& w = *world_;
+    const auto& zone = w.zone();
+    constexpr int kView = 9;
+    const float cell = size / kView;
+    // Camera: keep the player in the middle, without showing past the edges.
+    const int camX = std::clamp(w.player().x - kView / 2, 0, std::max(0, zone.width - kView));
+    const int camY = std::clamp(w.player().y - kView / 2, 0, std::max(0, zone.height - kView));
+    const auto dst = [&](int cx, int cy) {
+        return SDL_FRect{x + static_cast<float>(cx - camX) * cell, y + static_cast<float>(cy - camY) * cell, cell, cell};
+    };
+    const int endX = std::min<int>(zone.width, camX + kView);
+    const int endY = std::min<int>(zone.height, camY + kView);
+    for (int layer = 0; layer < 2; ++layer) {
+        for (int cy = camY; cy < endY; ++cy) {
+            for (int cx = camX; cx < endX; ++cx) {
+                renderTile(renderer, w.tile({cx, cy}, layer), dst(cx, cy));
+            }
+        }
+    }
+    if (game().hero) {
+        const bool walking = now - lastStepAt_ < 250;
+        const int set = walking ? 1 + w.stepCount() % 2 : 0;
+        renderTile(renderer, game().hero->frame(set, w.facing()), dst(w.player().x, w.player().y));
+    }
+    for (int cy = camY; cy < endY; ++cy) {
+        for (int cx = camX; cx < endX; ++cx) {
+            renderTile(renderer, w.tile({cx, cy}, 2), dst(cx, cy));
+        }
+    }
+}
+
+void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float statusY, Uint64 now) const {
     if (games_.empty()) {
         return;
     }
@@ -221,14 +277,20 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
         std::snprintf(line, sizeof line, "M/Back: zones and tiles");
         break;
     }
+    case ViewMode::Play: {
+        renderPlay(renderer, x, y, size, now);
+        std::snprintf(line, sizeof line, "Zone %d  (%d,%d)", world_->zoneIndex(), world_->player().x,
+                      world_->player().y);
+        std::snprintf(detail, sizeof detail, "Esc/Start: back to the viewer");
+        break;
+    }
     case ViewMode::Zone: {
         renderZone(renderer, x, y, size);
         const auto& zone = g.data.zones[static_cast<std::size_t>(zone_)];
         std::snprintf(line, sizeof line, "Zone %d/%zu  %dx%d  type %u", zone_, g.data.zones.size(), zone.width,
                       zone.height, static_cast<unsigned>(zone.type));
-        std::snprintf(detail, sizeof detail, "%zu hotspots, %zu scripts, %zu characters",
-                      zone.hotspots ? zone.hotspots->size() : 0, zone.actions ? zone.actions->size() : 0,
-                      zone.monsters.size());
+        std::snprintf(detail, sizeof detail, "Space/A: walk here.  %zu hotspots, %zu scripts",
+                      zone.hotspots ? zone.hotspots->size() : 0, zone.actions ? zone.actions->size() : 0);
         break;
     }
     case ViewMode::Tiles: {
@@ -239,7 +301,7 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
         break;
     }
     }
-    text(renderer, x, statusY, g.files.game == data::Layout::Indy ? "Indiana Jones" : "Yoda Stories", 220);
+    text(renderer, x, statusY, g.game == data::Layout::Indy ? "Indiana Jones" : "Yoda Stories", 220);
     text(renderer, x, statusY + 14, line, 150);
     if (!g.paletteFromGame) {
         text(renderer, x, statusY + 28, "No .EXE found: showing greyscale", 150);

@@ -425,8 +425,8 @@ std::string World::puzzleText(int puzzle, data::PuzzleText which) const {
 void World::found(std::uint16_t item) {
     addItem(item);
     effects_.push_back({Effect::Kind::ItemFound, {}, {}, item});
-    const ZoneGoal g = goal(zone_);
-    if (g.findItem == item && g.requiredItem == data::kNoTile) {
+    // Taking the item a site hands out solves the site.
+    if (goal(zone_).findItem == item) {
         setSolved(zone_);
     }
 }
@@ -467,6 +467,17 @@ bool World::bumpBuiltIn(Position target) {
     // A trading character.
     if (here != nullptr && here->npcZone == zone_ && object == here->npc) {
         const ZoneGoal g = goal(zone_);
+        // A helper who asks for nothing (Yoda on Dagobah) hands the item over.
+        if (!g.solved && g.requiredItem == data::kNoTile && g.findItem != data::kNoTile) {
+            const std::string offer = puzzleText(here->offerPuzzle, data::PuzzleText::Offer);
+            if (!offer.empty()) {
+                effects_.push_back({Effect::Kind::Speech, speechText(offer), target, 0});
+                paused_ = true;
+            }
+            setSolved(zone_);
+            found(g.findItem);
+            return true;
+        }
         std::string raw;
         if (g.solved) {
             raw = puzzleText(here->requestPuzzle, data::PuzzleText::Thanks);

@@ -143,6 +143,18 @@ bool World::equip(std::uint16_t item) {
     return true;
 }
 
+void World::begin() {
+    if (data_.layout() == data::Layout::Indy) {
+        for (const Fighter& f : fighters_) {
+            if (f.character.type == kTypeWeapon && f.item != kNone16) {
+                addItem(f.item);
+                break;
+            }
+        }
+    }
+    start(map_.startZone);
+}
+
 void World::initMonsters(int zoneIndex, ZoneState& s) {
     const auto& z = data_.zones.at(static_cast<std::size_t>(zoneIndex));
     s.monsters.clear();

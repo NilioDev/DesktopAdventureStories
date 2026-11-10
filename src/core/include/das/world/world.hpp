@@ -165,7 +165,8 @@ public:
     // zone to zone, the trading characters and items. Then start() the
     // game in map.startZone, or call begin().
     void setMap(WorldMap map);
-    void begin() { start(map_.startZone); }
+    // Indy also starts with his whip (the first weapon in the data).
+    void begin();
     const WorldMap& map() const { return map_; }
     void enter(int zone, Position at);
 
@@ -211,6 +212,7 @@ public:
     bool hasItem(std::uint16_t item) const;
     void addItem(std::uint16_t item);
     int health() const { return health_; }
+    void setHealth(int health) { health_ = std::clamp(health, 0, kMaxHealth); }
     bool heroVisible() const { return heroVisible_; }
     Outcome outcome() const { return outcome_; }
     int counter() const;

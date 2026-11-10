@@ -5,11 +5,14 @@
 // (docs/editor.md, docs/formats/mod.md).
 #include "viewer.hpp"
 
+#include "das/script/script_text.hpp"
 #include "das/util/text.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 
 namespace das::app {
 
@@ -24,6 +27,18 @@ constexpr float kPad = 8;
 constexpr float kRow = 18;
 constexpr std::size_t kUndoSteps = 100;
 constexpr std::uint16_t kNoArgument = 0xffff;
+
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+constexpr bool kMobile = true;
+#else
+constexpr bool kMobile = false;
+#endif
+
+std::string scriptFile(int zone) {
+    char name[48];
+    std::snprintf(name, sizeof name, "scripts/%04d.txt", zone);
+    return name;
+}
 
 const char* layerName(int layer) {
     switch (layer) {
@@ -95,6 +110,14 @@ void Viewer::openEditor() {
             try {
                 pack::applyMod(pack, mod);
                 edit_.info = mod.info;
+                // Its scripts as text may still be edited: they are read
+                // again before trying out and saving.
+                for (const auto& [name, bytes] : mod.files) {
+                    int zone = -1;
+                    if (std::sscanf(name.c_str(), "scripts/%d.txt", &zone) == 1 && zone >= 0) {
+                        edit_.scriptZones.push_back(zone);
+                    }
+                }
             } catch (const std::exception& e) {
                 notice_ = mod.info.name + ": " + e.what();
                 return;
@@ -243,7 +266,76 @@ void Viewer::editNewZone() {
     notice_ = "Zone " + std::to_string(zone_) + " added";
 }
 
+std::filesystem::path Viewer::editFolder() const {
+    for (const auto& m : mods_) {
+        if (m.info.id == edit_.info.id && m.info.game == edit_.info.game &&
+            std::filesystem::is_directory(m.location)) {
+            return m.location;
+        }
+    }
+    return modsFolder_ / edit_.info.id;
+}
+
+bool Viewer::syncScripts() {
+    for (const int zone : edit_.scriptZones) {
+        const auto path = editFolder() / scriptFile(zone);
+        std::ifstream in(path, std::ios::binary);
+        if (!in) {
+            continue; // not written (yet)
+        }
+        std::ostringstream text;
+        text << in.rdbuf();
+        auto& z = game().data.zones[static_cast<std::size_t>(zone)];
+        try {
+            auto actions = script::readScriptText(text.str(), game().game);
+            const auto layout = game().game;
+            const std::string now = z.actions ? script::writeScriptText(*z.actions, layout) : std::string();
+            if (script::writeScriptText(actions, layout) != now) {
+                edit_.undo.emplace_back(zone, z);
+                z.actions = std::move(actions);
+                edit_.dirty = true;
+            }
+        } catch (const std::exception& e) {
+            notice_ = scriptFile(zone) + ": " + e.what();
+            zone_ = zone;
+            return false;
+        }
+    }
+    return true;
+}
+
+void Viewer::editScripts() {
+    if (!syncScripts()) {
+        return;
+    }
+    if (edit_.dirty || !std::filesystem::is_directory(editFolder())) {
+        editSave();
+        if (edit_.dirty) {
+            return; // not saved: the notice says why
+        }
+    }
+    const auto path = editFolder() / scriptFile(zone_);
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        std::filesystem::create_directories(path.parent_path(), ec);
+        std::ofstream out(path, std::ios::binary);
+        const auto& z = editZone();
+        out << "# The scripts of zone " << zone_ << ". Save this file, then choose Try it out or Save mod\n"
+            << "# in the editor. See docs/formats/script-text.md.\n\n"
+            << (z.actions ? script::writeScriptText(*z.actions, game().game) : std::string());
+    }
+    if (std::find(edit_.scriptZones.begin(), edit_.scriptZones.end(), zone_) == edit_.scriptZones.end()) {
+        edit_.scriptZones.push_back(zone_);
+    }
+    const std::string url = "file://" + path.generic_string();
+    notice_ = SDL_OpenURL(url.c_str()) ? "Opened " + scriptFile(zone_) + " in your text editor"
+                                       : "Edit " + path.string();
+}
+
 void Viewer::editSave() {
+    if (!syncScripts()) {
+        return;
+    }
     LoadedGame& g = game();
     pack::Pack changed;
     changed.game = g.base.game;
@@ -252,6 +344,12 @@ void Viewer::editSave() {
     changed.sounds = edit_.sounds;
     try {
         pack::Mod mod = pack::makeMod(g.base, changed, edit_.info);
+        // Scripts opened as text stay as text, also when they are as before.
+        for (const int zone : edit_.scriptZones) {
+            const auto& actions = g.data.zones[static_cast<std::size_t>(zone)].actions;
+            const std::string text = actions ? script::writeScriptText(*actions, g.game) : std::string();
+            mod.files[scriptFile(zone)] = data::Bytes(text.begin(), text.end());
+        }
         const auto existing = std::find_if(mods_.begin(), mods_.end(), [&](const pack::Mod& m) {
             return m.info.id == edit_.info.id && m.info.game == edit_.info.game;
         });
@@ -299,6 +397,10 @@ std::vector<Viewer::Row> Viewer::editorRows() const {
         rows.push_back({RowId::EditSpotArgument, "Argument", argument});
     }
     rows.push_back({RowId::EditZoneType, "Zone type", std::to_string(editZone().type)});
+    if (!kMobile) {
+        const auto& actions = editZone().actions;
+        rows.push_back({RowId::EditScripts, "Scripts", std::to_string(actions ? actions->size() : 0)});
+    }
     rows.push_back({RowId::EditUndo, "Undo", edit_.undo.empty() ? "" : std::to_string(edit_.undo.size())});
     rows.push_back({RowId::EditNewZone, "New zone", ""});
     rows.push_back({RowId::EditTest, "Try it out", ""});
@@ -349,9 +451,17 @@ void Viewer::editorActivate(const Row& row, int change) {
         editZone().type = static_cast<std::uint32_t>(std::clamp(static_cast<int>(editZone().type) + change, 0, 30));
         edit_.dirty = true;
         break;
+    case RowId::EditScripts:
+        if (change == 1) {
+            editScripts();
+        }
+        break;
     case RowId::EditUndo: editUndo(); break;
     case RowId::EditNewZone: editNewZone(); break;
     case RowId::EditTest:
+        if (!syncScripts()) {
+            break;
+        }
         world_.emplace(game().data);
         world_->start(zone_);
         startPlay();

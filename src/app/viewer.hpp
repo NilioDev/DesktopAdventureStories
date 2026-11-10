@@ -164,6 +164,7 @@ private:
         EditSpotType,
         EditSpotArgument,
         EditZoneType,
+        EditScripts,
         EditUndo,
         EditNewZone,
         EditTest,
@@ -233,6 +234,7 @@ private:
         bool testing = false;    // test play started from the editor
         pack::ModInfo info;      // of the mod being edited
         pack::Files sounds;      // the base sounds with the mod's
+        std::vector<int> scriptZones; // zones whose scripts were opened as text
     };
     std::vector<Row> editorRows() const;
     void updateEditor(const ActionState& actions, std::optional<Step> step);
@@ -243,6 +245,12 @@ private:
     void editUndo();
     void editNewZone();
     void editSave();
+    std::filesystem::path editFolder() const;
+    // Opens the zone's scripts as text in the system's text editor.
+    void editScripts();
+    // Reads back the scripts opened as text; false (with a notice) when one
+    // has a mistake.
+    bool syncScripts();
     void leaveEditor();
     data::Zone& editZone() { return game().data.zones[static_cast<std::size_t>(zone_)]; }
     const data::Zone& editZone() const { return game().data.zones[static_cast<std::size_t>(zone_)]; }

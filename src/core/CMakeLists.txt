@@ -20,6 +20,7 @@ add_library(das_core STATIC
     src/world/world.cpp
     src/world/scripts.cpp
     src/script/opcodes.cpp
+    src/script/script_text.cpp
     src/util/json.cpp
     src/util/png.cpp
     src/util/text.cpp

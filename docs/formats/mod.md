@@ -16,6 +16,7 @@ mods/
     ├── mod.json           required
     ├── zones/0012.json    changes zone 12
     ├── zones/0658.json    adds a zone (Yoda Stories has 658: 0 to 657)
+    ├── scripts/0012.txt   the scripts of zone 12, as text
     ├── tiles/2123.png     adds a tile
     ├── tiles.json         flags and names of tiles
     ├── sounds/door.wav    changes or adds a sound
@@ -60,6 +61,14 @@ must exist in the game or be added by the mod.
 New zones take part in world generation like the game's own zones, by their
 `type` and `planet`. A mod that adds or changes zones therefore changes the
 worlds the generator makes.
+
+## Scripts
+
+`scripts/NNNN.txt` holds the scripts of zone NNNN as text (see
+[script-text.md](script-text.md)) and replaces the zone's scripts, also
+those in a zone file of the same mod. The zone must exist in the game or be
+added by the mod. A mod made by the editor keeps changed scripts this way,
+and writes a zone file only when more than the scripts changed.
 
 ## Tiles
 

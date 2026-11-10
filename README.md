@@ -30,6 +30,44 @@ Never commit these files, or anything extracted from them, to this repository.
 - **Trademarks.** This project is not affiliated with or endorsed by Lucasfilm, Disney
   or LucasArts. Game names are used only to describe compatibility.
 
+## Building
+
+Requirements: CMake 3.22+, a C++20 compiler and Git. SDL3 is downloaded and built
+automatically when it is not installed.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+./build/src/app/DesktopAdventureStories
+```
+
+On Linux, install SDL's build dependencies first (see `.github/workflows/ci.yml`).
+
+Android (needs the Android SDK and NDK):
+
+```sh
+cd android
+./gradlew assembleDebug
+```
+
+### Controls (for now)
+
+| Action | Keyboard | Gamepad |
+| --- | --- | --- |
+| Move | Arrow keys / WASD | D-pad / left stick |
+| Use, talk | Space / Enter | A (south) |
+| Attack | Ctrl / X | B (east) |
+| Previous / next item | Q / E | LB / RB |
+| Map | M / Tab | Back / Select |
+| Menu | Esc | Start |
+
+Controls will be rebindable.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), especially the clean-room rules.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

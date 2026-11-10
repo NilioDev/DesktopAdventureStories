@@ -51,16 +51,33 @@ cd android
 ./gradlew assembleDebug
 ```
 
+### Pointing it at your games
+
+Start it with the folder that holds your game files, set `DAS_GAMEDATA_DIR`, or
+drop the folder on the window. Both games can live in subfolders of one folder.
+
+```sh
+./build/src/app/DesktopAdventureStories ~/games/desktop-adventures
+```
+
+For now this opens a data viewer: the title screen, every zone and every tile.
+
+Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
+
+```sh
+DAS_GAMEDATA_DIR=~/games/desktop-adventures ctest --test-dir build --output-on-failure
+```
+
 ### Controls (for now)
 
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
-| Move | Arrow keys / WASD | D-pad / left stick |
+| Move (viewer: next zone or page, up/down jumps 10) | Arrow keys / WASD | D-pad / left stick |
 | Use, talk | Space / Enter | A (south) |
 | Attack | Ctrl / X | B (east) |
-| Previous / next item | Q / E | LB / RB |
-| Map | M / Tab | Back / Select |
-| Menu | Esc | Start |
+| Previous / next item (viewer: switch game) | Q / E | LB / RB |
+| Map (viewer: title, zones, tiles) | M / Tab | Back / Select |
+| Menu (viewer: title screen) | Esc | Start |
 
 Controls will be rebindable.
 

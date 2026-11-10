@@ -2,6 +2,11 @@ configure_file(version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/das/version
 
 add_library(das_core STATIC
     src/input.cpp
+    src/data/binary.cpp
+    src/data/container.cpp
+    src/data/game_data.cpp
+    src/data/game_files.cpp
+    src/data/palette.cpp
 )
 add_library(das::core ALIAS das_core)
 

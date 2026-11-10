@@ -19,6 +19,7 @@ struct Case {
 
 std::vector<Case>& registry();
 void reportFailure(const char* file, int line, const char* expression);
+void reportSkip(const char* reason);
 
 struct Registrar {
     Registrar(std::string_view name, std::function<void()> body) {
@@ -42,4 +43,12 @@ struct Registrar {
         if (!(__VA_ARGS__)) {                                                               \
             ::das::test::reportFailure(__FILE__, __LINE__, #__VA_ARGS__);                   \
         }                                                                                  \
+    } while (false)
+
+// Ends the current test early and reports it as skipped, for tests that need
+// files which are not always present (such as the original game data).
+#define DAS_SKIP(reason)                                                                   \
+    do {                                                                                   \
+        ::das::test::reportSkip(reason);                                                   \
+        return;                                                                            \
     } while (false)

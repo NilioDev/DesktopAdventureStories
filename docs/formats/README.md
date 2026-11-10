@@ -1,8 +1,19 @@
 # File formats
 
-Our own description of the Desktop Adventures data files (`DESKTOP.DAW`,
-`YODESK.DTA`), written from our own analysis. Every section gets a reader and a
-writer in `src/core`, and a round-trip test proves that reading and writing an
-original file gives back the exact same bytes.
+Our own description of the Desktop Adventures data files, written from our own
+analysis of the files. Every decoded section has a reader and a writer in
+`src/core/src/data`, and `tests/test_game_files.cpp` checks that reading and
+writing an original file gives back the exact same bytes.
 
-Nothing documented yet; this starts in phase 1.
+| Document | Covers |
+| --- | --- |
+| [container.md](container.md) | The section list, and how the two games differ |
+| [sections.md](sections.md) | VERS, STUP, SNDS, TILE, TNAM, ZONE (grid) |
+| [palette.md](palette.md) | Where the colours come from |
+
+All numbers are little-endian. `u16`/`u32` are unsigned, `i16` is signed.
+
+Status: sections not listed in sections.md are kept as raw bytes for now
+(PUZ2, CHAR, CHWP, CAUX, and the zone records: hotspots, IZAX, IZX2, IZX3,
+IZX4, IACT scripts; in Indy also ZAUX, ZAX2, ZAX3, ZAX4, HTSP, ACTN, ZNAM,
+PNAM, ANAM).

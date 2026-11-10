@@ -1,6 +1,7 @@
 set(DAS_APP_SOURCES
     main.cpp
     input_bindings.cpp
+    viewer.cpp
 )
 
 if(ANDROID)

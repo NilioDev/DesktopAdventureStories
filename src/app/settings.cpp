@@ -67,6 +67,9 @@ Settings loadSettings(const std::filesystem::path& file) {
         if (const auto* x = v.find("volume")) {
             s.volume = std::clamp(x->as<int>(), 0, 100);
         }
+        if (const auto* x = v.find("music")) {
+            s.music = std::clamp(x->as<int>(), 0, 100);
+        }
         if (const auto* x = v.find("touchPad")) {
             const std::string& name = x->asString();
             s.touchPad = name == "on" ? TouchPad::On : name == "off" ? TouchPad::Off : TouchPad::Auto;
@@ -91,6 +94,7 @@ void saveSettings(const Settings& s, const std::filesystem::path& file) {
         {"pixelPerfect", s.pixelPerfect},
         {"filter", filter},
         {"volume", s.volume},
+        {"music", s.music},
         {"touchPad", s.touchPad == TouchPad::On ? "on" : s.touchPad == TouchPad::Off ? "off" : "auto"},
         {"keys", writeControls(s.keys)},
         {"buttons", writeControls(s.buttons)},

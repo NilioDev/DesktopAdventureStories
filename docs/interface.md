@@ -33,7 +33,8 @@ smaller, for screens at least 320 units on their short side.
 - **Pause menu:** Resume, Map, Options, Save and quit. The game waits
   while it is open.
 - **Options:** Fullscreen (desktop), Scaling (Pixel / Fill), Filter (Sharp,
-  Smooth, or Scanlines over the play field), Sound volume and Controls.
+  Smooth, or Scanlines over the play field), Sound and Music volume, Touch
+  pad and Controls.
 - **Controls:** every action with its keys, or its gamepad buttons when a
   gamepad was used last. Choosing one waits six seconds for the new key or
   button (Esc cancels); it becomes the only one for that action and is taken
@@ -68,7 +69,7 @@ screen was touched), On or Off. Touches are read as fingers, not as a mouse.
 Kept in `settings.json` next to the library folder:
 
 ```json
-{"fullscreen": false, "pixelPerfect": true, "filter": "sharp", "volume": 80, "touchPad": "auto",
+{"fullscreen": false, "pixelPerfect": true, "filter": "sharp", "volume": 80, "music": 70, "touchPad": "auto",
  "keys": {"use": ["Space", "Return"], ...}, "buttons": {"use": ["a"], ...}}
 ```
 

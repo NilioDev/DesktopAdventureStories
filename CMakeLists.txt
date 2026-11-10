@@ -26,6 +26,11 @@ if(DAS_BUILD_APP)
     add_subdirectory(src/app)
 endif()
 
+# Desktop packages for the releases: `cpack -C Release` after a build.
+if(DAS_BUILD_APP AND NOT ANDROID)
+    include(DasPackage)
+endif()
+
 if(DAS_BUILD_TESTS AND NOT ANDROID)
     enable_testing()
     add_subdirectory(tests)

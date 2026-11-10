@@ -358,6 +358,21 @@ std::string Viewer::itemName(std::uint16_t tile) const {
     return "item " + std::to_string(tile);
 }
 
+void Viewer::playSong(const char* name) {
+    if (!audio_) {
+        return;
+    }
+    for (std::size_t i = 0; i < game().data.sounds.size() && i < game().sounds.size(); ++i) {
+        std::string file = game().data.sounds[i];
+        std::transform(file.begin(), file.end(), file.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (file.find(name) != std::string::npos && file.find(".mid") != std::string::npos) {
+            audio_->play(game().sounds[i]);
+            return;
+        }
+    }
+}
+
 void Viewer::placePlayer(int x, int y) {
     if (world_) {
         world_->enter(world_->zoneIndex(), {x, y});
@@ -441,6 +456,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Scaling, "Scaling", s.pixelPerfect ? "Pixel" : "Fill"});
         rows.push_back({RowId::Filter, "Filter", filterName(s.filter)});
         rows.push_back({RowId::Volume, "Sound", std::to_string(s.volume) + "%"});
+        rows.push_back({RowId::Music, "Music", std::to_string(s.music) + "%"});
         rows.push_back({RowId::TouchPad, "Touch pad",
                         s.touchPad == TouchPad::On ? "On" : s.touchPad == TouchPad::Off ? "Off" : "Auto"});
         if (bindings_) {
@@ -558,12 +574,14 @@ void Viewer::menuActivate(RowId id, int change) {
         applyFilter();
         break;
     case RowId::Volume:
+    case RowId::Music:
         changeSetting([&](Settings& s) {
+            int& level = id == RowId::Volume ? s.volume : s.music;
             // Pressing on 100% starts again at 0; left and right stop at the ends.
-            if (change > 0 && s.volume >= 100) {
-                s.volume = 0;
+            if (change > 0 && level >= 100) {
+                level = 0;
             } else {
-                s.volume = std::clamp(s.volume + 10 * change, 0, 100);
+                level = std::clamp(level + 10 * change, 0, 100);
             }
         });
         break;
@@ -620,9 +638,17 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
         return;
     }
     if (mode_ == ViewMode::Title) {
+        if (!titleSong_) {
+            titleSong_ = true;
+            playSong("theme");
+        }
         updateMenu(actions, step);
+        if (mode_ != ViewMode::Title) {
+            titleSong_ = false; // the next visit plays it again
+        }
         return;
     }
+    titleSong_ = false;
     // The data viewer.
     if (mode_ == ViewMode::Zone && actions.wasPressed(Action::Use)) {
         play();
@@ -954,8 +980,14 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
                 audio_->stopAll();
             }
             break;
-        case world::Effect::Kind::Won: banner_ = "You won!"; break;
-        case world::Effect::Kind::Lost: banner_ = "You lost."; break;
+        case world::Effect::Kind::Won:
+            banner_ = "You won!";
+            playSong("victory");
+            break;
+        case world::Effect::Kind::Lost:
+            banner_ = "You lost.";
+            playSong("defeat");
+            break;
         case world::Effect::Kind::ItemFound: {
             const auto& inventory = world_->inventory();
             const auto it = std::find(inventory.begin(), inventory.end(), static_cast<std::uint16_t>(e.value));

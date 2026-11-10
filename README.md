@@ -88,19 +88,28 @@ app from the repository root:
 
 ### Linux
 
-**Package:** download `DesktopAdventureStories-<version>-linux.tar.gz`, then:
+**Package:** download `DesktopAdventureStories-<version>-linux-x86_64.AppImage`.
+That one file is the whole program; nothing needs to be installed.
 
-```sh
-tar xzf DesktopAdventureStories-*-linux.tar.gz
-cd DesktopAdventureStories-*/
-./DesktopAdventureStories
-```
+1. Right-click the file, open *Properties* and turn on *Allow executing file
+   as program* (in some file managers: *Executable as Program*, or a
+   *Permissions* tab).
+2. Double-click it.
+3. Press *Choose game files* and pick your game folder or a zip of it. Or put
+   your games in a `gamedata` folder next to the AppImage before starting.
 
-Put your games in a `gamedata` folder next to the program, or press
-*Choose game files*.
+The games are copied into the app's own library the first time, so after
+that the program starts straight away. To get it in your application menu,
+use a tool such as [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever)
+or [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher).
+A plain `DesktopAdventureStories-<version>-linux.tar.gz` with the same
+program is on the releases page too.
 
-**Build it yourself:** on Debian or Ubuntu, install the tools and SDL's build
-dependencies (other distributions have packages with similar names):
+<details>
+<summary><b>Build it yourself</b></summary>
+
+On Debian or Ubuntu, install the tools and SDL's build dependencies (other
+distributions have packages with similar names):
 
 ```sh
 sudo apt install git cmake g++ ninja-build pkg-config \
@@ -116,6 +125,12 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ./build/src/app/DesktopAdventureStories
 ```
+
+To make an AppImage of your own build, configure with
+`-DDAS_USE_SYSTEM_SDL3=OFF`, build, and run
+`packaging/linux/make-appimage.sh build dist` (needs `desktop-file-utils`).
+
+</details>
 
 ### Android
 

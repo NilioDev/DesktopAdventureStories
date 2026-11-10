@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.desktopadventurestories.app</id>
+  <name>DesktopAdventureStories</name>
+  <summary>Play the Desktop Adventures games with your own game files</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      A new, open source engine for Indiana Jones and His Desktop Adventures
+      and Star Wars: Yoda Stories, with a modern interface, gamepad and touch
+      support and an editor for new content.
+    </p>
+    <p>
+      It contains no game data: it needs the files of your own copy of the
+      original games.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.desktopadventurestories.app.desktop</launchable>
+  <url type="homepage">https://github.com/NilioDev/DesktopAdventureStories</url>
+  <url type="bugtracker">https://github.com/NilioDev/DesktopAdventureStories/issues</url>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>gamepad</control>
+  </supports>
+</component>

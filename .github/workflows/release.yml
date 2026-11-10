@@ -11,6 +11,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - cmake/DasPackage.cmake
+      - packaging/**
       - android/**
   workflow_dispatch:
 
@@ -61,7 +62,8 @@ jobs:
             libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
             libwayland-dev libdecor-0-dev wayland-protocols \
             libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
-            libdbus-1-dev libibus-1.0-dev libudev-dev
+            libdbus-1-dev libibus-1.0-dev libudev-dev \
+            desktop-file-utils
 
       - name: Configure
         shell: bash
@@ -76,6 +78,10 @@ jobs:
         working-directory: build
         run: cpack -C Release
 
+      - name: AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: packaging/linux/make-appimage.sh build build/packages
+
       - uses: actions/upload-artifact@v4
         with:
           name: package-${{ matrix.name }}
@@ -83,6 +89,7 @@ jobs:
             build/packages/*.zip
             build/packages/*.tar.gz
             build/packages/*.dmg
+            build/packages/*.AppImage
           if-no-files-found: error
 
   android:
@@ -152,7 +159,9 @@ jobs:
           - Windows: unpack the zip and start DesktopAdventureStories.exe.
           - macOS: open the disk image and drag the app to Applications. The app
             is not signed: the first time, open it with right-click, Open.
-          - Linux: unpack the tar.gz and start DesktopAdventureStories.
+          - Linux: download the AppImage, allow it to run as a program
+            (right-click, Properties) and double-click it. The tar.gz holds
+            the same program for those who prefer that.
           - Android: install the APK, then choose a zip of the game folder.
           NOTES
           # A release made on GitHub's release page (which also makes the

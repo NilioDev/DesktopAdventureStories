@@ -7,6 +7,7 @@ A release is made from a tag. Every package is built by
 | --- | --- | --- |
 | `DesktopAdventureStories-<version>-windows.zip` | Windows, MSVC | the program (SDL and the C++ runtime linked in), license, readme |
 | `DesktopAdventureStories-<version>-macos.dmg` | macOS | the app for Apple silicon and Intel, from macOS 11 |
+| `DesktopAdventureStories-<version>-linux-x86_64.AppImage` | Ubuntu 22.04 | the same program as one file that starts with a double click, with its menu entry and icon |
 | `DesktopAdventureStories-<version>-linux.tar.gz` | Ubuntu 22.04 | the program (SDL linked in), license, readme |
 | `DesktopAdventureStories-<version>-android.apk` | Ubuntu | the app for arm64, armv7 and x86_64, from Android 5 |
 
@@ -28,6 +29,19 @@ the packages, as workflow artifacts, to try the packaging.
 
 Desktop packages can also be made locally: build, then `cpack -C Release`
 in the build folder; they land in `build/packages`.
+
+## The Linux AppImage
+
+`packaging/linux/make-appimage.sh <build folder> <output folder>` turns a
+Release build into an AppImage. It downloads
+[appimagetool](https://github.com/AppImage/appimagetool) (pinned version,
+checked against its SHA-256) and needs `desktop-file-validate` from
+`desktop-file-utils`. The menu entry, icon and AppStream data it puts in
+are in `packaging/linux/`; they can be reused for a Flatpak later.
+
+Started from an AppImage, the program also looks for a `gamedata` folder
+next to the AppImage file (the `APPIMAGE` environment variable), since the
+program itself runs from a read-only mount.
 
 ## Signing the Android app
 

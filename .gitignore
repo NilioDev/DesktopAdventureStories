@@ -28,3 +28,6 @@ android/third_party/
 *.exe
 /gamedata/*
 !/gamedata/README.md
+
+# Python packages (tools used while studying the original programs)
+*.whl

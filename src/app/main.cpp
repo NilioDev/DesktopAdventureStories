@@ -15,8 +15,8 @@
 // the library folder (the app's data folder, or --library / DAS_LIBRARY_DIR);
 // from then on only the library is used and the original files can go.
 // Games are looked for in the given path, DAS_GAMEDATA_DIR, or else a
-// "gamedata" folder next to the program or in the current folder. A folder
-// or zip can also be dropped on the window.
+// "gamedata" folder next to the program (or the AppImage) or in the current
+// folder. A folder or zip can also be dropped on the window.
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -522,6 +522,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         // Default: a "gamedata" folder next to the program or in the
         // current folder (the repository root during development).
         std::vector<std::filesystem::path> candidates;
+        // Started as an AppImage, the program itself lives in a read-only
+        // mount; the folder that matters is the one the AppImage file is in.
+        if (const char* appImage = SDL_getenv("APPIMAGE")) {
+            candidates.emplace_back(std::filesystem::path(appImage).parent_path() / "gamedata");
+        }
         if (const char* base = SDL_GetBasePath()) {
             candidates.emplace_back(std::filesystem::path(base) / "gamedata");
         }

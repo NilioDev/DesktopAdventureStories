@@ -1,12 +1,17 @@
 name: Release
 
 # A tag such as v0.2.0 builds every package and publishes them as a GitHub
-# release. Started by hand, it only builds the packages (as workflow
-# artifacts), to try the packaging. See docs/releases.md.
+# release. Started by hand, or by a pull request that changes the packaging,
+# it only builds the packages (as workflow artifacts). See docs/releases.md.
 
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - cmake/DasPackage.cmake
+      - android/**
   workflow_dispatch:
 
 permissions:

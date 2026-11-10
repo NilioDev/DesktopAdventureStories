@@ -102,7 +102,8 @@ DAS_TEST("every character entry decodes and each game has a hero") {
     for (const auto& game : games) {
         const GameData data = parseGameData(readFile(game.dataFile));
         for (const auto& entry : data.characters) {
-            (void)parseCharacter(entry.body, data.layout());
+            const auto character = parseCharacter(entry.body, data.layout());
+            DAS_CHECK(writeCharacter(character, data.layout(), entry.body) == entry.body);
         }
         const auto hero = findHero(data);
         DAS_CHECK(hero.has_value());

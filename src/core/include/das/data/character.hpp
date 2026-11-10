@@ -44,6 +44,11 @@ struct Character {
 // Stories 6 more bytes, then 24 u16 frame tiles.
 Character parseCharacter(ByteView body, Layout layout);
 
+// Writes a character back into an ICHA body. Bytes we do not decode (after
+// the name's end, and Yoda Stories' 6 extra bytes) are taken from
+// `original` when it has the right size, else they are zero.
+Bytes writeCharacter(const Character& character, Layout layout, ByteView original = {});
+
 // The player character (type 1), if the data has one.
 std::optional<Character> findHero(const GameData& data);
 

@@ -159,6 +159,17 @@ Editor::Editor(Host host, int zone) : host_(std::move(host)) {
     cursorY_ = z.height / 2;
     const auto t = z.at(cursorX_, cursorY_).layers[0];
     tile_ = t == data::kNoTile ? 0 : t;
+    readCharacters();
+    for (std::size_t i = 0; i < characters_.size(); ++i) {
+        if (characters_[i].type != 1 && characters_[i].type != 4) {
+            character_ = static_cast<int>(i);
+            break;
+        }
+    }
+}
+
+void Editor::readCharacters() {
+    characters_.clear();
     for (const auto& entry : host_.data->characters) {
         try {
             characters_.push_back(data::parseCharacter(entry.body, host_.data->layout()));
@@ -170,12 +181,7 @@ Editor::Editor(Host host, int zone) : host_(std::move(host)) {
             characters_.push_back(unknown);
         }
     }
-    for (std::size_t i = 0; i < characters_.size(); ++i) {
-        if (characters_[i].type != 1 && characters_[i].type != 4) {
-            character_ = static_cast<int>(i);
-            break;
-        }
-    }
+    character_ = std::min(character_, static_cast<int>(characters_.size()) - 1);
 }
 
 std::string Editor::characterName(int character) const {
@@ -225,6 +231,7 @@ bool Editor::takeLeave() {
 
 void Editor::frame(SDL_Renderer* renderer, const ui::Layout& layout) {
     renderer_ = renderer;
+    takeSoundFile();
     gui::Input in = collector_.take();
     in.activate = in.activate || pending_.activate || (in.enter && !gui_.typing());
     in.back = (in.back || pending_.back) && !gui_.typing();
@@ -276,6 +283,18 @@ void Editor::frame(SDL_Renderer* renderer, const ui::Layout& layout) {
         const float left = std::min(170.0f, w * 0.22f);
         const float right = std::min(230.0f, w * 0.3f);
         zonesTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
+    } else if (tab_ == Tab::Sounds) {
+        const float left = std::min(240.0f, w * 0.28f);
+        const float right = std::min(260.0f, w * 0.3f);
+        soundsTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
+    } else if (tab_ == Tab::Puzzles) {
+        const float left = std::min(240.0f, w * 0.28f);
+        const float right = std::min(260.0f, w * 0.3f);
+        puzzlesTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
+    } else if (tab_ == Tab::Characters) {
+        const float left = std::min(220.0f, w * 0.26f);
+        const float right = std::min(260.0f, w * 0.3f);
+        charactersTab({0, kTop, left, body}, {left, kTop, w - left - right, body}, {w - right, kTop, right, body});
     } else if (tab_ == Tab::Scripts) {
         const float left = std::min(170.0f, w * 0.22f);
         const float right = std::min(260.0f, w * 0.3f);
@@ -314,6 +333,19 @@ void Editor::topBar(const SDL_FRect& r) {
                "Scripts: what happens in a zone, such as people talking, doors opening and items appearing.",
                tab_ == Tab::Scripts)) {
         tab_ = Tab::Scripts;
+    }
+    if (button("tab-characters", "Characters",
+               "Characters: the hero, monsters, people and weapons; how they look, move and fight.",
+               tab_ == Tab::Characters)) {
+        tab_ = Tab::Characters;
+    }
+    if (button("tab-puzzles", "Puzzles",
+               "Puzzles: the items a game is built from, and what people say about them.", tab_ == Tab::Puzzles)) {
+        tab_ = Tab::Puzzles;
+    }
+    if (button("tab-sounds", "Sounds", "Sounds: listen to them, replace them and add your own.",
+               tab_ == Tab::Sounds)) {
+        tab_ = Tab::Sounds;
     }
     x += 8;
     if (button("undo", "Undo", "Take back the last change (Ctrl+Z).", false, !undo_.empty())) {
@@ -375,6 +407,14 @@ void Editor::helpBar(const SDL_FRect& r) {
         text = tab_ == Tab::Zones
                    ? "Choose a zone on the left, a tile on the right, and draw on the zone. Point at anything to see "
                      "what it does."
+                   : tab_ == Tab::Sounds
+                   ? "Choose a sound on the left to listen to it or replace it. Point at anything to see what it does."
+                   : tab_ == Tab::Puzzles
+                   ? "Choose a puzzle on the left: its item and what people say about it. Point at anything to see "
+                     "what it does."
+                   : tab_ == Tab::Characters
+                   ? "Choose a character on the left. Click a picture to give it the tile in hand. Point at anything "
+                     "to see what it does."
                    : tab_ == Tab::Scripts
                    ? "Choose a zone on the left; its scripts are in the middle. Click a line to change it. Point at "
                      "anything to see what it does."
@@ -459,9 +499,43 @@ void Editor::remember(int zone, int tile, bool structure) {
     leaveArmed_ = false;
 }
 
+void Editor::rememberStory() {
+    remember(-1, -1);
+    auto& s = undo_.back();
+    const auto& d = *host_.data;
+    s.characters = d.characters;
+    s.weapons = d.characterWeapons;
+    s.aux = d.characterAux;
+    s.puzzles = d.puzzles;
+}
+
 void Editor::swapSnapshot(Snapshot& s) {
     auto& d = *host_.data;
     bool tiles = false;
+    if (s.characters) {
+        std::swap(*s.characters, d.characters);
+        std::swap(*s.weapons, d.characterWeapons);
+        std::swap(*s.aux, d.characterAux);
+        std::swap(*s.puzzles, d.puzzles);
+        readCharacters();
+        readPuzzles();
+    }
+    if (s.sound) {
+        std::swap(s.soundNames, d.sounds);
+        const auto it = host_.sounds.find(s.soundKey);
+        std::optional<data::Bytes> now;
+        if (it != host_.sounds.end()) {
+            now = std::move(it->second);
+            host_.sounds.erase(it);
+        }
+        if (s.soundBytes) {
+            host_.sounds[s.soundKey] = std::move(*s.soundBytes);
+        }
+        s.soundBytes = std::move(now);
+        if (host_.soundsChanged) {
+            host_.soundsChanged(host_.sounds);
+        }
+    }
     if (s.zones) {
         std::swap(*s.zones, d.zones);
     }

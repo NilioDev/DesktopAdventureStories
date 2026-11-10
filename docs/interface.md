@@ -24,8 +24,8 @@ smaller, for screens at least 320 units on their short side.
 
 - **Title:** the game's own title picture in the field; the menu in the
   panel: Continue (when there is a save), New game, Game (when both games
-  are installed), World size, Difficulty, Options, Data viewer and Quit
-  (these two not on phones).
+  are installed), World size, Difficulty, Options, Mods, Add games, Data
+  viewer and Quit (these two not on phones).
 - **Game:** the panel shows the puzzles solved, health, the weapon in hand,
   the inventory as a grid (scrolling to the selected item), the selected
   item's name, hints for the input device used last, and Map and Menu
@@ -40,6 +40,10 @@ smaller, for screens at least 320 units on their short side.
   button (Esc cancels); it becomes the only one for that action and is taken
   away from any other action. *Reset controls* brings back the defaults. The
   Android back button always opens the menu.
+- **Mods:** the mods of the selected game, each On or Off, with its version,
+  author and description below the menu. A mod that cannot be applied shows
+  Error and the reason. *Open mods folder* (desktop) opens the folder in the
+  file manager. See [formats/mod.md](formats/mod.md).
 - **Map:** the world's sites coloured by kind (town, open puzzle, solved
   puzzle, goal), with the hero's site blinking.
 

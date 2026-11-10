@@ -28,6 +28,8 @@ struct Settings {
     // default controls.
     std::map<std::string, std::vector<std::string>> keys;
     std::map<std::string, std::vector<std::string>> buttons;
+    // The mods switched on, by game id ("yoda", "indy"), as mod ids.
+    std::map<std::string, std::vector<std::string>> mods;
 
     friend bool operator==(const Settings&, const Settings&) = default;
 };

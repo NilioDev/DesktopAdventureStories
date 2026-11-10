@@ -26,6 +26,7 @@ add_library(das_core STATIC
     src/util/zlib.cpp
     src/pack/pack.cpp
     src/pack/import.cpp
+    src/pack/mod.cpp
     src/util/zip.cpp
     src/audio/midi.cpp
 )

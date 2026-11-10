@@ -30,6 +30,7 @@ a save holds those options and only what play changed:
   "format": "das-save",
   "version": 1,
   "game": "indy",
+  "mods": ["more-temples"],
   "world": {"seed": 77, "size": 1, "planet": -1, "goal": -1,
             "gamesWon": 0, "recentGoals": [], "recentZones": []},
   "state": { ... }
@@ -38,6 +39,11 @@ a save holds those options and only what play changed:
 
 `world` holds the `GeneratorOptions`. Loading generates the same world from
 them again and then applies `state`.
+
+`mods` lists the ids of the mods that were switched on (see
+[formats/mod.md](formats/mod.md)); saves from before mods existed have no
+`mods` and count as made without mods. Mods change the world the generator
+makes, so a save is only continued with the same mods switched on.
 
 `state` holds:
 

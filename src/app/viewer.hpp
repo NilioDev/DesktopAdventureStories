@@ -10,6 +10,7 @@
 #include "das/data/game_data.hpp"
 #include "das/data/palette.hpp"
 #include "das/input.hpp"
+#include "das/pack/mod.hpp"
 #include "das/pack/pack.hpp"
 #include "das/world/world.hpp"
 
@@ -43,6 +44,9 @@ struct LoadedGame {
     SDL_Texture* atlas = nullptr; // all tiles, kAtlasColumns per row
     SDL_Texture* setup = nullptr; // 288 x 288 title screen
     std::vector<data::Bytes> sounds; // by sound index; empty when missing
+    pack::Pack base;                 // as imported, before the mods
+    std::vector<std::string> mods;   // ids of the mods that were applied
+    std::string modProblem;          // why a switched-on mod was left out
 
     LoadedGame() = default;
     LoadedGame(const LoadedGame&) = delete;
@@ -77,6 +81,9 @@ public:
         page_ = Page::Controls;
         menuItem_ = 0;
     }
+    void openMods();
+    // Where mods are kept; without it the menu has no Mods page.
+    void setModsFolder(std::filesystem::path folder);
 
     void setAudio(Audio* audio) { audio_ = audio; }
     // The settings the options menu changes; owned by the app.
@@ -119,7 +126,7 @@ public:
 
 private:
     // Menus: the title screen's, the pause menu and the options.
-    enum class Page { None, Main, Pause, Options, Controls };
+    enum class Page { None, Main, Pause, Options, Controls, Mods };
     enum class RowId {
         Continue,
         NewGame,
@@ -142,6 +149,9 @@ private:
         Controls,
         Bind,
         ResetControls,
+        Mods,
+        Mod,
+        OpenModsFolder,
         Back,
     };
     struct Row {
@@ -149,6 +159,7 @@ private:
         std::string label;
         std::string value; // empty for a plain button
         Action action = Action::Count; // Bind: the action to change
+        int index = 0;                 // Mod: which of mods_
     };
     // A place on screen the pointer can press, found while drawing.
     struct Hit {
@@ -161,11 +172,16 @@ private:
     const LoadedGame& game() const { return *games_[current_]; }
 
     // viewer.cpp: state and input.
+    // Makes the game's data from its base pack and the mods switched on.
+    void rebuild(LoadedGame& game);
+    void rescanMods();
+    // The mods of the current game, in the order they are applied.
+    std::vector<const pack::Mod*> gameMods() const;
     void startPlay();
     void leavePlay();
     std::vector<Row> menuRows() const;
     void updateMenu(const ActionState& actions, std::optional<Step> step);
-    void menuActivate(RowId id, int change);
+    void menuActivate(const Row& row, int change);
     void menuBack();
     void startCapture(Action action);
     void updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now);
@@ -199,6 +215,11 @@ private:
     void addHit(Hit::Kind kind, const SDL_FRect& rect, int index = 0) const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
+    SDL_Renderer* renderer_ = nullptr; // for remaking textures after a mod change
+    std::filesystem::path modsFolder_;
+    std::vector<pack::Mod> mods_; // every mod found, of both games
+    std::vector<std::string> modScanProblems_;
+    std::string notice_; // a short message under the title menu
     std::size_t current_ = 0;
     ViewMode mode_ = ViewMode::Title;
     int zone_ = 0;

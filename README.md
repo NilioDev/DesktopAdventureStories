@@ -110,6 +110,13 @@ DAS_GAMEDATA_DIR=gamedata ctest --test-dir build --output-on-failure
 
 Every key and button can be changed under Options, Controls.
 
+## Mods
+
+Mods change or extend a game: new or changed zones, tiles, sounds and title
+screens. A mod is a folder (or a .zip of it) in the `mods` folder next to the
+library; switch it on under *Mods* in the title menu. See
+[docs/formats/mod.md](docs/formats/mod.md) for how to make one.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), especially the clean-room rules.

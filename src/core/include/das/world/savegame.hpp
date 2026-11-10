@@ -10,6 +10,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace das::world {
 
@@ -18,10 +19,12 @@ class World;
 struct SaveGame {
     std::string game; // which game it belongs to ("yoda", "indy")
     GeneratorOptions options;
+    std::vector<std::string> mods; // ids of the mods the game was played with
     json::Value state;
 };
 
-std::string writeSaveGame(const World& world, const GeneratorOptions& options, std::string_view game);
+std::string writeSaveGame(const World& world, const GeneratorOptions& options, std::string_view game,
+                          const std::vector<std::string>& mods = {});
 // Throws json::Error when the text is not a save game we can read.
 SaveGame readSaveGame(std::string_view text);
 // Makes the saved world again and puts the saved state on it.

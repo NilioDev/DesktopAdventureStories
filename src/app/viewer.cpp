@@ -277,6 +277,103 @@ void Viewer::openMods() {
     menuItem_ = 0;
 }
 
+void Viewer::openEditor() {
+    if (games_.empty()) {
+        return;
+    }
+    if (modsFolder_.empty()) {
+        notice_ = "The editor needs a library folder";
+        return;
+    }
+    LoadedGame& g = game();
+    rescanMods();
+    // The editor works on the base game with only its own mod on top, so
+    // that saving stores just what was changed in it.
+    Editor::Host host;
+    host.info.id = "my-" + g.base.game;
+    host.info.game = g.base.game;
+    host.info.name = "My changes";
+    host.info.description = "Made with the editor.";
+    host.modFolder = modsFolder_ / host.info.id;
+    pack::Pack pack = g.base;
+    for (const auto& mod : mods_) {
+        if (mod.info.id != host.info.id || mod.info.game != g.base.game) {
+            continue;
+        }
+        try {
+            pack::applyMod(pack, mod);
+        } catch (const std::exception& e) {
+            notice_ = mod.info.name + ": " + e.what();
+            return;
+        }
+        host.info = mod.info;
+        if (std::filesystem::is_directory(mod.location)) {
+            host.modFolder = mod.location;
+        }
+        // Its scripts as text may still be edited: they are read again
+        // before trying out and saving.
+        for (const auto& [name, bytes] : mod.files) {
+            int zone = -1;
+            if (std::sscanf(name.c_str(), "scripts/%d.txt", &zone) == 1 && zone >= 0) {
+                host.scriptZones.push_back(zone);
+            }
+        }
+    }
+    host.sounds = pack.sounds;
+    install(g, std::move(pack));
+    g.mods = {host.info.id};
+    world_.reset();
+
+    host.data = &g.data;
+    host.palette = &g.palette;
+    host.atlas = &g.atlas;
+    host.base = &g.base;
+    host.modsFolder = modsFolder_;
+    LoadedGame* loaded = &g;
+    host.tilesChanged = [this, loaded] {
+        if (loaded->atlas) {
+            SDL_DestroyTexture(loaded->atlas);
+        }
+        loaded->atlas = renderer_ ? buildAtlas(renderer_, loaded->data, loaded->palette) : nullptr;
+        applyFilter();
+    };
+    host.saved = [this, loaded](const pack::Mod& mod) {
+        if (settings_) {
+            auto& on = settings_->mods[loaded->base.game];
+            if (std::find(on.begin(), on.end(), mod.info.id) == on.end()) {
+                on.push_back(mod.info.id);
+                settingsChanged_ = true;
+            }
+        }
+        rescanMods();
+    };
+    editor_ = std::make_unique<Editor>(std::move(host), zone_);
+    mode_ = ViewMode::Edit;
+    page_ = Page::None;
+    notice_.clear();
+}
+
+void Viewer::leaveEditor() {
+    if (editor_) {
+        zone_ = editor_->zone();
+    }
+    editor_.reset();
+    rebuild(game()); // back to the mods that are switched on
+    mode_ = ViewMode::Title;
+    page_ = Page::Main;
+    menuItem_ = 0;
+}
+
+void Viewer::editorEvent(const SDL_Event& e) {
+    if (editing() && !testing_) {
+        editor_->event(e);
+    }
+}
+
+float Viewer::editorScale(int pixelWidth, int pixelHeight) const {
+    return editor_ ? editor_->scaleFor(pixelWidth, pixelHeight) : 1.0f;
+}
+
 void Viewer::applyFilter() {
     const bool smooth = settings_ && settings_->filter == Filter::Smooth;
     for (const auto& g : games_) {
@@ -344,10 +441,10 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
 }
 
 void Viewer::leavePlay() {
-    if (edit_.testing) {
-        // Back to the editor, on the zone that was being edited.
+    if (testing_) {
+        // Back to the editor.
         world_.reset();
-        edit_.testing = false;
+        testing_ = false;
         mode_ = ViewMode::Edit;
         page_ = Page::None;
         showMap_ = false;
@@ -529,9 +626,6 @@ void Viewer::pointerPressed(float x, float y) { click_ = SDL_FPoint{x, y}; }
 // --- menus -----------------------------------------------------------------
 
 std::vector<Viewer::Row> Viewer::menuRows() const {
-    if (mode_ == ViewMode::Edit) {
-        return editorRows();
-    }
     std::vector<Row> rows;
     switch (page_) {
     case Page::Main:
@@ -629,7 +723,6 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Back, "Back", ""});
         break;
     }
-    case Page::Editor:
     case Page::None: break;
     }
     return rows;
@@ -743,19 +836,6 @@ void Viewer::menuActivate(const Row& row, int change) {
         break;
     case RowId::Mods: openMods(); break;
     case RowId::Editor: openEditor(); break;
-    case RowId::EditZone:
-    case RowId::EditLayer:
-    case RowId::EditTool:
-    case RowId::EditTile:
-    case RowId::EditSpotType:
-    case RowId::EditSpotArgument:
-    case RowId::EditZoneType:
-    case RowId::EditScripts:
-    case RowId::EditUndo:
-    case RowId::EditNewZone:
-    case RowId::EditTest:
-    case RowId::EditSave:
-    case RowId::EditLeave: editorActivate(row, change); break;
     case RowId::Mod: {
         const auto list = gameMods();
         if (!settings_ || row.index < 0 || static_cast<std::size_t>(row.index) >= list.size()) {
@@ -804,7 +884,6 @@ void Viewer::menuBack() {
         page_ = Page::Main;
         menuItem_ = 0;
         break;
-    case Page::Editor: page_ = Page::None; break;
     case Page::Main:
     case Page::None: break;
     }
@@ -825,10 +904,20 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
     }
     click_.reset();
     if (mode_ == ViewMode::Edit) {
-        updateEditor(actions, step);
+        if (editor_) {
+            editor_->actions(actions, step);
+            if (const auto zone = editor_->takeTryOut()) {
+                world_.emplace(game().data);
+                world_->start(*zone);
+                startPlay();
+                generated_ = false;
+                testing_ = true;
+            } else if (editor_->takeLeave()) {
+                leaveEditor();
+            }
+        }
         return;
     }
-    drag_.reset();
     if (mode_ == ViewMode::Play) {
         updatePlay(actions, step, now);
         return;
@@ -884,12 +973,6 @@ void Viewer::handleClick(Uint64 now) {
             hit = &*it;
             break;
         }
-    }
-    if (mode_ == ViewMode::Edit) {
-        if (hit) {
-            editorClick(*hit, at, false);
-        }
-        return;
     }
     const bool inMenu = mode_ == ViewMode::Title || (mode_ == ViewMode::Play && page_ != Page::None);
     if (inMenu) {

@@ -86,8 +86,10 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
         renderViewerPanel(renderer, layout.panel);
         break;
     case ViewMode::Edit:
-        renderEditor(renderer, field);
-        renderEditorPanel(renderer, layout.panel);
+        if (editor_) {
+            hits_.clear();
+            editor_->frame(renderer, layout);
+        }
         break;
     case ViewMode::Play:
         renderPlay(renderer, field, now);
@@ -423,8 +425,7 @@ void Viewer::renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const cha
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const auto& row = rows[i];
         const SDL_FRect rect{area.x, y, area.w, kRow - 2};
-        // In the editor the menu only shows its choice while it has the focus.
-        const bool on = static_cast<int>(i) == active && !(mode_ == ViewMode::Edit && page_ == Page::None);
+        const bool on = static_cast<int>(i) == active;
         if (on) {
             ui::fill(renderer, rect, ui::color::panelLight);
             ui::fill(renderer, {rect.x, rect.y, 2, rect.h}, ui::color::accent);

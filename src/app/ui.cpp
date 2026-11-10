@@ -85,6 +85,14 @@ Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRo
     return best;
 }
 
+Layout plainLayout(int pixelWidth, int pixelHeight, float scale) {
+    Layout l;
+    l.scale = std::max(1.0f, scale);
+    l.width = std::floor(static_cast<float>(pixelWidth) / l.scale);
+    l.height = std::floor(static_cast<float>(pixelHeight) / l.scale);
+    return l;
+}
+
 void begin(SDL_Renderer* renderer, const Layout& layout) {
     g_scale = layout.scale;
     SDL_SetRenderScale(renderer, g_scale, g_scale);

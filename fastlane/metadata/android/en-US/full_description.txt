@@ -1,0 +1,11 @@
+DesktopAdventureStories is an open source engine for two small adventure games from the 1990s: Indiana Jones and His Desktop Adventures and Star Wars: Yoda Stories. Every game is a new world, made from the puzzles of the original.
+
+The games are not included. You need the files of the original games, for example from the CD-ROM or an old installation: choose a zip of the game folder once and the app keeps what it needs.
+
+* A new world every game, made the way the original games make them
+* Plays with touch, a gamepad or a keyboard; every control can be changed
+* Saves on its own and continues where you left off
+* Music played by a built-in synthesizer
+* A modern interface around the original pixel art
+
+This project is not made or endorsed by Lucasfilm, LucasArts or Disney. All game content belongs to its owners and is read from your own copy.

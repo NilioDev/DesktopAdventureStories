@@ -34,6 +34,7 @@
 #include "viewer.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -271,6 +272,27 @@ std::optional<das::pack::Library> openLibrary(const std::string& wanted) {
     return das::pack::Library(root);
 }
 
+// Our own icon, drawn here so no image file is needed: a golden compass rose
+// on a dark square (the same as the Android icon).
+void setWindowIcon(SDL_Window* window) {
+    constexpr int kSize = 64;
+    SDL_Surface* icon = SDL_CreateSurface(kSize, kSize, SDL_PIXELFORMAT_RGBA32);
+    if (!icon) {
+        return;
+    }
+    const auto* details = SDL_GetPixelFormatDetails(icon->format);
+    for (int y = 0; y < kSize; ++y) {
+        auto* row = reinterpret_cast<Uint32*>(static_cast<Uint8*>(icon->pixels) + y * icon->pitch);
+        for (int x = 0; x < kSize; ++x) {
+            const int d = std::abs(2 * x + 1 - kSize) + std::abs(2 * y + 1 - kSize); // twice the distance
+            const bool gold = d <= 56 && (d > 38 || d <= 18);
+            row[x] = gold ? SDL_MapRGBA(details, nullptr, 236, 196, 92, 255) : SDL_MapRGBA(details, nullptr, 18, 20, 26, 255);
+        }
+    }
+    SDL_SetWindowIcon(window, icon);
+    SDL_DestroySurface(icon);
+}
+
 void saveScreenshot(App& app) {
     SDL_Surface* shot = SDL_RenderReadPixels(app.renderer, nullptr);
     if (!shot) {
@@ -478,6 +500,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         return SDL_APP_FAILURE;
     }
     SDL_SetWindowMinimumSize(app->window, 480, 360);
+    setWindowIcon(app->window);
     SDL_SetRenderVSync(app->renderer, 1);
 
     if (dataPath.empty()) {

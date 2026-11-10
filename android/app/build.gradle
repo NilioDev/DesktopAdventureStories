@@ -17,6 +17,18 @@ if (!sdlDir.exists()) {
     }
 }
 
+// The version comes from the release (-PdasVersion=1.2.3), else the default.
+def dasVersion = project.findProperty("dasVersion") ?: "0.1.0"
+def versionParts = dasVersion.tokenize(".").collect { it.replaceAll("[^0-9]", "") as int }
+while (versionParts.size() < 3) {
+    versionParts << 0
+}
+def dasVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+
+// Releases are signed with the key given in the environment (see
+// docs/releases.md); without it they get the debug key.
+def releaseKeystore = System.getenv("DAS_KEYSTORE_FILE")
+
 android {
     namespace "org.desktopadventurestories"
     compileSdk 35
@@ -25,8 +37,8 @@ android {
         applicationId "org.desktopadventurestories"
         minSdk 21
         targetSdk 35
-        versionCode 1
-        versionName "0.1.0"
+        versionCode dasVersionCode
+        versionName dasVersion
 
         externalNativeBuild {
             cmake {
@@ -41,9 +53,21 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv("DAS_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("DAS_KEY_ALIAS")
+                keyPassword System.getenv("DAS_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig releaseKeystore ? signingConfigs.release : signingConfigs.debug
         }
     }
 

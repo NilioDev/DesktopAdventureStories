@@ -30,6 +30,13 @@ Never commit these files, or anything extracted from them, to this repository.
 - **Trademarks.** This project is not affiliated with or endorsed by Lucasfilm, Disney
   or LucasArts. Game names are used only to describe compatibility.
 
+## Download
+
+Ready-made packages for Windows, macOS, Linux and Android are on the
+[releases page](https://github.com/NilioDev/DesktopAdventureStories/releases)
+once a version is out. See [docs/releases.md](docs/releases.md) for how they
+are made.
+
 ## Building
 
 Requirements: CMake 3.22+, a C++20 compiler and Git. SDL3 is downloaded and built

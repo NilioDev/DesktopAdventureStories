@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "viewer.hpp"
 
+#include "das/world/savegame.hpp"
+
 #include "das/util/text.hpp"
 
 #include <algorithm>
@@ -144,6 +146,7 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
     world::GeneratorOptions options;
     options.seed = seed;
     options.size = size;
+    options_ = options;
     world::WorldMap map;
     try {
         map = world::generateWorld(game().data, options);
@@ -160,12 +163,187 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
     world_.emplace(game().data);
     lastUpdate_ = 0;
     world_->setRandomSeed(seed);
+    world_->setDifficulty(difficultyValue());
     world_->setMap(std::move(map));
     world_->begin();
     mode_ = ViewMode::Play;
     generated_ = true;
     selected_ = 0;
     showMap_ = false;
+}
+
+std::string Viewer::gameId() const { return game().game == data::Layout::Indy ? "indy" : "yoda"; }
+
+int Viewer::difficultyValue() const { return difficulty_ == 0 ? 20 : difficulty_ == 2 ? 80 : 50; }
+
+std::filesystem::path Viewer::savePath() const {
+    return saveFolder_.empty() ? std::filesystem::path{} : saveFolder_ / (gameId() + ".save.json");
+}
+
+bool Viewer::hasSave() const {
+    std::error_code ec;
+    return !games_.empty() && !saveFolder_.empty() && std::filesystem::is_regular_file(savePath(), ec);
+}
+
+void Viewer::autosave() {
+    if (!world_ || !generated_ || saveFolder_.empty()) {
+        return;
+    }
+    std::error_code ec;
+    if (world_->outcome() != world::Outcome::Playing) {
+        std::filesystem::remove(savePath(), ec); // a finished game is not continued
+        return;
+    }
+    if (!world_->canSave()) {
+        return;
+    }
+    try {
+        std::filesystem::create_directories(saveFolder_, ec);
+        const std::string text = world::writeSaveGame(*world_, options_, gameId());
+        const auto temp = savePath().string() + ".new";
+        if (FILE* f = std::fopen(temp.c_str(), "wb")) {
+            const bool ok = std::fwrite(text.data(), 1, text.size(), f) == text.size();
+            std::fclose(f);
+            if (ok) {
+                std::filesystem::rename(temp, savePath(), ec);
+            }
+        }
+    } catch (const std::exception& e) {
+        SDL_Log("Could not save the game: %s", e.what());
+    }
+}
+
+bool Viewer::continueGame() {
+    if (!hasSave()) {
+        return false;
+    }
+    try {
+        std::string text;
+        if (FILE* f = std::fopen(savePath().string().c_str(), "rb")) {
+            char buffer[65536];
+            std::size_t n = 0;
+            while ((n = std::fread(buffer, 1, sizeof buffer, f)) > 0) {
+                text.append(buffer, n);
+            }
+            std::fclose(f);
+        }
+        const world::SaveGame save = world::readSaveGame(text);
+        if (save.game != gameId()) {
+            return false;
+        }
+        effects_.clear();
+        bubble_.reset();
+        waitUntil_ = 0;
+        banner_.clear();
+        world_.emplace(game().data);
+        lastUpdate_ = 0;
+        world::restoreGame(*world_, game().data, save);
+        options_ = save.options;
+        mode_ = ViewMode::Play;
+        generated_ = true;
+        selected_ = 0;
+        showMap_ = false;
+        return true;
+    } catch (const std::exception& e) {
+        SDL_Log("Could not load the saved game: %s", e.what());
+        world_.reset();
+        return false;
+    }
+}
+
+namespace {
+
+enum class MenuItem { Continue, NewGame, Size, Difficulty };
+
+std::vector<MenuItem> menuItems(bool canContinue) {
+    std::vector<MenuItem> items;
+    if (canContinue) {
+        items.push_back(MenuItem::Continue);
+    }
+    items.insert(items.end(), {MenuItem::NewGame, MenuItem::Size, MenuItem::Difficulty});
+    return items;
+}
+
+const char* sizeName(world::WorldSize size) {
+    switch (size) {
+    case world::WorldSize::Small: return "Small";
+    case world::WorldSize::Large: return "Large";
+    default: return "Medium";
+    }
+}
+
+const char* difficultyName(int d) { return d == 0 ? "Easy" : d == 2 ? "Hard" : "Normal"; }
+
+} // namespace
+
+void Viewer::updateTitle(const ActionState& actions, std::optional<Step> step) {
+    const auto items = menuItems(hasSave());
+    const int count = static_cast<int>(items.size());
+    menuItem_ = std::clamp(menuItem_, 0, count - 1);
+    if (step && step->dy != 0) {
+        menuItem_ = (menuItem_ + step->dy + count) % count;
+        return;
+    }
+    const MenuItem item = items[static_cast<std::size_t>(menuItem_)];
+    const int change = step ? step->dx : (actions.wasPressed(Action::Use) ? 1 : 0);
+    if (change == 0) {
+        return;
+    }
+    switch (item) {
+    case MenuItem::Continue:
+        if (actions.wasPressed(Action::Use)) {
+            continueGame();
+        }
+        break;
+    case MenuItem::NewGame:
+        if (actions.wasPressed(Action::Use)) {
+            newGame(static_cast<std::uint32_t>(SDL_GetPerformanceCounter()), size_);
+        }
+        break;
+    case MenuItem::Size: size_ = static_cast<world::WorldSize>((static_cast<int>(size_) + change + 3) % 3); break;
+    case MenuItem::Difficulty: difficulty_ = (difficulty_ + change + 3) % 3; break;
+    }
+}
+
+void Viewer::renderTitleMenu(SDL_Renderer* renderer, float x, float y, float size) const {
+    const auto items = menuItems(hasSave());
+    std::vector<std::string> labels;
+    for (const auto item : items) {
+        switch (item) {
+        case MenuItem::Continue: labels.emplace_back("Continue"); break;
+        case MenuItem::NewGame: labels.emplace_back("New game"); break;
+        case MenuItem::Size: labels.push_back(std::string("World size  < ") + sizeName(size_) + " >"); break;
+        case MenuItem::Difficulty: labels.push_back(std::string("Difficulty  < ") + difficultyName(difficulty_) + " >"); break;
+        }
+    }
+    std::size_t longest = 1;
+    for (const auto& l : labels) {
+        longest = std::max(longest, l.size());
+    }
+    // As large as fits the view, at most one and a half times the font.
+    constexpr auto kFont = static_cast<float>(SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE);
+    const float kScale = std::min(1.5f, (size - 56) / (kFont * static_cast<float>(longest)));
+    const float kChar = kFont * kScale;
+    const float rowH = 22;
+    const float boxW = kChar * static_cast<float>(longest) + 40;
+    const float boxH = rowH * static_cast<float>(items.size()) + 20;
+    const SDL_FRect box{x + (size - boxW) / 2, y + size - boxH - 24, boxW, boxH};
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 14, 16, 24, 215);
+    SDL_RenderFillRect(renderer, &box);
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const float ry = box.y + 10 + rowH * static_cast<float>(i);
+        const bool active = static_cast<int>(i) == std::clamp(menuItem_, 0, static_cast<int>(items.size()) - 1);
+        if (active) {
+            SDL_SetRenderDrawColor(renderer, 235, 196, 90, 60);
+            const SDL_FRect bar{box.x + 8, ry, box.w - 16, rowH};
+            SDL_RenderFillRect(renderer, &bar);
+        }
+        SDL_SetRenderScale(renderer, kScale, kScale);
+        SDL_SetRenderDrawColor(renderer, active ? 245 : 190, active ? 215 : 194, active ? 120 : 205, 255);
+        SDL_RenderDebugText(renderer, (box.x + 20) / kScale, (ry + (rowH - kChar) / 2) / kScale, labels[i].c_str());
+        SDL_SetRenderScale(renderer, 1, 1);
+    }
 }
 
 std::string Viewer::itemName(std::uint16_t tile) const {
@@ -227,8 +405,8 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
         updatePlay(actions, step, now);
         return;
     }
-    if (mode_ == ViewMode::Title && actions.wasPressed(Action::Use)) {
-        newGame(static_cast<std::uint32_t>(SDL_GetPerformanceCounter()), world::WorldSize::Medium);
+    if (mode_ == ViewMode::Title && (actions.wasPressed(Action::Use) || step)) {
+        updateTitle(actions, step);
         return;
     }
     if (mode_ == ViewMode::Zone && actions.wasPressed(Action::Use)) {
@@ -277,6 +455,7 @@ Step facingStep(data::Facing facing) {
 
 void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now) {
     if (actions.wasPressed(Action::Menu) || (!generated_ && actions.wasPressed(Action::Map))) {
+        autosave();
         zone_ = world_->zoneIndex();
         world_.reset();
         mode_ = generated_ ? ViewMode::Title : ViewMode::Zone;
@@ -711,7 +890,8 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
             const SDL_FRect dst{x, y, size, size};
             SDL_RenderTexture(renderer, g.setup, nullptr, &dst);
         }
-        std::snprintf(line, sizeof line, "Space/A: new game.  M/Back: zones and tiles");
+        renderTitleMenu(renderer, x, y, size);
+        std::snprintf(line, sizeof line, "Arrows: choose  Space/A: start  M: zones");
         break;
     }
     case ViewMode::Play: {

@@ -14,6 +14,7 @@
 #include "das/data/puzzle.hpp"
 #include "das/input.hpp"
 #include "das/script/opcodes.hpp"
+#include "das/util/json.hpp"
 #include "das/world/generator.hpp"
 
 #include <algorithm>
@@ -231,6 +232,15 @@ public:
     void setEnding(int ending) { ending_ = ending; }
     void setMissionDone(bool done) { mission_ = done ? 1 : -1; }
     void setRandomSeed(std::uint32_t seed) { rng_.seed(seed); }
+
+    // Everything play changed, for a save game (docs/savegames.md). The map
+    // itself is not in it: it is made again from the generator options.
+    // Saving is only possible while no script is paused.
+    bool canSave() const { return !paused_ && passes_.empty(); }
+    json::Value saveState() const;
+    // Restores a saved state on a world that got the same map with setMap().
+    // Throws json::Error on a damaged save.
+    void loadState(const json::Value& state);
 
     // The tile at a position and layer, including changes made by play.
     std::uint16_t tile(Position at, int layer) const;

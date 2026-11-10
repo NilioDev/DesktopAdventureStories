@@ -66,6 +66,12 @@ public:
     void walk(const std::string& path);
 
     void setAudio(Audio* audio) { audio_ = audio; }
+    // Where games are saved; without it nothing is saved.
+    void setSaveFolder(std::filesystem::path folder) { saveFolder_ = std::move(folder); }
+    // Saves a game in progress so that Continue picks it up.
+    void autosave();
+    bool hasSave() const;
+    bool continueGame();
 
     void update(const ActionState& actions, std::optional<Step> step, Uint64 now);
     // Draws the view into a square area of the logical canvas, and the status
@@ -88,6 +94,11 @@ private:
     void renderHealth(SDL_Renderer* renderer, float x, float y) const;
     void renderMap(SDL_Renderer* renderer, float x, float y, float size) const;
     std::string itemName(std::uint16_t tile) const;
+    void updateTitle(const ActionState& actions, std::optional<Step> step);
+    void renderTitleMenu(SDL_Renderer* renderer, float x, float y, float size) const;
+    std::filesystem::path savePath() const;
+    std::string gameId() const;
+    int difficultyValue() const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
     std::size_t current_ = 0;
@@ -106,6 +117,13 @@ private:
     bool generated_ = false; // playing a generated world, not a single zone
     std::size_t selected_ = 0; // inventory slot
     bool showMap_ = false;
+
+    // Title menu and options.
+    std::filesystem::path saveFolder_;
+    world::GeneratorOptions options_; // of the game being played
+    int menuItem_ = 0;
+    world::WorldSize size_ = world::WorldSize::Medium;
+    int difficulty_ = 1; // 0 easy, 1 normal, 2 hard
 };
 
 } // namespace das::app

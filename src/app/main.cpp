@@ -5,7 +5,7 @@
 // around with keyboard or gamepad.
 //
 // Usage: DesktopAdventureStories [game folder, zip or data file]
-//          [--game yoda|indy] [--mode title|zone|tiles|play|game] [--zone N]
+//          [--game yoda|indy] [--mode title|zone|tiles|play|game|continue] [--zone N]
 //          [--seed N] [--size small|medium|large]
 //          [--at X,Y] [--walk UDLR...] [--screenshot out.bmp]
 //          [--library DIR] [--reimport]
@@ -364,6 +364,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         }
     }
     app->library = openLibrary(libraryPath);
+    if (app->library) {
+        // Next to the library, so that re-importing games keeps the saves.
+        app->viewer.setSaveFolder(app->library->root().parent_path() / "saves");
+    }
     showLibrary(*app);
     if (!dataPath.empty()) {
         importGames(*app, dataPath, !reimport);
@@ -379,9 +383,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         app->viewer.setMode(das::app::ViewMode::Tiles);
     }
     app->viewer.selectZone(zone);
-    if (mode == "play" || mode == "game") {
+    if (mode == "play" || mode == "game" || mode == "continue") {
         if (mode == "game") {
             app->viewer.newGame(seed, size);
+        } else if (mode == "continue") {
+            if (!app->viewer.continueGame()) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No saved game to continue");
+            }
         } else {
             app->viewer.play();
         }
@@ -437,6 +445,9 @@ void SDL_AppQuit(void* appstate, SDL_AppResult /*result*/) {
     auto* app = static_cast<App*>(appstate);
     if (!app) {
         return;
+    }
+    if (app->screenshotPath.empty()) {
+        app->viewer.autosave();
     }
     for (SDL_Gamepad* pad : app->gamepads) {
         SDL_CloseGamepad(pad);

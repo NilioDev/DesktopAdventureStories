@@ -6,6 +6,7 @@
 
 #include "das/data/game_data.hpp"
 #include "das/data/game_files.hpp"
+#include "das/world/savegame.hpp"
 #include "das/world/world.hpp"
 
 #include <cstdlib>
@@ -148,4 +149,77 @@ DAS_TEST("the hero's weapon kills a monster") {
         }
         DAS_CHECK(dead);
     }
+}
+
+DAS_TEST("a save game brings back the same world and state") {
+    const auto games = loadGames();
+    if (games.empty()) {
+        DAS_SKIP("set DAS_GAMEDATA_DIR to run");
+    }
+    for (const auto& game : games) {
+        world::GeneratorOptions options;
+        options.seed = 12;
+        world::World w(game);
+        w.setMap(world::generateWorld(game, options));
+        w.begin();
+        // Play a little: walk around, let time pass, fight.
+        const das::Step steps[] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+        for (int i = 0; i < 400; ++i) {
+            while (w.paused()) {
+                (void)w.takeEffects();
+                w.resume();
+            }
+            (void)w.move(steps[(i / 7) % 4]);
+            (void)w.attack();
+            w.update(120);
+            (void)w.takeEffects();
+            w.setHealth(world::kMaxHealth);
+        }
+        while (w.paused()) {
+            (void)w.takeEffects();
+            w.resume();
+        }
+        DAS_CHECK(w.canSave());
+        const std::string text = world::writeSaveGame(w, options, "test");
+        const auto save = world::readSaveGame(text);
+        DAS_CHECK(save.game == "test");
+        DAS_CHECK(save.options.seed == options.seed);
+        world::World back(game);
+        world::restoreGame(back, game, save);
+        DAS_CHECK(back.zoneIndex() == w.zoneIndex());
+        DAS_CHECK(back.player() == w.player());
+        DAS_CHECK(back.inventory() == w.inventory());
+        DAS_CHECK(back.health() == w.health());
+        const std::string a = json::write(w.saveState());
+        const std::string b = json::write(back.saveState());
+        if (a != b) {
+            std::size_t i = 0;
+            while (i < a.size() && i < b.size() && a[i] == b[i]) {
+                ++i;
+            }
+            std::printf("       differs at %zu:\n%s\n---\n%s\n", i, a.substr(i > 200 ? i - 200 : 0, 300).c_str(),
+                        b.substr(i > 200 ? i - 200 : 0, 300).c_str());
+        }
+        DAS_CHECK(a == b);
+        const auto& z = w.zone();
+        bool same = true;
+        for (int y = 0; y < z.height; ++y) {
+            for (int x = 0; x < z.width; ++x) {
+                for (int layer = 0; layer < 3; ++layer) {
+                    same = same && back.tile({x, y}, layer) == w.tile({x, y}, layer);
+                }
+            }
+        }
+        DAS_CHECK(same);
+    }
+}
+
+DAS_TEST("a damaged save game is refused") {
+    bool refused = false;
+    try {
+        (void)world::readSaveGame("{\"format\": \"something else\"}");
+    } catch (const json::Error&) {
+        refused = true;
+    }
+    DAS_CHECK(refused);
 }

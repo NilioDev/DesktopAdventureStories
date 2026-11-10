@@ -6,10 +6,14 @@
 // are never part of this repository.
 #include "test.hpp"
 
+#include "das/data/character.hpp"
 #include "das/data/game_data.hpp"
 #include "das/data/game_files.hpp"
 #include "das/data/palette.hpp"
+#include "das/pack/import.hpp"
+#include "das/pack/pack.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstdio>
 
@@ -86,5 +90,52 @@ DAS_TEST("palette is found in the original executables") {
             continue;
         }
         DAS_CHECK(findPalette(readFile(game.executable)).has_value());
+    }
+}
+
+DAS_TEST("every character entry decodes and each game has a hero") {
+    const auto games = installedGames();
+    if (games.empty()) {
+        DAS_SKIP("set DAS_GAMEDATA_DIR to run");
+    }
+    for (const auto& game : games) {
+        const GameData data = parseGameData(readFile(game.dataFile));
+        for (const auto& entry : data.characters) {
+            (void)parseCharacter(entry.body, data.layout());
+        }
+        const auto hero = findHero(data);
+        DAS_CHECK(hero.has_value());
+        if (hero) {
+            DAS_CHECK(hero->frame(0, Facing::Down) < data.tiles.size());
+        }
+    }
+}
+
+DAS_TEST("original data survives the trip through our own pack format") {
+    const auto games = installedGames();
+    if (games.empty()) {
+        DAS_SKIP("set DAS_GAMEDATA_DIR to run");
+    }
+    for (const auto& game : games) {
+        const Bytes original = readFile(game.dataFile);
+        const auto source = das::pack::openSource(game.dataFile.parent_path());
+        DAS_CHECK(source != nullptr);
+        const auto packs = das::pack::importGames(*source);
+        const auto it = std::find_if(packs.begin(), packs.end(),
+                                     [&](const auto& p) { return p.game == das::pack::gameId(game.game); });
+        DAS_CHECK(it != packs.end());
+        if (it == packs.end()) {
+            continue;
+        }
+        const das::pack::Pack& pack = *it;
+        DAS_CHECK(!pack.sounds.empty());
+        const das::pack::Files files = das::pack::encode(pack);
+        const das::pack::Pack back = das::pack::decode(files);
+        DAS_CHECK(back.game == pack.game);
+        DAS_CHECK(back.palette.colors == pack.palette.colors);
+        DAS_CHECK(back.sounds == pack.sounds);
+        DAS_CHECK(writeGameData(back.data) == original);
+        // Encoding is stable, so packs diff cleanly.
+        DAS_CHECK(das::pack::encode(back) == files);
     }
 }

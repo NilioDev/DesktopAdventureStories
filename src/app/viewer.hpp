@@ -6,9 +6,11 @@
 #pragma once
 
 #include "das/data/game_data.hpp"
-#include "das/data/game_files.hpp"
 #include "das/data/palette.hpp"
+#include "das/data/character.hpp"
 #include "das/input.hpp"
+#include "das/pack/pack.hpp"
+#include "das/world/world.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -20,11 +22,12 @@
 
 namespace das::app {
 
-enum class ViewMode { Title, Zone, Tiles };
+enum class ViewMode { Title, Zone, Tiles, Play };
 
 struct LoadedGame {
-    data::GameFiles files;
+    data::Layout game = data::Layout::Yoda;
     data::GameData data;
+    std::optional<data::Character> hero;
     data::Palette palette;
     bool paletteFromGame = false;
     SDL_Texture* atlas = nullptr; // all tiles, kAtlasColumns per row
@@ -38,9 +41,9 @@ struct LoadedGame {
 
 class Viewer {
 public:
-    // Loads every game found at `where` (a folder or a data file). Returns a
-    // message describing what was loaded or what went wrong.
-    std::string load(SDL_Renderer* renderer, const std::filesystem::path& where);
+    // Shows a game from one of our packs, replacing an earlier copy of the
+    // same game. Throws when the pack cannot be used.
+    void add(SDL_Renderer* renderer, pack::Pack pack);
 
     bool empty() const { return games_.empty(); }
 
@@ -48,10 +51,15 @@ public:
     void selectGame(data::Layout game);
     void selectZone(int zone);
 
-    void update(const ActionState& actions, std::optional<Step> step);
+    // Starts walking around in the selected zone.
+    void play();
+    // Walks a scripted path ("UDLR" letters) in play mode; for testing.
+    void walk(const std::string& path);
+
+    void update(const ActionState& actions, std::optional<Step> step, Uint64 now);
     // Draws the view into a square area of the logical canvas, and the status
     // lines below it.
-    void render(SDL_Renderer* renderer, float x, float y, float size, float statusY) const;
+    void render(SDL_Renderer* renderer, float x, float y, float size, float statusY, Uint64 now) const;
 
 private:
     LoadedGame& game() { return *games_[current_]; }
@@ -60,12 +68,15 @@ private:
     void renderTile(SDL_Renderer* renderer, std::uint16_t tile, const SDL_FRect& dst) const;
     void renderZone(SDL_Renderer* renderer, float x, float y, float size) const;
     void renderTiles(SDL_Renderer* renderer, float x, float y, float size) const;
+    void renderPlay(SDL_Renderer* renderer, float x, float y, float size, Uint64 now) const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
     std::size_t current_ = 0;
     ViewMode mode_ = ViewMode::Title;
     int zone_ = 0;
     int tilePage_ = 0;
+    std::optional<world::World> world_;
+    Uint64 lastStepAt_ = 0;
 };
 
 } // namespace das::app

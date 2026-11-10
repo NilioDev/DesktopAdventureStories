@@ -4,12 +4,17 @@
 // game files it shows the data viewer; without them, a marker that walks
 // around with keyboard or gamepad.
 //
-// Usage: DesktopAdventureStories [game folder or data file]
-//          [--game yoda|indy] [--mode title|zone|tiles] [--zone N]
-//          [--screenshot out.bmp]
-// Without a path it uses DAS_GAMEDATA_DIR, or else a "gamedata" folder next
-// to the program or in the current folder. A folder can also be dropped on
-// the window.
+// Usage: DesktopAdventureStories [game folder, zip or data file]
+//          [--game yoda|indy] [--mode title|zone|tiles|play] [--zone N]
+//          [--walk UDLR...] [--screenshot out.bmp]
+//          [--library DIR] [--reimport]
+//
+// The first time a game is found it is imported into our own open format in
+// the library folder (the app's data folder, or --library / DAS_LIBRARY_DIR);
+// from then on only the library is used and the original files can go.
+// Games are looked for in the given path, DAS_GAMEDATA_DIR, or else a
+// "gamedata" folder next to the program or in the current folder. A folder
+// or zip can also be dropped on the window.
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -17,6 +22,7 @@
 
 #include "das/constants.hpp"
 #include "das/input.hpp"
+#include "das/pack/import.hpp"
 #include "das/version.hpp"
 #include "input_bindings.hpp"
 #include "viewer.hpp"
@@ -24,6 +30,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -53,13 +60,96 @@ struct App {
     Uint64 attackFlashUntil = 0;
 
     das::app::Viewer viewer;
+    std::optional<das::pack::Library> library;
     std::string loadMessage;
     std::string screenshotPath; // when set: render one frame, save it, quit
 };
 
-void loadGames(App& app, const std::filesystem::path& where) {
-    app.loadMessage = app.viewer.load(app.renderer, where);
-    SDL_Log("%s", app.loadMessage.c_str());
+std::string gameTitle(const std::string& id) { return id == "indy" ? "Indiana Jones" : "Yoda Stories"; }
+
+void note(App& app, const std::string& message) {
+    app.loadMessage += (app.loadMessage.empty() ? "" : "; ") + message;
+    SDL_Log("%s", message.c_str());
+}
+
+void show(App& app, das::pack::Pack pack) {
+    const std::string id = pack.game;
+    try {
+        app.viewer.add(app.renderer, std::move(pack));
+    } catch (const std::exception& e) {
+        note(app, gameTitle(id) + ": " + e.what());
+    }
+}
+
+void showLibrary(App& app) {
+    if (!app.library) {
+        return;
+    }
+    for (const auto& id : app.library->games()) {
+        try {
+            show(app, app.library->load(id));
+        } catch (const std::exception& e) {
+            note(app, "Could not read " + gameTitle(id) + " from the library: " + e.what());
+        }
+    }
+}
+
+// Imports the games found at `where` into the library and shows them. With
+// `onlyMissing`, games that are already in the library are skipped.
+void importGames(App& app, const std::filesystem::path& where, bool onlyMissing) {
+    try {
+        const auto source = das::pack::openSource(where);
+        if (!source) {
+            note(app, "Nothing to import at " + where.string());
+            return;
+        }
+        std::vector<std::string> wanted = das::pack::gamesIn(*source);
+        if (onlyMissing && app.library) {
+            std::erase_if(wanted, [&](const std::string& id) { return app.library->has(id); });
+        }
+        if (wanted.empty()) {
+            if (!onlyMissing) {
+                note(app, "No game files found in " + where.string());
+            }
+            return;
+        }
+        for (auto& pack : das::pack::importGames(*source, wanted)) {
+            const std::string id = pack.game;
+            if (app.library) {
+                try {
+                    app.library->install(pack);
+                    note(app, "Imported " + gameTitle(id));
+                } catch (const std::exception& e) {
+                    note(app, "Could not save " + gameTitle(id) + ": " + e.what());
+                }
+            }
+            show(app, std::move(pack));
+        }
+    } catch (const std::exception& e) {
+        note(app, "Import failed: " + std::string(e.what()));
+    }
+}
+
+std::optional<das::pack::Library> openLibrary(const std::string& wanted) {
+    std::filesystem::path root = wanted;
+    if (root.empty()) {
+        if (const char* env = SDL_getenv("DAS_LIBRARY_DIR")) {
+            root = env;
+        }
+    }
+    if (root.empty()) {
+        char* pref = SDL_GetPrefPath("", "DesktopAdventureStories");
+        if (!pref) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No data folder, games are not kept: %s", SDL_GetError());
+            return std::nullopt;
+        }
+        root = std::filesystem::path(pref) / "library";
+        SDL_free(pref);
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(root, ec);
+    SDL_Log("Library: %s", root.string().c_str());
+    return das::pack::Library(root);
 }
 
 void saveScreenshot(App& app) {
@@ -93,7 +183,7 @@ void closeGamepad(App& app, SDL_JoystickID id) {
 
 void update(App& app, Uint64 now, Uint32 elapsedMs) {
     if (!app.viewer.empty()) {
-        app.viewer.update(app.actions, app.mover.update(das::heldDirection(app.actions), elapsedMs));
+        app.viewer.update(app.actions, app.mover.update(das::heldDirection(app.actions), elapsedMs), now);
         return;
     }
     if (app.actions.wasPressed(das::Action::Menu)) {
@@ -121,7 +211,7 @@ void render(App& app, Uint64 now) {
     SDL_RenderClear(r);
 
     if (!app.viewer.empty()) {
-        app.viewer.render(r, kMargin, kMargin, das::kViewPixels, das::kViewPixels + 2 * kMargin);
+        app.viewer.render(r, kMargin, kMargin, das::kViewPixels, das::kViewPixels + 2 * kMargin, now);
         return;
     }
 
@@ -208,6 +298,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     std::string game;
     std::string mode;
     int zone = 0;
+    std::string walkPath;
+    std::string libraryPath;
+    bool reimport = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         const bool hasValue = i + 1 < argc;
@@ -217,6 +310,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
             mode = argv[++i];
         } else if (arg == "--zone" && hasValue) {
             zone = std::atoi(argv[++i]);
+        } else if (arg == "--walk" && hasValue) {
+            walkPath = argv[++i];
+        } else if (arg == "--library" && hasValue) {
+            libraryPath = argv[++i];
+        } else if (arg == "--reimport") {
+            reimport = true;
         } else if (arg == "--screenshot" && hasValue) {
             app->screenshotPath = argv[++i];
         } else if (!arg.empty() && arg[0] != '-') {
@@ -244,8 +343,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
             }
         }
     }
+    app->library = openLibrary(libraryPath);
+    showLibrary(*app);
     if (!dataPath.empty()) {
-        loadGames(*app, dataPath);
+        importGames(*app, dataPath, !reimport);
     }
     if (game == "indy") {
         app->viewer.selectGame(das::data::Layout::Indy);
@@ -258,6 +359,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         app->viewer.setMode(das::app::ViewMode::Tiles);
     }
     app->viewer.selectZone(zone);
+    if (mode == "play") {
+        app->viewer.play();
+        app->viewer.walk(walkPath);
+    }
 
     // Gamepads that are already plugged in also arrive as GAMEPAD_ADDED
     // events, so they are opened in SDL_AppEvent.
@@ -274,7 +379,8 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_WINDOW_FOCUS_LOST: app.bindings.reset(app.actions); break;
     case SDL_EVENT_DROP_FILE:
         if (event->drop.data) {
-            loadGames(app, event->drop.data);
+            app.loadMessage.clear();
+            importGames(app, event->drop.data, false);
         }
         break;
     default: break;

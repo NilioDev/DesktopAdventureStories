@@ -11,6 +11,7 @@ writing an original file gives back the exact same bytes.
 | [sections.md](sections.md) | VERS, STUP, SNDS, TILE, TNAM, ZONE (grid) |
 | [zone-records.md](zone-records.md) | Hotspots, placed characters, item lists, scripts |
 | [palette.md](palette.md) | Where the colours come from |
+| [pack.md](pack.md) | Our own open format that the originals are imported into |
 
 All numbers are little-endian. `u16`/`u32` are unsigned, `i16` is signed.
 

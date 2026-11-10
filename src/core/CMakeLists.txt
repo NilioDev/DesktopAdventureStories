@@ -8,6 +8,15 @@ add_library(das_core STATIC
     src/data/game_files.cpp
     src/data/palette.cpp
     src/data/zone_records.cpp
+    src/data/character.cpp
+    src/world/world.cpp
+    src/util/json.cpp
+    src/util/png.cpp
+    src/util/text.cpp
+    src/util/zlib.cpp
+    src/pack/pack.cpp
+    src/pack/import.cpp
+    src/util/zip.cpp
 )
 add_library(das::core ALIAS das_core)
 

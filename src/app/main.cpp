@@ -7,8 +7,9 @@
 // Usage: DesktopAdventureStories [game folder or data file]
 //          [--game yoda|indy] [--mode title|zone|tiles] [--zone N]
 //          [--screenshot out.bmp]
-// The game folder can also be set with DAS_GAMEDATA_DIR or dropped on the
-// window.
+// Without a path it uses DAS_GAMEDATA_DIR, or else a "gamedata" folder next
+// to the program or in the current folder. A folder can also be dropped on
+// the window.
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -225,6 +226,22 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     if (dataPath.empty()) {
         if (const char* env = SDL_getenv("DAS_GAMEDATA_DIR")) {
             dataPath = env;
+        }
+    }
+    if (dataPath.empty()) {
+        // Default: a "gamedata" folder next to the program or in the
+        // current folder (the repository root during development).
+        std::vector<std::filesystem::path> candidates;
+        if (const char* base = SDL_GetBasePath()) {
+            candidates.emplace_back(std::filesystem::path(base) / "gamedata");
+        }
+        candidates.emplace_back("gamedata");
+        for (const auto& candidate : candidates) {
+            std::error_code ec;
+            if (std::filesystem::is_directory(candidate, ec)) {
+                dataPath = candidate.string();
+                break;
+            }
         }
     }
     if (!dataPath.empty()) {

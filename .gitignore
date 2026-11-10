@@ -26,4 +26,5 @@ android/third_party/
 *.dta
 *.EXE
 *.exe
-/gamedata/
+/gamedata/*
+!/gamedata/README.md

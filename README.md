@@ -53,19 +53,23 @@ cd android
 
 ### Pointing it at your games
 
-Start it with the folder that holds your game files, set `DAS_GAMEDATA_DIR`, or
-drop the folder on the window. Both games can live in subfolders of one folder.
+Copy your game files into [`gamedata/yoda/`](gamedata/README.md) and
+`gamedata/indy/`; that folder is ignored by Git. The program finds it when
+started from the repository root:
 
 ```sh
-./build/src/app/DesktopAdventureStories ~/games/desktop-adventures
+./build/src/app/DesktopAdventureStories
 ```
+
+You can also pass another folder on the command line, set `DAS_GAMEDATA_DIR`,
+or drop a folder on the window.
 
 For now this opens a data viewer: the title screen, every zone and every tile.
 
 Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
 
 ```sh
-DAS_GAMEDATA_DIR=~/games/desktop-adventures ctest --test-dir build --output-on-failure
+DAS_GAMEDATA_DIR=gamedata ctest --test-dir build --output-on-failure
 ```
 
 ### Controls (for now)

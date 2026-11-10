@@ -14,8 +14,10 @@
 #include "das/data/puzzle.hpp"
 #include "das/input.hpp"
 #include "das/script/opcodes.hpp"
+#include "das/util/json.hpp"
 #include "das/world/generator.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <deque>
@@ -47,6 +49,34 @@ struct Position {
 
 inline constexpr int kMaxHealth = 300;
 
+// A character from the data as the combat rules see it (see docs/combat.md).
+struct Fighter {
+    data::Character character;
+    int health = 0;            // CHWP value; 0: cannot be hurt
+    int damage = 0;            // CAUX value; 0: does no harm
+    int weapon = -1;           // enemies: the weapon character they use (CHWP reference)
+    int sound = -1;            // weapons: the sound they make (CHWP reference)
+    std::uint16_t item = 0xffff; // weapons: the inventory tile
+};
+
+// A monster as the app draws it.
+struct MonsterView {
+    std::size_t index = 0; // into Zone::monsters
+    Position at;
+    std::uint16_t tile = 0xffff;
+};
+
+// Something flying: a shot from the hero or a monster.
+struct Shot {
+    Position at;
+    int dx = 0;
+    int dy = 0;
+    std::uint16_t tile = 0xffff;
+    int damage = 0;
+    int range = 0;    // cells left
+    bool fromHero = false;
+};
+
 // What the world generator decides for a zone: which items its puzzle asks
 // for and hands out. Scripts refer to these.
 struct ZoneGoal {
@@ -77,8 +107,19 @@ enum class MoveResult {
 
 namespace detail {
 
+struct MonsterState {
+    Position at;
+    int health = 0;
+    data::Facing facing = data::Facing::Down;
+    int waypoint = 0;
+    int moveMs = 0;   // until the next step
+    int attackMs = 0; // until the next attack
+    int frame = 0;
+};
+
 struct ZoneState {
     std::vector<data::ZoneCell> cells;
+    std::vector<MonsterState> monsters;
     // Items hidden in an object (a crate, a bush); bumping it finds them.
     std::map<std::pair<int, int>, std::uint16_t> hidden;
     std::vector<bool> hotspotEnabled;
@@ -125,7 +166,8 @@ public:
     // zone to zone, the trading characters and items. Then start() the
     // game in map.startZone, or call begin().
     void setMap(WorldMap map);
-    void begin() { start(map_.startZone); }
+    // Indy also starts with his whip (the first weapon in the data).
+    void begin();
     const WorldMap& map() const { return map_; }
     void enter(int zone, Position at);
 
@@ -133,6 +175,24 @@ public:
     // Uses an inventory item on a cell (next to the hero). Returns whether a
     // script reacted.
     bool useItem(std::uint16_t item, Position at);
+
+    // Combat (docs/combat.md). update() lets time pass: monsters move and
+    // attack, shots fly.
+    void update(int ms);
+    // The hero attacks in the direction he faces with the weapon in hand.
+    bool attack();
+    // Takes a weapon from the inventory in hand; returns false for other items.
+    bool equip(std::uint16_t item);
+    std::uint16_t weapon() const { return weapon_; }
+    bool isWeapon(std::uint16_t item) const;
+    std::vector<MonsterView> monsters() const;
+    const std::vector<Shot>& shots() const { return shots_; }
+    // Frames of an attack still showing, for the hero's attack pose.
+    bool attacking() const { return attackShowMs_ > 0; }
+    const std::vector<Fighter>& fighters() const { return fighters_; }
+    // How much harder monsters hit: 0 (easy) to 100 (hard); 50 is normal.
+    void setDifficulty(int difficulty) { difficulty_ = std::clamp(difficulty, 0, 100); }
+    int difficulty() const { return difficulty_; }
 
     // Effects produced since the last call. When the last one pauses the
     // scripts (Speech, Wait), call resume() once it is done.
@@ -153,6 +213,7 @@ public:
     bool hasItem(std::uint16_t item) const;
     void addItem(std::uint16_t item);
     int health() const { return health_; }
+    void setHealth(int health) { health_ = std::clamp(health, 0, kMaxHealth); }
     bool heroVisible() const { return heroVisible_; }
     Outcome outcome() const { return outcome_; }
     int counter() const;
@@ -172,6 +233,15 @@ public:
     void setMissionDone(bool done) { mission_ = done ? 1 : -1; }
     void setRandomSeed(std::uint32_t seed) { rng_.seed(seed); }
 
+    // Everything play changed, for a save game (docs/savegames.md). The map
+    // itself is not in it: it is made again from the generator options.
+    // Saving is only possible while no script is paused.
+    bool canSave() const { return !paused_ && passes_.empty(); }
+    json::Value saveState() const;
+    // Restores a saved state on a world that got the same map with setMap().
+    // Throws json::Error on a damaged save.
+    void loadState(const json::Value& state);
+
     // The tile at a position and layer, including changes made by play.
     std::uint16_t tile(Position at, int layer) const;
     bool inside(Position at) const;
@@ -186,6 +256,7 @@ private:
     using ZoneState = detail::ZoneState;
     using EventArgs = detail::EventArgs;
     using Pass = detail::Pass;
+    using MonsterState = detail::MonsterState;
 
     ZoneState& state();
     const ZoneState* findState(int zone) const;
@@ -212,6 +283,19 @@ private:
     void setTile(Position at, int layer, std::uint16_t tile);
     std::string speechText(const std::string& raw) const;
     std::string tileName(std::uint16_t tile) const;
+    // Combat helpers (combat.cpp).
+    void loadFighters();
+    void initMonsters(int zone, ZoneState& state);
+    const Fighter* fighter(int character) const;
+    const Fighter* weaponFighter(std::uint16_t item) const;
+    bool monsterAt(Position at, std::size_t* index = nullptr) const;
+    bool freeForMonster(Position at) const;
+    void stepMonster(std::size_t index, MonsterState& m, const Fighter& f);
+    void hurtHero(int damage);
+    void hurtMonster(std::size_t index, int damage);
+    bool lineClear(Position from, Position to) const;
+    void fire(Position from, int dx, int dy, const Fighter& weapon, int damage, bool fromHero);
+    void moveShots();
 
     std::vector<data::ZoneCell>& cells();
     const std::vector<data::ZoneCell>& cells() const;
@@ -249,6 +333,14 @@ private:
     bool reacted_ = false;
     int chainedUpdates_ = 0;
     std::mt19937 rng_{0x5eed};
+
+    std::vector<Fighter> fighters_; // by character index
+    std::uint16_t weapon_ = data::kNoTile;
+    std::vector<Shot> shots_;
+    int shotMs_ = 0;
+    int attackShowMs_ = 0;
+    int attackCooldownMs_ = 0;
+    int difficulty_ = 50;
 };
 
 } // namespace das::world

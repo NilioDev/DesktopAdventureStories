@@ -249,3 +249,115 @@ DAS_TEST("a generated world trades with its characters and walks from zone to zo
         DAS_CHECK(edges > 100);
     }
 }
+
+DAS_TEST("Indy's mission giver briefs the hero and hands over the first item once") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Indy) {
+            continue;
+        }
+        world::GeneratorOptions options;
+        options.seed = 7;
+        const auto map = world::generateWorld(game, options);
+        DAS_CHECK(map.startItem != data::kNoTile);
+        world::World w(game);
+        w.setMap(map);
+        w.begin();
+        DAS_CHECK(w.weapon() != data::kNoTile); // his whip
+        // Marcus sits at his desk in a room of the town; walk into him from
+        // the cell below.
+        int room = -1;
+        world::Position desk{};
+        for (const int z : world::zoneCluster(game, map.startZone)) {
+            const auto& zone = game.zones[static_cast<std::size_t>(z)];
+            for (int y = 0; y < zone.height; ++y) {
+                for (int x = 0; x < zone.width; ++x) {
+                    if (zone.at(x, y).layers[1] == 794) {
+                        room = z;
+                        desk = {x, y};
+                    }
+                }
+            }
+        }
+        DAS_CHECK(room >= 0);
+        if (room < 0) {
+            continue;
+        }
+        const auto talk = [&] {
+            w.enter(room, {desk.x, desk.y + 1});
+            while (w.paused()) {
+                (void)w.takeEffects();
+                w.resume();
+            }
+            (void)w.takeEffects();
+            (void)w.move({0, -1});
+            bool spoke = false;
+            int items = 0;
+            for (const auto& e : w.takeEffects()) {
+                spoke = spoke || e.kind == world::Effect::Kind::Speech;
+                items += e.kind == world::Effect::Kind::ItemFound && e.value == map.startItem ? 1 : 0;
+            }
+            while (w.paused()) {
+                (void)w.takeEffects();
+                w.resume();
+            }
+            DAS_CHECK(spoke);
+            return items;
+        };
+        DAS_CHECK(talk() == 1);
+        DAS_CHECK(w.hasItem(map.startItem));
+        DAS_CHECK(talk() == 0);
+    }
+}
+
+DAS_TEST("Yoda on Dagobah hands over the first item of the second chain") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        int handed = 0;
+        int helpers = 0;
+        for (std::uint32_t seed = 1; seed <= 10; ++seed) {
+            world::GeneratorOptions options;
+            options.seed = seed;
+            const auto map = world::generateWorld(game, options);
+            for (const auto& s : map.dagobah.sites) {
+                if (s.npc == data::kNoTile || s.findItem == data::kNoTile) {
+                    continue;
+                }
+                ++helpers;
+                world::World w(game);
+                w.setMap(map);
+                w.begin();
+                const auto& z = game.zones[static_cast<std::size_t>(s.npcZone)];
+                const auto& spot = (*z.hotspots)[static_cast<std::size_t>(s.npcSpot)];
+                // Walk into the helper from a free neighbouring cell.
+                for (const das::Step step : {das::Step{0, -1}, das::Step{0, 1}, das::Step{1, 0}, das::Step{-1, 0}}) {
+                    const world::Position from{spot.x - step.dx, spot.y - step.dy};
+                    w.enter(s.npcZone, from);
+                    while (w.paused()) {
+                        (void)w.takeEffects();
+                        w.resume();
+                    }
+                    (void)w.takeEffects();
+                    if (!w.inside(from) || !w.walkable(from) || !(w.player() == from)) {
+                        continue;
+                    }
+                    (void)w.move(step);
+                    while (w.paused()) {
+                        (void)w.takeEffects();
+                        w.resume();
+                    }
+                    if (w.hasItem(s.findItem)) {
+                        ++handed;
+                        break;
+                    }
+                }
+            }
+        }
+        std::printf("       Yoda handed over the item in %d of %d worlds\n", handed, helpers);
+        DAS_CHECK(helpers > 0);
+        DAS_CHECK(handed == helpers);
+    }
+}

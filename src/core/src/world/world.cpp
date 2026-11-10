@@ -15,6 +15,8 @@ namespace {
 
 constexpr int kFloorLayer = 0;
 constexpr int kObjectLayer = 1;
+// Indy: Marcus at his desk in the town, who gives the mission.
+constexpr std::uint16_t kIndyMissionGiver = 794;
 
 data::Facing facingFor(Step step) {
     if (step.dy < 0) {
@@ -36,6 +38,7 @@ World::World(const data::GameData& data) : data_(data), puzzles_(data::parsePuzz
     if (data_.zones.empty()) {
         throw data::DataError("the game data has no zones");
     }
+    loadFighters();
 }
 
 World::ZoneState& World::stateOf(int zoneIndex) {
@@ -52,6 +55,7 @@ World::ZoneState& World::stateOf(int zoneIndex) {
         fresh.actionDisabled.assign(z.actions ? z.actions->size() : 0, false);
         fresh.monsterEnabled.assign(z.monsters.size(), true);
         fresh.monsterDead.assign(z.monsters.size(), false);
+        initMonsters(zoneIndex, fresh);
         prepareZone(zoneIndex, fresh);
         it = states_.emplace(zoneIndex, std::move(fresh)).first;
     }
@@ -208,6 +212,9 @@ void World::addItem(std::uint16_t item) {
     if (!hasItem(item)) {
         inventory_.push_back(item);
     }
+    if (weapon_ == data::kNoTile && isWeapon(item)) {
+        weapon_ = item;
+    }
 }
 
 std::uint32_t World::flags(std::uint16_t tile) const {
@@ -283,6 +290,7 @@ void World::enter(int zoneIndex, Position at) {
         player_ = {zone().width / 2, zone().height / 2};
     }
     overlays_.clear();
+    shots_.clear();
     // Scripts of the zone we left do not continue here.
     passes_.clear();
     paused_ = false;
@@ -417,8 +425,8 @@ std::string World::puzzleText(int puzzle, data::PuzzleText which) const {
 void World::found(std::uint16_t item) {
     addItem(item);
     effects_.push_back({Effect::Kind::ItemFound, {}, {}, item});
-    const ZoneGoal g = goal(zone_);
-    if (g.findItem == item && g.requiredItem == data::kNoTile) {
+    // Taking the item a site hands out solves the site.
+    if (goal(zone_).findItem == item) {
         setSolved(zone_);
     }
 }
@@ -436,10 +444,40 @@ bool World::bumpBuiltIn(Position target) {
     if (object == data::kNoTile) {
         return false;
     }
-    // A trading character.
     const Site* here = site(zone_);
+    // Indy: the mission giver tells the mission and, the first time, hands
+    // over the item the first puzzle asks for; later he repeats the hint.
+    if (data_.layout() == data::Layout::Indy && object == kIndyMissionGiver && here != nullptr &&
+        here->kind == SiteKind::Town && map_.goalPuzzle >= 0) {
+        const bool briefed = goal(zone_).solved;
+        const std::string raw =
+            puzzleText(map_.goalPuzzle, briefed ? data::PuzzleText::Offer : data::PuzzleText::Mission);
+        if (!raw.empty()) {
+            effects_.push_back({Effect::Kind::Speech, speechText(raw), target, 0});
+            paused_ = true;
+        }
+        if (!briefed) {
+            setSolved(zone_);
+            if (map_.startItem != data::kNoTile) {
+                found(map_.startItem);
+            }
+        }
+        return true;
+    }
+    // A trading character.
     if (here != nullptr && here->npcZone == zone_ && object == here->npc) {
         const ZoneGoal g = goal(zone_);
+        // A helper who asks for nothing (Yoda on Dagobah) hands the item over.
+        if (!g.solved && g.requiredItem == data::kNoTile && g.findItem != data::kNoTile) {
+            const std::string offer = puzzleText(here->offerPuzzle, data::PuzzleText::Offer);
+            if (!offer.empty()) {
+                effects_.push_back({Effect::Kind::Speech, speechText(offer), target, 0});
+                paused_ = true;
+            }
+            setSolved(zone_);
+            found(g.findItem);
+            return true;
+        }
         std::string raw;
         if (g.solved) {
             raw = puzzleText(here->requestPuzzle, data::PuzzleText::Thanks);
@@ -518,6 +556,9 @@ MoveResult World::move(Step step) {
         return MoveResult::ChangedZone;
     }
 
+    if (monsterAt(target)) {
+        return MoveResult::Blocked;
+    }
     if (walkable(target)) {
         player_ = target;
         ++steps_;

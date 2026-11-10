@@ -130,7 +130,7 @@ DAS_TEST("png round-trips an indexed image") {
     DAS_CHECK(back.height == image.height);
     DAS_CHECK(back.pixels == image.pixels);
     DAS_CHECK(back.palette.colors == image.palette.colors);
-    DAS_CHECK(back.transparentIndex == std::optional<std::uint8_t>(0));
+    DAS_CHECK(back.transparentIndex == std::optional<std::uint8_t>(std::uint8_t{0}));
 
     data::Bytes broken = file;
     broken[40] ^= 0xff;

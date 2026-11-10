@@ -20,9 +20,9 @@ jobs:
           - name: Linux
             os: ubuntu-24.04
           - name: Windows
-            os: windows-2022
+            os: windows-latest
           - name: macOS
-            os: macos-14
+            os: macos-latest
     steps:
       - uses: actions/checkout@v4
 

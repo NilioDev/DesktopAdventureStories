@@ -37,6 +37,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -45,6 +46,14 @@ namespace {
 
 constexpr int kWindowWidth = 1280;
 constexpr int kWindowHeight = 720;
+
+// Files the system's picker handed over.
+struct Picked {
+    std::mutex mutex;
+    bool open = false;
+    std::vector<std::string> paths;
+    std::string error;
+};
 
 struct App {
     SDL_Window* window = nullptr;
@@ -64,6 +73,8 @@ struct App {
     int pixelWidth = 1; // of the last frame
     int pixelHeight = 1;
     das::app::TouchControls touch;
+    Picked picked;
+    SDL_FRect chooseButton{}; // on the welcome screen
     std::optional<das::pack::Library> library;
     std::string loadMessage;
     std::string screenshotPath; // when set: render one frame, save it, quit
@@ -98,26 +109,21 @@ void showLibrary(App& app) {
     }
 }
 
-// Imports the games found at `where` into the library and shows them. With
+// Imports the games of a source into the library and shows them. With
 // `onlyMissing`, games that are already in the library are skipped.
-void importGames(App& app, const std::filesystem::path& where, bool onlyMissing) {
+void importFrom(App& app, const das::pack::Source& source, const std::string& where, bool onlyMissing) {
     try {
-        const auto source = das::pack::openSource(where);
-        if (!source) {
-            note(app, "Nothing to import at " + where.string());
-            return;
-        }
-        std::vector<std::string> wanted = das::pack::gamesIn(*source);
+        std::vector<std::string> wanted = das::pack::gamesIn(source);
         if (onlyMissing && app.library) {
             std::erase_if(wanted, [&](const std::string& id) { return app.library->has(id); });
         }
         if (wanted.empty()) {
             if (!onlyMissing) {
-                note(app, "No game files found in " + where.string());
+                note(app, "No game files found in " + where);
             }
             return;
         }
-        for (auto& pack : das::pack::importGames(*source, wanted)) {
+        for (auto& pack : das::pack::importGames(source, wanted)) {
             const std::string id = pack.game;
             if (app.library) {
                 try {
@@ -131,6 +137,115 @@ void importGames(App& app, const std::filesystem::path& where, bool onlyMissing)
         }
     } catch (const std::exception& e) {
         note(app, "Import failed: " + std::string(e.what()));
+    }
+}
+
+void importGames(App& app, const std::filesystem::path& where, bool onlyMissing) {
+    try {
+        const auto source = das::pack::openSource(where);
+        if (!source) {
+            note(app, "Nothing to import at " + where.string());
+            return;
+        }
+        importFrom(app, *source, where.string(), onlyMissing);
+    } catch (const std::exception& e) {
+        note(app, "Import failed: " + std::string(e.what()));
+    }
+}
+
+// --- choosing game files with the system's file picker ----------------------
+
+// The file name in a path or in an Android content address such as
+// "content://.../document/primary%3ADownload%2FYoda.zip".
+std::string displayName(const std::string& path) {
+    std::string decoded;
+    for (std::size_t i = 0; i < path.size(); ++i) {
+        if (path[i] == '%' && i + 2 < path.size()) {
+            decoded += static_cast<char>(std::stoi(path.substr(i + 1, 2), nullptr, 16));
+            i += 2;
+        } else {
+            decoded += path[i];
+        }
+    }
+    const auto cut = decoded.find_last_of("/\\:");
+    return cut == std::string::npos ? decoded : decoded.substr(cut + 1);
+}
+
+void SDLCALL onPicked(void* userdata, const char* const* files, int /*filter*/) {
+    auto& picked = *static_cast<Picked*>(userdata);
+    std::lock_guard lock(picked.mutex);
+    picked.open = false;
+    if (!files) {
+        picked.error = SDL_GetError();
+        return;
+    }
+    for (; *files; ++files) {
+        picked.paths.emplace_back(*files);
+    }
+}
+
+void openPicker(App& app) {
+    {
+        std::lock_guard lock(app.picked.mutex);
+        if (app.picked.open) {
+            return;
+        }
+        app.picked.open = true;
+    }
+#if defined(SDL_PLATFORM_ANDROID)
+    // Android hands out contents, not folders: a zip of the game folder, or
+    // its files. No filter: the data files have no type Android knows.
+    SDL_ShowOpenFileDialog(onPicked, &app.picked, app.window, nullptr, 0, nullptr, true);
+#else
+    SDL_ShowOpenFolderDialog(onPicked, &app.picked, app.window, nullptr, false);
+#endif
+}
+
+// Imports what the picker handed over (it may answer on another thread).
+void takePicked(App& app) {
+    std::vector<std::string> paths;
+    {
+        std::lock_guard lock(app.picked.mutex);
+        if (!app.picked.error.empty()) {
+            note(app, "No files chosen: " + app.picked.error);
+            app.picked.error.clear();
+        }
+        paths.swap(app.picked.paths);
+    }
+    if (paths.empty()) {
+        return;
+    }
+    app.loadMessage.clear();
+    std::error_code ec;
+    if (paths.size() == 1 && std::filesystem::exists(paths.front(), ec)) {
+        importGames(app, paths.front(), false); // a folder, zip or data file on disk
+        return;
+    }
+    // Contents only: read each file through SDL, which knows Android's
+    // content addresses.
+    std::vector<std::pair<std::string, das::data::Bytes>> files;
+    for (const auto& path : paths) {
+        std::size_t size = 0;
+        void* bytes = SDL_LoadFile(path.c_str(), &size);
+        if (!bytes) {
+            note(app, "Could not read " + displayName(path) + ": " + SDL_GetError());
+            continue;
+        }
+        const auto* begin = static_cast<const std::uint8_t*>(bytes);
+        das::data::Bytes content(begin, begin + size);
+        SDL_free(bytes);
+        if (das::pack::looksLikeZip(content)) {
+            try {
+                importFrom(app, *das::pack::zipSource(content), displayName(path), false);
+            } catch (const std::exception& e) {
+                note(app, displayName(path) + ": " + e.what());
+            }
+            continue;
+        }
+        files.emplace_back(displayName(path), std::move(content));
+    }
+    if (!files.empty()) {
+        importFrom(app, *das::pack::filesSource(std::move(files)), "the chosen files", false);
     }
 }
 
@@ -193,6 +308,10 @@ void applySettings(App& app) {
 }
 
 void update(App& app, Uint64 now, Uint32 elapsedMs) {
+    takePicked(app);
+    if (app.viewer.takeAddGames() || (app.viewer.empty() && app.actions.wasPressed(das::Action::Use))) {
+        openPicker(app);
+    }
     using das::app::TouchPad;
     const bool wantPad = app.settings.touchPad == TouchPad::On ||
                          (app.settings.touchPad == TouchPad::Auto &&
@@ -214,21 +333,39 @@ void renderWelcome(App& app) {
     SDL_Renderer* r = app.renderer;
     const auto& l = app.layout;
     const float w = std::min(l.width - 32, 360.0f);
-    const SDL_FRect box{std::floor((l.width - w) / 2), std::floor(l.height / 2 - 70), w, 140};
+    const SDL_FRect box{std::floor((l.width - w) / 2), std::floor(l.height / 2 - 84), w, 168};
     ui::panel(r, box);
     float y = box.y + 14;
     ui::text(r, box.x + 14, y, das::kProjectName, ui::color::accent);
     ui::textRight(r, box.x + box.w - 14, y, das::kVersion, ui::color::faint);
     y += 24;
+#if defined(SDL_PLATFORM_ANDROID)
     const char* lines[] = {"Needs the files of the original", "Indiana Jones and His Desktop",
-                           "Adventures or Yoda Stories.", "", "Drop the game folder or a zip",
-                           "on this window."};
+                           "Adventures or Yoda Stories:", "a zip of the game folder."};
+#else
+    const char* lines[] = {"Needs the files of the original", "Indiana Jones and His Desktop",
+                           "Adventures or Yoda Stories.", "Choose the game folder, or drop", "it (or a zip) on this window."};
+#endif
     for (const char* line : lines) {
         ui::text(r, box.x + 14, y, line, ui::color::text);
         y += 11;
     }
+    app.chooseButton = {box.x + 14, box.y + box.h - 14 - 20, box.w - 28, 20};
+    ui::fill(r, app.chooseButton, ui::color::panelLight);
+    ui::outline(r, app.chooseButton, ui::color::accent);
+    ui::textCentered(r, app.chooseButton.x + app.chooseButton.w / 2, app.chooseButton.y + 6, "Choose game files",
+                     ui::color::accent);
     if (!app.loadMessage.empty()) {
-        ui::text(r, box.x + 14, box.y + box.h + 10, app.loadMessage, ui::color::danger);
+        const auto& m = app.loadMessage;
+        const std::size_t chars = static_cast<std::size_t>(std::max(8.0f, (l.width - 16) / ui::kFont));
+        ui::text(r, 8, box.y + box.h + 10, m.size() > chars ? m.substr(0, chars) : m, ui::color::danger);
+    }
+}
+
+// A press with no game installed: the welcome screen's button.
+void welcomePress(App& app, float x, float y) {
+    if (app.viewer.empty() && das::app::ui::contains(app.chooseButton, x, y)) {
+        openPicker(app);
     }
 }
 
@@ -483,6 +620,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
             app.viewer.setInputDevice(das::app::InputDevice::Keyboard);
             SDL_ConvertEventToRenderCoordinates(app.renderer, event);
             app.viewer.pointerPressed(event->button.x, event->button.y);
+            welcomePress(app, event->button.x, event->button.y);
         }
         break;
     case SDL_EVENT_FINGER_DOWN:
@@ -497,6 +635,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
             app.viewer.setInputDevice(das::app::InputDevice::Touch);
             if (!app.touch.fingerDown(finger, x, y, app.actions)) {
                 app.viewer.pointerPressed(x, y);
+                welcomePress(app, x, y);
             }
         } else if (event->type == SDL_EVENT_FINGER_MOTION) {
             app.touch.fingerMoved(finger, x, y, app.actions);

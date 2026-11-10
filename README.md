@@ -62,7 +62,7 @@ started from the repository root:
 ```
 
 You can also pass another folder or the game's `.zip` on the command line, set
-`DAS_GAMEDATA_DIR`, or drop a folder or zip on the window.
+`DAS_GAMEDATA_DIR`, drop a folder or zip on the window, or press *Choose game files* (title menu: *Add games*). On Android the picker takes a zip of the game folder, or its files.
 
 The first time a game is found it is imported into our own open format (see
 [docs/formats/pack.md](docs/formats/pack.md)) in the app's data folder. After

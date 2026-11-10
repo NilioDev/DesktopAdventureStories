@@ -86,6 +86,12 @@ public:
     // True once after the options menu changed a setting.
     bool takeSettingsChanged();
     bool quitRequested() const { return quit_; }
+    // True once after the player chose Add games in the menu.
+    bool takeAddGames() {
+        const bool asked = addGames_;
+        addGames_ = false;
+        return asked;
+    }
     // The controls, for showing them and changing them in the menu.
     void setBindings(const InputBindings* bindings) { bindings_ = bindings; }
     // The action waiting for a new key or button, if any. The app hands
@@ -121,6 +127,7 @@ private:
         Size,
         Difficulty,
         Options,
+        AddGames,
         DataViewer,
         Quit,
         Resume,
@@ -220,6 +227,7 @@ private:
     std::optional<Action> capture_;
     Uint64 captureUntil_ = 0;
     bool quit_ = false;
+    bool addGames_ = false;
 
     // Pointer input and walking to a tapped cell.
     InputDevice device_ = InputDevice::Keyboard;

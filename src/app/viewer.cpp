@@ -419,6 +419,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Size, "World size", sizeName(size_)});
         rows.push_back({RowId::Difficulty, "Difficulty", difficultyName(difficulty_)});
         rows.push_back({RowId::Options, "Options", ""});
+        rows.push_back({RowId::AddGames, "Add games", ""});
         if (!kMobile) {
             rows.push_back({RowId::DataViewer, "Data viewer", ""});
             rows.push_back({RowId::Quit, "Quit", ""});
@@ -542,6 +543,7 @@ void Viewer::menuActivate(RowId id, int change) {
         menuItem_ = 0;
         break;
     case RowId::DataViewer: mode_ = ViewMode::Zone; break;
+    case RowId::AddGames: addGames_ = true; break;
     case RowId::Quit: quit_ = true; break;
     case RowId::Resume: page_ = Page::None; break;
     case RowId::Map:

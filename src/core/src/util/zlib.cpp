@@ -321,10 +321,10 @@ Bytes inflate(ByteView in, std::size_t* consumed) {
             static const auto tables = [] {
                 std::array<std::uint8_t, 288> lit{};
                 for (int k = 0; k < 288; ++k) {
-                    lit[static_cast<std::size_t>(k)] = k < 144 ? 8 : k < 256 ? 9 : k < 280 ? 7 : 8;
+                    lit[static_cast<std::size_t>(k)] = static_cast<std::uint8_t>(k < 144 ? 8 : k < 256 ? 9 : k < 280 ? 7 : 8);
                 }
                 std::array<std::uint8_t, 30> dist{};
-                dist.fill(5);
+                dist.fill(std::uint8_t{5});
                 return std::pair{Huffman(lit.data(), 288), Huffman(dist.data(), 30)};
             }();
             inflateBlock(r, out, tables.first, tables.second);

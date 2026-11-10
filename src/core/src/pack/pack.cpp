@@ -334,7 +334,7 @@ png::IndexedImage tileAtlas(const std::vector<data::Tile>& tiles, const data::Pa
     image.width = kAtlasColumns * kTileSize;
     image.height = rows * kTileSize;
     image.palette = palette;
-    image.transparentIndex = 0;
+    image.transparentIndex = std::uint8_t{0};
     image.pixels.assign(static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height), 0);
     for (std::size_t i = 0; i < tiles.size(); ++i) {
         const int ox = static_cast<int>(i % kAtlasColumns) * kTileSize;

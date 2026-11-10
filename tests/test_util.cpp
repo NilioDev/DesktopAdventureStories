@@ -120,7 +120,7 @@ DAS_TEST("png round-trips an indexed image") {
         image.palette.colors[static_cast<std::size_t>(i)] = {static_cast<std::uint8_t>(i), static_cast<std::uint8_t>(255 - i),
                                                              static_cast<std::uint8_t>(i * 7)};
     }
-    image.transparentIndex = 0;
+    image.transparentIndex = std::uint8_t{0};
     for (int i = 0; i < image.width * image.height; ++i) {
         image.pixels.push_back(static_cast<std::uint8_t>((i * 13) ^ (i >> 3)));
     }

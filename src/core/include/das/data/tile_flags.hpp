@@ -15,8 +15,8 @@ inline constexpr std::uint32_t kDraggable = 1u << 3;   // can be pushed
 inline constexpr std::uint32_t kRoof = 1u << 4;        // drawn above the characters
 inline constexpr std::uint32_t kMap = 1u << 5;         // world map (locator) tile
 inline constexpr std::uint32_t kWeapon = 1u << 6;
-inline constexpr std::uint32_t kCharacter = 1u << 7;
-inline constexpr std::uint32_t kItem = 1u << 8;
+inline constexpr std::uint32_t kItem = 1u << 7;      // can be picked up and carried
+inline constexpr std::uint32_t kCharacter = 1u << 8; // a person or creature
 
 // Anything on these layers with one of these bits stops the player.
 inline constexpr std::uint32_t kBlocking = kObject | kCharacter | kItem | kWeapon;

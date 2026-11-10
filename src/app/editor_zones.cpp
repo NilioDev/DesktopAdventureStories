@@ -86,6 +86,10 @@ void Editor::zoneList(const SDL_FRect& r) {
     y += gui::kRow + kPad;
 
     const auto& zones = host_.data->zones;
+    if (examplesOpen_) {
+        zoneExamples({r.x, y, r.w, r.y + r.h - y});
+        return;
+    }
     const std::string query = lower(zoneSearch_);
     std::vector<int> shown;
     for (int i = 0; i < static_cast<int>(zones.size()); ++i) {
@@ -101,7 +105,7 @@ void Editor::zoneList(const SDL_FRect& r) {
         shown.push_back(i);
     }
 
-    const float buttonsH = 2 * gui::kRow + kPad + 2;
+    const float buttonsH = 3 * gui::kRow + kPad + 4;
     const SDL_FRect list{r.x, y, r.w - 1, r.y + r.h - y - buttonsH - kPad};
     const float rowH = gui::kRow + 2;
     gui_.beginScroll(list, zoneScroll_, static_cast<float>(shown.size()) * rowH);
@@ -148,6 +152,50 @@ void Editor::zoneList(const SDL_FRect& r) {
     if (gui_.button("copy-zone", {x, by, w, gui::kRow}, "Copy this zone",
                     "Add a copy of this zone, to make a variant of it.")) {
         newZone(true);
+    }
+    by += gui::kRow + 2;
+    if (gui_.button("example-zone", {x, by, w, gui::kRow}, "New from an example",
+                    "Start a new zone from a working example of the game: a room, a trade, an item to find...")) {
+        examplesOpen_ = true;
+    }
+}
+
+void Editor::zoneExamples(const SDL_FRect& r) {
+    const float x = r.x + kPad;
+    const float w = r.w - 2 * kPad;
+    float y = r.y;
+    y += gui_.paragraph(x, y, w,
+                        "A new zone that starts as a copy of one of the game's own, with its hotspots, people and "
+                        "scripts. Change it from there.",
+                        ui::color::dim, 6) +
+         kPad;
+    const auto& zones = host_.data->zones;
+    const int planet = zones[static_cast<std::size_t>(zone_)].planet;
+    static constexpr std::uint32_t kinds[] = {1, 8, 2, 15, 16, 17, 18, 10};
+    for (const auto kind : kinds) {
+        // The first zone of that kind, on this planet when there is one.
+        int example = -1;
+        for (int i = 0; i < static_cast<int>(zones.size()); ++i) {
+            const auto& z = zones[static_cast<std::size_t>(i)];
+            if (z.type == kind && (example < 0 || (z.planet == planet &&
+                                                   zones[static_cast<std::size_t>(example)].planet != planet))) {
+                example = i;
+            }
+        }
+        if (example < 0) {
+            continue;
+        }
+        if (gui_.button("example-" + std::to_string(kind), {x, y, w, gui::kRow}, names::zoneType(kind),
+                        names::zoneTypeHelp(kind) + " The example is zone " + std::to_string(example) + ".")) {
+            zone_ = example;
+            newZone(true);
+            examplesOpen_ = false;
+        }
+        y += gui::kRow + 2;
+    }
+    y += kPad;
+    if (gui_.button("example-cancel", {x, y, w, gui::kRow}, "Cancel", "Back to the list of zones.")) {
+        examplesOpen_ = false;
     }
 }
 

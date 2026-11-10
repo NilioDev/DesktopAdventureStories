@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "viewer.hpp"
 
+#include "das/util/text.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -129,6 +131,48 @@ void Viewer::play() {
     world_.emplace(game().data);
     world_->start(zone_);
     mode_ = ViewMode::Play;
+    generated_ = false;
+    selected_ = 0;
+    showMap_ = false;
+}
+
+void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
+    if (games_.empty()) {
+        return;
+    }
+    world::GeneratorOptions options;
+    options.seed = seed;
+    options.size = size;
+    world::WorldMap map;
+    try {
+        map = world::generateWorld(game().data, options);
+    } catch (const std::exception& e) {
+        SDL_Log("Could not make a world: %s", e.what());
+        return;
+    }
+    SDL_Log("New world: seed %u, goal puzzle %d, %d puzzles", static_cast<unsigned>(seed), map.goalPuzzle,
+            map.puzzleCount);
+    effects_.clear();
+    bubble_.reset();
+    waitUntil_ = 0;
+    banner_.clear();
+    world_.emplace(game().data);
+    world_->setRandomSeed(seed);
+    world_->setMap(std::move(map));
+    world_->begin();
+    mode_ = ViewMode::Play;
+    generated_ = true;
+    selected_ = 0;
+    showMap_ = false;
+}
+
+std::string Viewer::itemName(std::uint16_t tile) const {
+    for (const auto& n : game().data.tileNames) {
+        if (n.tile == tile) {
+            return text::windows1252ToUtf8(n.name);
+        }
+    }
+    return "item " + std::to_string(tile);
 }
 
 void Viewer::placePlayer(int x, int y) {
@@ -178,19 +222,11 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
         return;
     }
     if (mode_ == ViewMode::Play) {
-        if (actions.wasPressed(Action::Menu) || actions.wasPressed(Action::Map)) {
-            zone_ = world_->zoneIndex();
-            world_.reset();
-            mode_ = ViewMode::Zone;
-            return;
-        }
-        handleEffects(actions, now);
-        if (step && !bubble_ && waitUntil_ == 0) {
-            const auto result = world_->move(*step);
-            if (result != world::MoveResult::Blocked) {
-                lastStepAt_ = now;
-            }
-        }
+        updatePlay(actions, step, now);
+        return;
+    }
+    if (mode_ == ViewMode::Title && actions.wasPressed(Action::Use)) {
+        newGame(static_cast<std::uint32_t>(SDL_GetPerformanceCounter()), world::WorldSize::Medium);
         return;
     }
     if (mode_ == ViewMode::Zone && actions.wasPressed(Action::Use)) {
@@ -219,6 +255,66 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
     } else if (mode_ == ViewMode::Tiles) {
         const int pages = (static_cast<int>(game().data.tiles.size()) + kTilesPerPage - 1) / kTilesPerPage;
         tilePage_ = ((tilePage_ + delta) % pages + pages) % pages;
+    }
+}
+
+namespace {
+
+Step facingStep(data::Facing facing) {
+    switch (facing) {
+    case data::Facing::Up: return {0, -1};
+    case data::Facing::Down: return {0, 1};
+    case data::Facing::Left:
+    case data::Facing::UpLeft:
+    case data::Facing::DownLeft: return {-1, 0};
+    default: return {1, 0};
+    }
+}
+
+} // namespace
+
+void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now) {
+    if (actions.wasPressed(Action::Menu) || (!generated_ && actions.wasPressed(Action::Map))) {
+        zone_ = world_->zoneIndex();
+        world_.reset();
+        mode_ = generated_ ? ViewMode::Title : ViewMode::Zone;
+        generated_ = false;
+        return;
+    }
+    if (actions.wasPressed(Action::Map)) {
+        showMap_ = !showMap_;
+    }
+    const bool hadBubble = bubble_.has_value();
+    handleEffects(actions, now);
+    if (showMap_) {
+        return;
+    }
+    const auto& inventory = world_->inventory();
+    if (!inventory.empty()) {
+        const std::size_t count = inventory.size();
+        if (actions.wasPressed(Action::InventoryNext)) {
+            selected_ = (selected_ + 1) % count;
+        }
+        if (actions.wasPressed(Action::InventoryPrev)) {
+            selected_ = (selected_ + count - 1) % count;
+        }
+        selected_ = std::min(selected_, count - 1);
+    }
+    if (hadBubble || bubble_ || waitUntil_ != 0) {
+        return;
+    }
+    if (actions.wasPressed(Action::Use) && !inventory.empty()) {
+        const Step ahead = facingStep(world_->facing());
+        const world::Position at{world_->player().x + ahead.dx, world_->player().y + ahead.dy};
+        world_->useItem(inventory[selected_], at);
+        handleEffects(ActionState{}, now);
+        return;
+    }
+    if (step) {
+        const auto result = world_->move(*step);
+        if (result != world::MoveResult::Blocked) {
+            lastStepAt_ = now;
+        }
     }
 }
 
@@ -305,6 +401,17 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
             break;
         case world::Effect::Kind::Won: banner_ = "You won!"; break;
         case world::Effect::Kind::Lost: banner_ = "You lost."; break;
+        case world::Effect::Kind::ItemFound: {
+            const auto& inventory = world_->inventory();
+            const auto it = std::find(inventory.begin(), inventory.end(), static_cast<std::uint16_t>(e.value));
+            if (it != inventory.end()) {
+                selected_ = static_cast<std::size_t>(it - inventory.begin());
+            }
+            bubble_ = world::Effect{world::Effect::Kind::Speech, "Found: " + itemName(static_cast<std::uint16_t>(e.value)),
+                                    std::nullopt, 0};
+            bubblePage_ = 0;
+            break;
+        }
         }
     }
 }
@@ -385,6 +492,9 @@ void Viewer::renderPlay(SDL_Renderer* renderer, float x, float y, float size, Ui
     if (bubble_) {
         renderBubble(renderer, x, y, size, cell, camX, camY);
     }
+    if (showMap_) {
+        renderMap(renderer, x, y, size);
+    }
     if (!banner_.empty()) {
         const float w2 = static_cast<float>(banner_.size() * 16 + 32);
         const SDL_FRect box{x + (size - w2) / 2, y + size / 2 - 24, w2, 48};
@@ -396,6 +506,86 @@ void Viewer::renderPlay(SDL_Renderer* renderer, float x, float y, float size, Ui
     }
 }
 
+
+void Viewer::renderInventory(SDL_Renderer* renderer, float x, float y) const {
+    const auto& inventory = world_->inventory();
+    constexpr float kIcon = 16;
+    constexpr std::size_t kMax = 18;
+    const std::size_t first = selected_ >= kMax ? selected_ - kMax + 1 : 0;
+    for (std::size_t i = first; i < inventory.size() && i < first + kMax; ++i) {
+        const SDL_FRect dst{x + static_cast<float>(i - first) * (kIcon + 0), y, kIcon, kIcon};
+        if (i == selected_) {
+            SDL_SetRenderDrawColor(renderer, 235, 196, 90, 255);
+            const SDL_FRect frame{dst.x - 1, dst.y - 1, kIcon + 2, kIcon + 2};
+            SDL_RenderRect(renderer, &frame);
+        }
+        renderTile(renderer, inventory[i], dst);
+    }
+    if (inventory.empty()) {
+        SDL_SetRenderDrawColor(renderer, 110, 114, 125, 255);
+        SDL_RenderDebugText(renderer, x, y + 4, "Nothing carried");
+    } else {
+        SDL_SetRenderDrawColor(renderer, 150, 154, 165, 255);
+        SDL_RenderDebugText(renderer, x, y + kIcon + 4, itemName(inventory[selected_]).c_str());
+    }
+}
+
+void Viewer::renderMap(SDL_Renderer* renderer, float x, float y, float size) const {
+    const auto& wm = world_->map();
+    // The map of the current zone: the one listing it, or the map with the
+    // site the zone belongs to.
+    const world::Map* map = &wm.world;
+    int hereX = -1;
+    int hereY = -1;
+    for (const world::Map* m : {&wm.world, &wm.dagobah}) {
+        for (int cy = 0; cy < m->height; ++cy) {
+            for (int cx = 0; cx < m->width; ++cx) {
+                const auto& zones = m->at(cx, cy).zones;
+                if (std::find(zones.begin(), zones.end(), world_->zoneIndex()) != zones.end()) {
+                    map = m;
+                    hereX = cx;
+                    hereY = cy;
+                }
+            }
+        }
+    }
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 12, 14, 20, 225);
+    const SDL_FRect panel{x, y, size, size};
+    SDL_RenderFillRect(renderer, &panel);
+    const float cell = std::floor((size - 32) / static_cast<float>(std::max(map->width, map->height)));
+    const float ox = x + (size - cell * static_cast<float>(map->width)) / 2;
+    const float oy = y + (size - cell * static_cast<float>(map->height)) / 2;
+    for (int cy = 0; cy < map->height; ++cy) {
+        for (int cx = 0; cx < map->width; ++cx) {
+            const auto& site = map->at(cx, cy);
+            if (site.kind == world::SiteKind::None) {
+                continue;
+            }
+            const bool solved = world_->goal(site.zone).solved;
+            switch (site.kind) {
+            case world::SiteKind::Town: SDL_SetRenderDrawColor(renderer, 90, 150, 230, 255); break;
+            case world::SiteKind::Goal: SDL_SetRenderDrawColor(renderer, 220, 80, 70, 255); break;
+            case world::SiteKind::Puzzle:
+                if (solved) {
+                    SDL_SetRenderDrawColor(renderer, 110, 190, 110, 255);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 230, 180, 80, 255);
+                }
+                break;
+            default: SDL_SetRenderDrawColor(renderer, 70, 80, 72, 255); break;
+            }
+            const SDL_FRect box{ox + static_cast<float>(cx) * cell + 1, oy + static_cast<float>(cy) * cell + 1,
+                                cell - 2, cell - 2};
+            SDL_RenderFillRect(renderer, &box);
+            if (cx == hereX && cy == hereY) {
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                const SDL_FRect mark{box.x + cell / 2 - 4, box.y + cell / 2 - 4, 6, 6};
+                SDL_RenderFillRect(renderer, &mark);
+            }
+        }
+    }
+}
 
 void Viewer::renderBubble(SDL_Renderer* renderer, float x, float y, float size, float cell, int camX,
                           int camY) const {
@@ -464,11 +654,19 @@ void Viewer::render(SDL_Renderer* renderer, float x, float y, float size, float 
             const SDL_FRect dst{x, y, size, size};
             SDL_RenderTexture(renderer, g.setup, nullptr, &dst);
         }
-        std::snprintf(line, sizeof line, "M/Back: zones and tiles");
+        std::snprintf(line, sizeof line, "Space/A: new game.  M/Back: zones and tiles");
         break;
     }
     case ViewMode::Play: {
         renderPlay(renderer, x, y, size, now);
+        if (generated_) {
+            text(renderer, x, statusY, g.game == data::Layout::Indy ? "Indiana Jones" : "Yoda Stories", 220);
+            char where[64];
+            std::snprintf(where, sizeof where, "Zone %d", world_->zoneIndex());
+            text(renderer, x + size - static_cast<float>(std::strlen(where) * 8), statusY, where, 110);
+            renderInventory(renderer, x, statusY + 14);
+            return;
+        }
         std::snprintf(line, sizeof line, "Zone %d  (%d,%d)", world_->zoneIndex(), world_->player().x,
                       world_->player().y);
         std::snprintf(detail, sizeof detail, "Esc/Start: back to the viewer");

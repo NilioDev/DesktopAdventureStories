@@ -58,6 +58,8 @@ public:
 
     // Starts walking around in the selected zone.
     void play();
+    // Starts a new game in a generated world.
+    void newGame(std::uint32_t seed, world::WorldSize size);
     // Puts the player on a cell of the current zone; for testing.
     void placePlayer(int x, int y);
     // Walks a scripted path ("UDLR" letters) in play mode; for testing.
@@ -81,6 +83,10 @@ private:
     void renderBubble(SDL_Renderer* renderer, float x, float y, float size, float cell, int camX, int camY) const;
     // Shows what the scripts asked for; resumes them when it is done.
     void handleEffects(const ActionState& actions, Uint64 now);
+    void updatePlay(const ActionState& actions, std::optional<Step> step, Uint64 now);
+    void renderInventory(SDL_Renderer* renderer, float x, float y) const;
+    void renderMap(SDL_Renderer* renderer, float x, float y, float size) const;
+    std::string itemName(std::uint16_t tile) const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
     std::size_t current_ = 0;
@@ -95,6 +101,9 @@ private:
     int bubblePage_ = 0;
     Uint64 waitUntil_ = 0;
     std::string banner_; // "You won" / "You lost"
+    bool generated_ = false; // playing a generated world, not a single zone
+    std::size_t selected_ = 0; // inventory slot
+    bool showMap_ = false;
 };
 
 } // namespace das::app

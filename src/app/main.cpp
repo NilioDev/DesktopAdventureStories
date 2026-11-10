@@ -5,7 +5,8 @@
 // around with keyboard or gamepad.
 //
 // Usage: DesktopAdventureStories [game folder, zip or data file]
-//          [--game yoda|indy] [--mode title|zone|tiles|play] [--zone N]
+//          [--game yoda|indy] [--mode title|zone|tiles|play|game] [--zone N]
+//          [--seed N] [--size small|medium|large]
 //          [--at X,Y] [--walk UDLR...] [--screenshot out.bmp]
 //          [--library DIR] [--reimport]
 //
@@ -305,6 +306,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     std::string mode;
     int zone = 0;
     std::string walkPath;
+    std::uint32_t seed = static_cast<std::uint32_t>(SDL_GetPerformanceCounter());
+    auto size = das::world::WorldSize::Medium;
     std::string libraryPath;
     bool reimport = false;
     int atX = -1;
@@ -318,6 +321,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
             mode = argv[++i];
         } else if (arg == "--zone" && hasValue) {
             zone = std::atoi(argv[++i]);
+        } else if (arg == "--seed" && hasValue) {
+            seed = static_cast<std::uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+        } else if (arg == "--size" && hasValue) {
+            const std::string value = argv[++i];
+            size = value == "small"   ? das::world::WorldSize::Small
+                   : value == "large" ? das::world::WorldSize::Large
+                                      : das::world::WorldSize::Medium;
         } else if (arg == "--walk" && hasValue) {
             walkPath = argv[++i];
         } else if (arg == "--at" && hasValue) {
@@ -369,8 +379,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         app->viewer.setMode(das::app::ViewMode::Tiles);
     }
     app->viewer.selectZone(zone);
-    if (mode == "play") {
-        app->viewer.play();
+    if (mode == "play" || mode == "game") {
+        if (mode == "game") {
+            app->viewer.newGame(seed, size);
+        } else {
+            app->viewer.play();
+        }
         if (atX >= 0 && atY >= 0) {
             app->viewer.placePlayer(atX, atY);
         }

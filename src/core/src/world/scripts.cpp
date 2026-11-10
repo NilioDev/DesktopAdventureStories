@@ -416,12 +416,7 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
         }
         return true;
     }
-    case Instruction::MarkAsSolved: {
-        ZoneGoal solved = g;
-        solved.solved = true;
-        goals_[zone_] = solved;
-        return true;
-    }
+    case Instruction::MarkAsSolved: setSolved(zone_); return true;
     case Instruction::WinGame:
         outcome_ = Outcome::Won;
         effects_.push_back({Effect::Kind::Won, {}, {}, 0});

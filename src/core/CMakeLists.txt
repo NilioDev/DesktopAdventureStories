@@ -27,6 +27,7 @@ add_library(das_core STATIC
     src/pack/pack.cpp
     src/pack/import.cpp
     src/util/zip.cpp
+    src/audio/midi.cpp
 )
 add_library(das::core ALIAS das_core)
 

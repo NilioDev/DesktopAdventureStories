@@ -137,6 +137,7 @@ private:
         Scaling,
         Filter,
         Volume,
+        Music,
         TouchPad,
         Controls,
         Bind,
@@ -174,6 +175,8 @@ private:
     void handleEffects(const ActionState& actions, Uint64 now);
     void useSelected(Uint64 now);
     std::string itemName(std::uint16_t tile) const;
+    // Plays the game's song whose file name has `name` in it, if it has one.
+    void playSong(const char* name);
     std::filesystem::path savePath() const;
     std::string gameId() const;
     int difficultyValue() const;
@@ -228,6 +231,7 @@ private:
     Uint64 captureUntil_ = 0;
     bool quit_ = false;
     bool addGames_ = false;
+    bool titleSong_ = false; // the title song was started on this visit
 
     // Pointer input and walking to a tapped cell.
     InputDevice device_ = InputDevice::Keyboard;

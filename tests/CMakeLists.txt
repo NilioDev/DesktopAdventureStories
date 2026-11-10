@@ -8,6 +8,7 @@ add_executable(das_tests
     test_scripts.cpp
     test_generator.cpp
     test_combat.cpp
+    test_music.cpp
 )
 target_link_libraries(das_tests PRIVATE das::core)
 das_set_warnings(das_tests)

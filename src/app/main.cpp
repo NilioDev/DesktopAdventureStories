@@ -303,6 +303,7 @@ void closeGamepad(App& app, SDL_JoystickID id) {
 void applySettings(App& app) {
     SDL_SetWindowFullscreen(app.window, app.settings.fullscreen);
     app.audio.setVolume(static_cast<float>(app.settings.volume) / 100.0f);
+    app.audio.setMusicVolume(static_cast<float>(app.settings.music) / 100.0f);
     app.viewer.applyFilter();
     app.bindings.configure(app.settings);
 }

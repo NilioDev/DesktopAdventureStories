@@ -13,6 +13,7 @@ writing an original file gives back the exact same bytes.
 | [scripts.md](scripts.md) | What the zone scripts' conditions and instructions do |
 | [palette.md](palette.md) | Where the colours come from |
 | [pack.md](pack.md) | Our own open format that the originals are imported into |
+| [mod.md](mod.md) | Mods: small overlays on a pack that change or add zones, tiles and sounds |
 
 All numbers are little-endian. `u16`/`u32` are unsigned, `i16` is signed.
 

@@ -156,26 +156,11 @@ LoadedGame::~LoadedGame() {
 }
 
 void Viewer::add(SDL_Renderer* renderer, pack::Pack pack) {
+    renderer_ = renderer;
     auto game = std::make_unique<LoadedGame>();
     game->game = pack.data.layout();
-    game->data = std::move(pack.data);
-    game->palette = pack.palette;
-    game->paletteFromGame = pack.palette.colors != data::greyscalePalette().colors;
-    try {
-        game->hero = data::findHero(game->data);
-    } catch (const std::exception& e) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No hero sprite: %s", e.what());
-    }
-    for (const auto& name : game->data.sounds) {
-        const auto slash = name.find_last_of("\\/:");
-        std::string file = slash == std::string::npos ? name : name.substr(slash + 1);
-        std::transform(file.begin(), file.end(), file.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        const auto it = pack.sounds.find("sounds/" + file);
-        game->sounds.push_back(it != pack.sounds.end() ? it->second : data::Bytes{});
-    }
-    game->atlas = buildAtlas(renderer, game->data, game->palette);
-    game->setup = buildSetup(renderer, game->data, game->palette);
+    game->base = std::move(pack);
+    rebuild(*game);
 
     std::erase_if(games_, [&](const auto& g) { return g->game == game->game; });
     games_.push_back(std::move(game));
@@ -186,6 +171,106 @@ void Viewer::add(SDL_Renderer* renderer, pack::Pack pack) {
     zone_ = 0;
     tilePage_ = 0;
     applyFilter();
+}
+
+void Viewer::rebuild(LoadedGame& g) {
+    pack::Pack pack = g.base;
+    g.mods.clear();
+    g.modProblem.clear();
+    if (settings_) {
+        const auto wanted = settings_->mods.find(g.base.game);
+        if (wanted != settings_->mods.end()) {
+            for (const auto& id : wanted->second) {
+                const auto it = std::find_if(mods_.begin(), mods_.end(), [&](const pack::Mod& m) {
+                    return m.info.id == id && m.info.game == g.base.game;
+                });
+                if (it == mods_.end()) {
+                    g.modProblem = "Mod \"" + id + "\" is missing";
+                }
+            }
+        }
+        for (const pack::Mod& mod : mods_) {
+            if (mod.info.game != g.base.game || wanted == settings_->mods.end() ||
+                std::find(wanted->second.begin(), wanted->second.end(), mod.info.id) == wanted->second.end()) {
+                continue;
+            }
+            pack::Pack modded = pack;
+            try {
+                pack::applyMod(modded, mod);
+                pack = std::move(modded);
+                g.mods.push_back(mod.info.id);
+            } catch (const std::exception& e) {
+                g.modProblem = mod.info.name + ": " + e.what();
+                SDL_Log("Mod %s left out: %s", mod.info.id.c_str(), e.what());
+            }
+        }
+    }
+
+    g.data = std::move(pack.data);
+    g.palette = pack.palette;
+    g.paletteFromGame = pack.palette.colors != data::greyscalePalette().colors;
+    g.hero.reset();
+    try {
+        g.hero = data::findHero(g.data);
+    } catch (const std::exception& e) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No hero sprite: %s", e.what());
+    }
+    g.sounds.clear();
+    for (const auto& name : g.data.sounds) {
+        const auto slash = name.find_last_of("\\/:");
+        std::string file = slash == std::string::npos ? name : name.substr(slash + 1);
+        std::transform(file.begin(), file.end(), file.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const auto it = pack.sounds.find("sounds/" + file);
+        g.sounds.push_back(it != pack.sounds.end() ? it->second : data::Bytes{});
+    }
+    for (SDL_Texture** t : {&g.atlas, &g.setup}) {
+        if (*t) {
+            SDL_DestroyTexture(*t);
+            *t = nullptr;
+        }
+    }
+    if (renderer_) {
+        g.atlas = buildAtlas(renderer_, g.data, g.palette);
+        g.setup = buildSetup(renderer_, g.data, g.palette);
+    }
+    zone_ = std::clamp(zone_, 0, std::max(0, static_cast<int>(g.data.zones.size()) - 1));
+    applyFilter();
+}
+
+void Viewer::setModsFolder(std::filesystem::path folder) {
+    modsFolder_ = std::move(folder);
+    rescanMods();
+}
+
+void Viewer::rescanMods() {
+    modScanProblems_.clear();
+    mods_ = modsFolder_.empty() ? std::vector<pack::Mod>{} : pack::findMods(modsFolder_, &modScanProblems_);
+    for (const auto& p : modScanProblems_) {
+        SDL_Log("Mod not read: %s", p.c_str());
+    }
+}
+
+std::vector<const pack::Mod*> Viewer::gameMods() const {
+    std::vector<const pack::Mod*> out;
+    if (games_.empty()) {
+        return out;
+    }
+    for (const auto& m : mods_) {
+        if (m.info.game == game().base.game) {
+            out.push_back(&m);
+        }
+    }
+    return out;
+}
+
+void Viewer::openMods() {
+    if (mode_ != ViewMode::Title || modsFolder_.empty()) {
+        return;
+    }
+    rescanMods();
+    page_ = Page::Mods;
+    menuItem_ = 0;
 }
 
 void Viewer::applyFilter() {
@@ -304,7 +389,7 @@ void Viewer::autosave() {
     }
     try {
         std::filesystem::create_directories(saveFolder_, ec);
-        const std::string text = world::writeSaveGame(*world_, options_, gameId());
+        const std::string text = world::writeSaveGame(*world_, options_, gameId(), game().mods);
         const auto temp = savePath().string() + ".new";
         if (FILE* f = std::fopen(temp.c_str(), "wb")) {
             const bool ok = std::fwrite(text.data(), 1, text.size(), f) == text.size();
@@ -334,6 +419,15 @@ bool Viewer::continueGame() {
         }
         const world::SaveGame save = world::readSaveGame(text);
         if (save.game != gameId()) {
+            return false;
+        }
+        if (save.mods != game().mods) {
+            // Another set of mods makes another world: the save would not fit.
+            std::string list;
+            for (const auto& m : save.mods) {
+                list += (list.empty() ? "" : ", ") + m;
+            }
+            notice_ = list.empty() ? "This save was made without mods" : "This save needs the mods " + list;
             return false;
         }
         world_.emplace(game().data);
@@ -434,6 +528,10 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Size, "World size", sizeName(size_)});
         rows.push_back({RowId::Difficulty, "Difficulty", difficultyName(difficulty_)});
         rows.push_back({RowId::Options, "Options", ""});
+        if (!modsFolder_.empty()) {
+            const auto on = game().mods.size();
+            rows.push_back({RowId::Mods, "Mods", on > 0 ? std::to_string(on) + " on" : ""});
+        }
         rows.push_back({RowId::AddGames, "Add games", ""});
         if (!kMobile) {
             rows.push_back({RowId::DataViewer, "Data viewer", ""});
@@ -490,6 +588,29 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Back, "Back", ""});
         break;
     }
+    case Page::Mods: {
+        const auto list = gameMods();
+        const auto& on = game().mods;
+        const std::vector<std::string>* wanted = nullptr;
+        if (settings_) {
+            if (const auto it = settings_->mods.find(game().base.game); it != settings_->mods.end()) {
+                wanted = &it->second;
+            }
+        }
+        for (std::size_t i = 0; i < list.size(); ++i) {
+            const auto& id = list[i]->info.id;
+            const bool applied = std::find(on.begin(), on.end(), id) != on.end();
+            const bool switchedOn = wanted && std::find(wanted->begin(), wanted->end(), id) != wanted->end();
+            Row row{RowId::Mod, list[i]->info.name, applied ? "On" : switchedOn ? "Error" : "Off"};
+            row.index = static_cast<int>(i);
+            rows.push_back(std::move(row));
+        }
+        if (!kMobile) {
+            rows.push_back({RowId::OpenModsFolder, "Open mods folder", ""});
+        }
+        rows.push_back({RowId::Back, "Back", ""});
+        break;
+    }
     case Page::None: break;
     }
     return rows;
@@ -519,14 +640,14 @@ void Viewer::updateMenu(const ActionState& actions, std::optional<Step> step) {
     }
     const Row& row = rows[static_cast<std::size_t>(menuItem_)];
     if (step && step->dx != 0 && !row.value.empty()) {
-        menuActivate(row.id, step->dx);
+        menuActivate(row, step->dx);
         return;
     }
     if (actions.wasPressed(Action::Use)) {
         if (row.id == RowId::Bind) {
             startCapture(row.action);
         } else {
-            menuActivate(row.id, 1);
+            menuActivate(row, 1);
         }
     }
 }
@@ -536,7 +657,9 @@ void Viewer::startCapture(Action action) {
     captureUntil_ = SDL_GetTicks() + 6000;
 }
 
-void Viewer::menuActivate(RowId id, int change) {
+void Viewer::menuActivate(const Row& row, int change) {
+    const RowId id = row.id;
+    notice_.clear();
     auto changeSetting = [&](auto&& apply) {
         if (settings_) {
             apply(*settings_);
@@ -599,6 +722,36 @@ void Viewer::menuActivate(RowId id, int change) {
             s.buttons.clear();
         });
         break;
+    case RowId::Mods: openMods(); break;
+    case RowId::Mod: {
+        const auto list = gameMods();
+        if (!settings_ || row.index < 0 || static_cast<std::size_t>(row.index) >= list.size()) {
+            break;
+        }
+        const std::string& modId = list[static_cast<std::size_t>(row.index)]->info.id;
+        auto& wanted = settings_->mods[game().base.game];
+        const auto it = std::find(wanted.begin(), wanted.end(), modId);
+        if (it != wanted.end()) {
+            wanted.erase(it);
+        } else {
+            wanted.push_back(modId);
+        }
+        if (wanted.empty()) {
+            settings_->mods.erase(game().base.game);
+        }
+        settingsChanged_ = true;
+        rebuild(game());
+        break;
+    }
+    case RowId::OpenModsFolder: {
+        std::error_code ec;
+        std::filesystem::create_directories(modsFolder_, ec);
+        const std::string url = "file://" + modsFolder_.generic_string();
+        if (!SDL_OpenURL(url.c_str())) {
+            notice_ = "Mods are in " + modsFolder_.string();
+        }
+        break;
+    }
     case RowId::Back: menuBack(); break;
     }
 }
@@ -614,6 +767,10 @@ void Viewer::menuBack() {
         menuItem_ = 0;
         break;
     case Page::Pause: page_ = Page::None; break;
+    case Page::Mods:
+        page_ = Page::Main;
+        menuItem_ = 0;
+        break;
     case Page::Main:
     case Page::None: break;
     }
@@ -699,7 +856,7 @@ void Viewer::handleClick(Uint64 now) {
                 if (row.id == RowId::Bind) {
                     startCapture(row.action);
                 } else {
-                    menuActivate(row.id, hit->kind == Hit::Kind::RowLeft ? -1 : 1);
+                    menuActivate(row, hit->kind == Hit::Kind::RowLeft ? -1 : 1);
                 }
             }
         }

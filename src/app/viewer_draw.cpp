@@ -429,7 +429,7 @@ void Viewer::renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const cha
         addHit(Hit::Kind::Row, rect, static_cast<int>(i));
         if (!row.value.empty()) {
             // Long values (a list of keys) are cut to the room left.
-            const float room = rect.w - 6 - 8 - ui::textWidth(row.label) - 2 * ui::kFont - 4 * ui::kFont;
+            const float room = rect.w - 6 - 8 - ui::textWidth(row.label) - 5 * ui::kFont;
             const std::string shown = fit(row.value, room);
             const std::string value = on ? "< " + shown + " >" : shown + "  ";
             ui::textRight(renderer, rect.x + rect.w - 6, ty, value, on ? ui::color::text : ui::color::dim);
@@ -452,13 +452,53 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
     ui::text(renderer, x, y, fit(indy ? "Desktop Adventures" : "Star Wars", w), ui::color::dim);
     y += 18;
     const float rows = static_cast<float>(menuRows().size());
-    const char* heading = page_ == Page::Options ? "Options" : page_ == Page::Controls ? "Controls" : nullptr;
+    const char* heading = page_ == Page::Options    ? "Options"
+                          : page_ == Page::Controls ? "Controls"
+                          : page_ == Page::Mods     ? "Mods"
+                                                    : nullptr;
     renderMenu(renderer, {x, y, w, rows * kRow}, heading);
     y += rows * kRow + (heading ? 18 : 0) + kPad;
+    const auto paragraph = [&](const std::string& text, ui::Color color, std::size_t maxLines) {
+        const auto lines = wrapText(text, static_cast<std::size_t>(w / ui::kFont));
+        for (std::size_t i = 0; i < lines.size() && i < maxLines; ++i) {
+            ui::text(renderer, x, y, lines[i], color);
+            y += 10;
+        }
+        y += 4;
+    };
     if (!game().paletteFromGame) {
-        ui::text(renderer, x, y, fit("No .EXE found: greyscale", w), ui::color::danger);
+        paragraph("No .EXE found: greyscale", ui::color::danger, 1);
     }
-    renderHints(renderer, {x, y + 12, w, panel.y + panel.h - kPad - y - 12});
+    if (!notice_.empty()) {
+        paragraph(notice_, ui::color::danger, 3);
+    }
+    if (!game().modProblem.empty() && (page_ == Page::Main || page_ == Page::Mods)) {
+        paragraph(game().modProblem, ui::color::danger, 6);
+    }
+    if (page_ == Page::Mods) {
+        const auto list = gameMods();
+        const auto menuRowsNow = menuRows();
+        const int item = std::clamp(menuItem_, 0, static_cast<int>(menuRowsNow.size()) - 1);
+        const Row& row = menuRowsNow[static_cast<std::size_t>(item)];
+        if (list.empty()) {
+            paragraph("No mods yet. Put a mod's folder or .zip file in the mods folder.",
+                      ui::color::dim, 5);
+        } else if (row.id == RowId::Mod && static_cast<std::size_t>(row.index) < list.size()) {
+            const auto& info = list[static_cast<std::size_t>(row.index)]->info;
+            std::string by = info.version.empty() ? "" : "Version " + info.version;
+            if (!info.author.empty()) {
+                by += (by.empty() ? "By " : ", by ") + info.author;
+            }
+            if (!by.empty()) {
+                paragraph(by, ui::color::dim, 2);
+            }
+            if (!info.description.empty()) {
+                paragraph(info.description, ui::color::text, 6);
+            }
+        }
+        return;
+    }
+    renderHints(renderer, {x, y + 8, w, panel.y + panel.h - kPad - y - 8});
 }
 
 void Viewer::renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) const {

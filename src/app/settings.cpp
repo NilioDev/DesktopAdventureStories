@@ -80,6 +80,9 @@ Settings loadSettings(const std::filesystem::path& file) {
         if (const auto* x = v.find("buttons")) {
             s.buttons = readControls(*x);
         }
+        if (const auto* x = v.find("mods")) {
+            s.mods = readControls(*x);
+        }
     } catch (const std::exception& e) {
         SDL_Log("Settings not read, using the defaults: %s", e.what());
         return Settings{};
@@ -98,6 +101,7 @@ void saveSettings(const Settings& s, const std::filesystem::path& file) {
         {"touchPad", s.touchPad == TouchPad::On ? "on" : s.touchPad == TouchPad::Off ? "off" : "auto"},
         {"keys", writeControls(s.keys)},
         {"buttons", writeControls(s.buttons)},
+        {"mods", writeControls(s.mods)},
     });
     std::error_code ec;
     std::filesystem::create_directories(file.parent_path(), ec);

@@ -8,7 +8,7 @@
 //          [--seed N] [--size small|medium|large]
 //          [--at X,Y] [--walk UDLR...] [--library DIR] [--reimport]
 //        For screenshots and tests:
-//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map]
+//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map|mods]
 //          [--device keyboard|gamepad|touch] [--tap X,Y]
 //
 // The first time a game is found it is imported into our own open format in
@@ -530,6 +530,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         app->viewer.setSaveFolder(app->library->root().parent_path() / "saves");
         app->settingsFile = app->library->root().parent_path() / "settings.json";
         app->settings = das::app::loadSettings(app->settingsFile);
+        app->viewer.setModsFolder(app->library->root().parent_path() / "mods");
     }
     if (!app->screenshotPath.empty()) {
         app->settings.fullscreen = false;
@@ -565,7 +566,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         }
         app->viewer.walk(walkPath);
     }
-    if (menu == "pause" || menu == "options" || menu == "controls") {
+    if (menu == "mods") {
+        app->viewer.openMods();
+    } else if (menu == "pause" || menu == "options" || menu == "controls") {
         app->viewer.openMenu(menu != "pause");
         if (menu == "controls") {
             app->viewer.openControls();

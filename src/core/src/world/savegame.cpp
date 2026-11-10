@@ -219,7 +219,12 @@ constexpr int kSaveVersion = 1;
 
 } // namespace
 
-std::string writeSaveGame(const World& world, const GeneratorOptions& options, std::string_view game) {
+std::string writeSaveGame(const World& world, const GeneratorOptions& options, std::string_view game,
+                          const std::vector<std::string>& mods) {
+    json::Array modList;
+    for (const auto& m : mods) {
+        modList.emplace_back(m);
+    }
     json::Array recentGoals;
     for (const int g : options.recentGoals) {
         recentGoals.emplace_back(g);
@@ -232,6 +237,7 @@ std::string writeSaveGame(const World& world, const GeneratorOptions& options, s
         {"format", "das-save"},
         {"version", kSaveVersion},
         {"game", std::string(game)},
+        {"mods", std::move(modList)},
         {"world",
          json::Object{{"seed", static_cast<std::int64_t>(options.seed)},
                       {"size", static_cast<int>(options.size)},
@@ -255,6 +261,11 @@ SaveGame readSaveGame(std::string_view text) {
     }
     SaveGame out;
     out.game = v["game"].asString();
+    if (const auto* mods = v.find("mods")) {
+        for (const auto& m : mods->asArray()) {
+            out.mods.push_back(m.asString());
+        }
+    }
     const auto& w = v["world"];
     out.options.seed = w["seed"].as<std::uint32_t>();
     out.options.size = static_cast<WorldSize>(std::clamp(w["size"].as<int>(), 0, 2));

@@ -3,6 +3,7 @@
 
 #include "das/data/game_files.hpp"
 #include "das/pack/names.hpp"
+#include "das/pack/parts.hpp"
 #include "das/util/json.hpp"
 #include "das/util/png.hpp"
 #include "das/util/text.hpp"
@@ -547,5 +548,21 @@ Files readFolder(const std::filesystem::path& dir) {
     }
     return files;
 }
+
+namespace detail {
+
+std::string zoneFileName(std::size_t index) { return zoneFile(index); }
+json::Value encodeZone(const data::Zone& zone, std::size_t index) { return pack::encodeZone(zone, index); }
+data::Zone decodeZone(const json::Value& v) { return pack::decodeZone(v); }
+json::Value encodeTaggedEntries(const std::vector<data::TaggedEntry>& entries) { return taggedEntries(entries); }
+std::vector<data::TaggedEntry> decodeTaggedEntries(const json::Value& v) { return readTaggedEntries(v); }
+json::Value encodeCharacterValues(const std::vector<data::CharacterValues>& values, bool withReference) {
+    return characterValues(values, withReference);
+}
+std::vector<data::CharacterValues> decodeCharacterValues(const json::Value& v, bool withReference) {
+    return readCharacterValues(v, withReference);
+}
+
+} // namespace detail
 
 } // namespace das::pack

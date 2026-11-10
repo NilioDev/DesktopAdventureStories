@@ -89,14 +89,38 @@ Bytes write(const IndexedImage& image) {
     return out;
 }
 
-IndexedImage read(ByteView file) {
+namespace {
+
+// A PNG file after inflating and unfiltering: one byte per channel.
+struct Decoded {
+    int width = 0;
+    int height = 0;
+    int colorType = 0;
+    int channels = 1;
+    data::Palette palette;
+    bool havePalette = false;
+    Bytes transparency; // tRNS body
+    Bytes pixels;       // width * height * channels
+};
+
+int channelsOf(int colorType) {
+    switch (colorType) {
+    case 0: return 1; // grey
+    case 2: return 3; // RGB
+    case 3: return 1; // palette
+    case 4: return 2; // grey + alpha
+    case 6: return 4; // RGBA
+    default: throw DataError("unknown PNG colour type");
+    }
+}
+
+Decoded decode(ByteView file) {
     if (file.size() < kSignature.size() || !std::equal(kSignature.begin(), kSignature.end(), file.begin())) {
         throw DataError("not a PNG file");
     }
-    IndexedImage image;
+    Decoded image;
     Bytes idat;
     bool haveHeader = false;
-    bool havePalette = false;
     std::size_t at = kSignature.size();
     for (;;) {
         if (at + 12 > file.size()) {
@@ -119,8 +143,10 @@ IndexedImage read(ByteView file) {
             }
             image.width = static_cast<int>(get32(body, 0));
             image.height = static_cast<int>(get32(body, 4));
-            if (body[8] != 8 || body[9] != 3 || body[10] != 0 || body[11] != 0 || body[12] != 0) {
-                throw DataError("only 8-bit palette PNG files without interlacing are supported");
+            image.colorType = body[9];
+            image.channels = channelsOf(image.colorType);
+            if (body[8] != 8 || body[10] != 0 || body[11] != 0 || body[12] != 0) {
+                throw DataError("only 8-bit PNG files without interlacing are supported");
             }
             if (image.width <= 0 || image.height <= 0 || image.width > 16384 || image.height > 16384) {
                 throw DataError("PNG image size out of range");
@@ -133,14 +159,9 @@ IndexedImage read(ByteView file) {
             for (std::size_t i = 0; i < length / 3; ++i) {
                 image.palette.colors[i] = {body[i * 3], body[i * 3 + 1], body[i * 3 + 2]};
             }
-            havePalette = true;
+            image.havePalette = true;
         } else if (type == "tRNS") {
-            for (std::size_t i = 0; i < length; ++i) {
-                if (body[i] == 0) {
-                    image.transparentIndex = static_cast<std::uint8_t>(i);
-                    break;
-                }
-            }
+            image.transparency.assign(body.begin(), body.end());
         } else if (type == "IDAT") {
             idat.insert(idat.end(), body.begin(), body.end());
         } else if (type == "IEND") {
@@ -149,26 +170,30 @@ IndexedImage read(ByteView file) {
             throw DataError("unknown critical PNG chunk " + type);
         }
     }
-    if (!haveHeader || !havePalette) {
-        throw DataError("PNG file lacks a header or palette");
+    if (!haveHeader) {
+        throw DataError("PNG file lacks a header");
+    }
+    if (image.colorType == 3 && !image.havePalette) {
+        throw DataError("PNG file lacks a palette");
     }
 
     const Bytes raw = zlib::decompress(idat);
-    const std::size_t w = static_cast<std::size_t>(image.width);
+    const std::size_t bpp = static_cast<std::size_t>(image.channels);
+    const std::size_t stride = static_cast<std::size_t>(image.width) * bpp;
     const std::size_t h = static_cast<std::size_t>(image.height);
-    if (raw.size() != (w + 1) * h) {
+    if (raw.size() != (stride + 1) * h) {
         throw DataError("PNG image data has the wrong size");
     }
-    image.pixels.resize(w * h);
+    image.pixels.resize(stride * h);
     for (std::size_t y = 0; y < h; ++y) {
-        const std::uint8_t filter = raw[y * (w + 1)];
-        const std::uint8_t* src = raw.data() + y * (w + 1) + 1;
-        std::uint8_t* row = image.pixels.data() + y * w;
-        const std::uint8_t* up = y > 0 ? row - w : nullptr;
-        for (std::size_t x = 0; x < w; ++x) {
-            const int a = x > 0 ? row[x - 1] : 0;
+        const std::uint8_t filter = raw[y * (stride + 1)];
+        const std::uint8_t* src = raw.data() + y * (stride + 1) + 1;
+        std::uint8_t* row = image.pixels.data() + y * stride;
+        const std::uint8_t* up = y > 0 ? row - stride : nullptr;
+        for (std::size_t x = 0; x < stride; ++x) {
+            const int a = x >= bpp ? row[x - bpp] : 0;
             const int b = up != nullptr ? up[x] : 0;
-            const int c = (x > 0 && up != nullptr) ? up[x - 1] : 0;
+            const int c = (x >= bpp && up != nullptr) ? up[x - bpp] : 0;
             int v = src[x];
             switch (filter) {
             case 0: break;
@@ -182,6 +207,107 @@ IndexedImage read(ByteView file) {
         }
     }
     return image;
+}
+
+} // namespace
+
+IndexedImage read(ByteView file) {
+    Decoded d = decode(file);
+    if (d.colorType != 3) {
+        throw DataError("only 8-bit palette PNG files are supported here");
+    }
+    IndexedImage image;
+    image.width = d.width;
+    image.height = d.height;
+    image.palette = d.palette;
+    for (std::size_t i = 0; i < d.transparency.size(); ++i) {
+        if (d.transparency[i] == 0) {
+            image.transparentIndex = static_cast<std::uint8_t>(i);
+            break;
+        }
+    }
+    image.pixels = std::move(d.pixels);
+    return image;
+}
+
+RgbaImage readRgba(ByteView file) {
+    const Decoded d = decode(file);
+    RgbaImage image;
+    image.width = d.width;
+    image.height = d.height;
+    const std::size_t count = static_cast<std::size_t>(d.width) * static_cast<std::size_t>(d.height);
+    image.pixels.resize(count * 4);
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::uint8_t* s = d.pixels.data() + i * static_cast<std::size_t>(d.channels);
+        std::uint8_t* o = image.pixels.data() + i * 4;
+        switch (d.colorType) {
+        case 0:
+            o[0] = o[1] = o[2] = s[0];
+            o[3] = (d.transparency.size() >= 2 && d.transparency[1] == s[0] && d.transparency[0] == 0) ? 0 : 255;
+            break;
+        case 2:
+            o[0] = s[0];
+            o[1] = s[1];
+            o[2] = s[2];
+            o[3] = (d.transparency.size() >= 6 && d.transparency[1] == s[0] && d.transparency[3] == s[1] &&
+                    d.transparency[5] == s[2])
+                       ? 0
+                       : 255;
+            break;
+        case 3: {
+            const auto& c = d.palette.colors[s[0]];
+            o[0] = c.r;
+            o[1] = c.g;
+            o[2] = c.b;
+            o[3] = s[0] < d.transparency.size() ? d.transparency[s[0]] : 255;
+            break;
+        }
+        case 4:
+            o[0] = o[1] = o[2] = s[0];
+            o[3] = s[1];
+            break;
+        default:
+            std::copy(s, s + 4, o);
+            break;
+        }
+    }
+    return image;
+}
+
+std::vector<std::uint8_t> toPaletteIndices(const RgbaImage& image, const data::Palette& palette) {
+    std::vector<std::uint8_t> out(static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height));
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        const std::uint8_t* p = image.pixels.data() + i * 4;
+        if (p[3] < 128) {
+            out[i] = 0;
+            continue;
+        }
+        // Exact matches first, so an image saved from the game palette comes back unchanged.
+        int best = -1;
+        for (int c = 1; c < 256; ++c) {
+            const auto& col = palette.colors[static_cast<std::size_t>(c)];
+            if (col.r == p[0] && col.g == p[1] && col.b == p[2]) {
+                best = c;
+                break;
+            }
+        }
+        if (best < 0) {
+            int bestDistance = 1 << 30;
+            for (int c = 1; c < 256; ++c) {
+                const auto& col = palette.colors[static_cast<std::size_t>(c)];
+                const int dr = col.r - p[0];
+                const int dg = col.g - p[1];
+                const int db = col.b - p[2];
+                const int distance = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = c;
+                }
+            }
+        }
+        out[i] = static_cast<std::uint8_t>(best);
+    }
+    return out;
 }
 
 } // namespace das::png

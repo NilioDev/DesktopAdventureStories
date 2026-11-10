@@ -5,7 +5,9 @@ game engine, so that *Indiana Jones and His Desktop Adventures* and
 *Star Wars: Yoda Stories* stay playable on modern Windows, Linux, macOS and Android,
 with a modern interface, gamepad support and an editor for new content.
 
-> **Status:** early development. Nothing is playable yet.
+> **Status:** playable. Both games can be played from start to finish in
+> generated worlds, and the editor makes mods. Not yet tested much on real
+> devices, so please report what goes wrong.
 
 ## You need your own copy of the games
 
@@ -30,32 +32,117 @@ Never commit these files, or anything extracted from them, to this repository.
 - **Trademarks.** This project is not affiliated with or endorsed by Lucasfilm, Disney
   or LucasArts. Game names are used only to describe compatibility.
 
-## Download
+## Installing and starting
 
-Ready-made packages for Windows, macOS, Linux and Android are on the
+Ready-made packages are on the
 [releases page](https://github.com/NilioDev/DesktopAdventureStories/releases)
-once a version is out. See [docs/releases.md](docs/releases.md) for how they
-are made.
+once a version is out (see [docs/releases.md](docs/releases.md) for how they
+are made). Below, for each system, how to start a package and how to build
+it yourself. The first start always needs your game files; see
+[Pointing it at your games](#pointing-it-at-your-games).
 
-## Building
+### Windows
 
-Requirements: CMake 3.22+, a C++20 compiler and Git. SDL3 is downloaded and built
-automatically when it is not installed.
+**Package:** download `DesktopAdventureStories-<version>-windows.zip`, unpack
+it and double-click `DesktopAdventureStories.exe`. Windows SmartScreen may
+warn the first time because the program is not signed: choose *More info*,
+*Run anyway*. Put your games in a `gamedata` folder next to the `.exe`, or
+start the program and press *Choose game files*.
+
+**Build it yourself:** install [Git](https://git-scm.com/),
+[CMake](https://cmake.org/download/) and Visual Studio 2022 (the free
+Community edition, with *Desktop development with C++*). Then, in a
+*Developer PowerShell for VS 2022*:
+
+```powershell
+git clone https://github.com/NilioDev/DesktopAdventureStories.git
+cd DesktopAdventureStories
+cmake -S . -B build
+cmake --build build --config Release --parallel
+.\build\src\app\Release\DesktopAdventureStories.exe
+```
+
+### macOS
+
+**Package:** download `DesktopAdventureStories-<version>-macos.dmg`, open it
+and drag the app to *Applications*. The app is not signed, so the first time
+right-click it and choose *Open*, then *Open* again. Start it and press
+*Choose game files*, or drop your game folder on the window.
+
+**Build it yourself:** install the Xcode command line tools
+(`xcode-select --install`) and CMake (for example `brew install cmake`). Then
+in Terminal:
 
 ```sh
+git clone https://github.com/NilioDev/DesktopAdventureStories.git
+cd DesktopAdventureStories
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+open build/src/app/DesktopAdventureStories.app
+```
+
+Started this way the app does not look in the repository's `gamedata`
+folder; choose the game files in the app, or start the program inside the
+app from the repository root:
+`./build/src/app/DesktopAdventureStories.app/Contents/MacOS/DesktopAdventureStories`.
+
+### Linux
+
+**Package:** download `DesktopAdventureStories-<version>-linux.tar.gz`, then:
+
+```sh
+tar xzf DesktopAdventureStories-*-linux.tar.gz
+cd DesktopAdventureStories-*/
+./DesktopAdventureStories
+```
+
+Put your games in a `gamedata` folder next to the program, or press
+*Choose game files*.
+
+**Build it yourself:** on Debian or Ubuntu, install the tools and SDL's build
+dependencies (other distributions have packages with similar names):
+
+```sh
+sudo apt install git cmake g++ ninja-build pkg-config \
+  libasound2-dev libpulse-dev libpipewire-0.3-dev \
+  libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+  libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+  libwayland-dev libdecor-0-dev wayland-protocols \
+  libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+  libdbus-1-dev libibus-1.0-dev libudev-dev
+git clone https://github.com/NilioDev/DesktopAdventureStories.git
+cd DesktopAdventureStories
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
 ./build/src/app/DesktopAdventureStories
 ```
 
-On Linux, install SDL's build dependencies first (see `.github/workflows/ci.yml`).
+### Android
 
-Android (needs the Android SDK and NDK):
+**Package:** download `DesktopAdventureStories-<version>-android.apk` on your
+phone or tablet and open it. Android asks to allow installing apps from this
+source (your browser or file manager) the first time. Start the app and
+choose a `.zip` of your game folder, or its files. Android 5 or newer.
+
+**Build it yourself:** install JDK 17 and the Android SDK and NDK (easiest
+with [Android Studio](https://developer.android.com/studio)). Then:
 
 ```sh
-cd android
+git clone https://github.com/NilioDev/DesktopAdventureStories.git
+cd DesktopAdventureStories/android
 ./gradlew assembleDebug
+adb install app/build/outputs/apk/debug/*.apk
+```
+
+Or open the `android` folder in Android Studio and press *Run*.
+
+### All desktop systems
+
+The build needs CMake 3.22+, a C++20 compiler and Git. SDL3 is downloaded and
+built automatically when it is not installed. Run the tests with:
+
+```sh
+ctest --test-dir build --output-on-failure
 ```
 
 ### Pointing it at your games

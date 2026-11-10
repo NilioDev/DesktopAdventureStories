@@ -750,6 +750,7 @@ void Viewer::menuActivate(const Row& row, int change) {
     case RowId::EditSpotType:
     case RowId::EditSpotArgument:
     case RowId::EditZoneType:
+    case RowId::EditScripts:
     case RowId::EditUndo:
     case RowId::EditNewZone:
     case RowId::EditTest:

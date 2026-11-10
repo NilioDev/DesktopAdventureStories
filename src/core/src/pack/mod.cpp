@@ -6,6 +6,7 @@
 #include "das/data/game_files.hpp"
 #include "das/pack/names.hpp"
 #include "das/pack/parts.hpp"
+#include "das/script/script_text.hpp"
 #include "das/util/json.hpp"
 #include "das/util/png.hpp"
 #include "das/util/text.hpp"
@@ -33,8 +34,22 @@ constexpr int kTileSize = 32;
 Bytes toBytes(const std::string& s) { return Bytes(s.begin(), s.end()); }
 std::string toString(const Bytes& b) { return std::string(b.begin(), b.end()); }
 
+std::string scriptFileName(std::size_t index) {
+    char name[48];
+    std::snprintf(name, sizeof name, "scripts/%04zu.txt", index);
+    return name;
+}
+
+bool sameScripts(const std::optional<std::vector<data::Action>>& a, const std::optional<std::vector<data::Action>>& b,
+                 data::Layout game) {
+    if (a.has_value() != b.has_value()) {
+        return false;
+    }
+    return !a || script::writeScriptText(*a, game) == script::writeScriptText(*b, game);
+}
+
 std::string tileFileName(std::size_t index) {
-    char name[32];
+    char name[48];
     std::snprintf(name, sizeof name, "tiles/%04zu.png", index);
     return name;
 }
@@ -351,6 +366,22 @@ void applyMod(Pack& pack, const Mod& mod) {
         }
     }
 
+    // Scripts as text replace a zone's scripts, also those of its zone file.
+    for (const auto& [name, bytes] : files) {
+        const auto index = numberedFile(name, "scripts/", ".txt");
+        if (!index) {
+            continue;
+        }
+        if (*index >= d.zones.size()) {
+            throw DataError(name + ": there is no zone " + std::to_string(*index));
+        }
+        try {
+            d.zones[*index].actions = script::readScriptText(toString(bytes), d.layout());
+        } catch (const std::exception& e) {
+            throw DataError(name + ": " + e.what());
+        }
+    }
+
     // Sounds replace the game's sound of the same file name, or are added
     // at the end of the sound list.
     for (const auto& [name, bytes] : files) {
@@ -439,10 +470,21 @@ Mod makeMod(const Pack& original, const Pack& changed, const ModInfo& info) {
         files["tiles.json"] = toBytes(json::write(Object{{"tiles", std::move(tileChanges)}}));
     }
 
+    // A zone file for zones whose grid, hotspots or lists changed, and the
+    // scripts as text for zones whose scripts changed.
     for (std::size_t i = 0; i < b.zones.size(); ++i) {
-        std::string text = json::write(detail::encodeZone(b.zones[i], i));
-        if (i >= a.zones.size() || json::write(detail::encodeZone(a.zones[i], i)) != text) {
-            files[detail::zoneFileName(i)] = toBytes(text);
+        if (i >= a.zones.size()) {
+            files[detail::zoneFileName(i)] = toBytes(json::write(detail::encodeZone(b.zones[i], i)));
+            continue;
+        }
+        data::Zone rest = b.zones[i];
+        rest.actions = a.zones[i].actions;
+        if (json::write(detail::encodeZone(rest, i)) != json::write(detail::encodeZone(a.zones[i], i))) {
+            files[detail::zoneFileName(i)] = toBytes(json::write(detail::encodeZone(b.zones[i], i)));
+        }
+        if (!sameScripts(a.zones[i].actions, b.zones[i].actions, b.layout())) {
+            files[scriptFileName(i)] =
+                toBytes(script::writeScriptText(b.zones[i].actions.value_or(std::vector<data::Action>{}), b.layout()));
         }
     }
 

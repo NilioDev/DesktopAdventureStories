@@ -37,6 +37,7 @@ see-through.
 | Tile | The tile to paint; pressing it opens the tile picker (9 x 9 tiles a page; Q / E or LB / RB turn pages) |
 | Type, Argument | On the Hotspots layer: the type that Paint places, and the argument of the hotspot under the cursor |
 | Zone type | The zone's type, which the world generator chooses zones by |
+| Scripts | The number of scripts in the zone; pressing it opens them as text in the system's text editor (desktop) |
 | Undo | Takes back the last change (up to 100) |
 | New zone | Adds a zone of the same size, type and planet, with its floor in the tile in hand |
 | Try it out | Plays the zone as it is now; Esc or the Back button returns to the editor |
@@ -67,9 +68,18 @@ are the names the editor uses:
 | 13 | Teleporter | |
 | 14, 15 | Ship out, Ship in | argument: the zone the ship flies to |
 
+## Scripts
+
+*Scripts* saves the mod (when needed), writes the zone's scripts to
+`scripts/NNNN.txt` in the mod's folder and opens that file in the system's
+text editor. The format is in [formats/script-text.md](formats/script-text.md)
+and what each line does in [formats/scripts.md](formats/scripts.md). Save the
+file, then choose *Try it out* or *Save mod*: both read the scripts files
+again first. A mistake stops them and names the file and line.
+
 ## Not in the editor yet
 
-Scripts, placed characters and the zone's item lists are kept as they are.
-They can be changed in the zone's JSON file in the mod (see
-[formats/pack.md](formats/pack.md) and [formats/scripts.md](formats/scripts.md)).
-New tiles and sounds are added as files to the mod.
+Placed characters and the zone's item lists are kept as they are. They can
+be changed in the zone's JSON file in the mod (see
+[formats/pack.md](formats/pack.md)). New tiles and sounds are added as files
+to the mod.

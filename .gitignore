@@ -1,0 +1,29 @@
+# Build output
+/build*/
+/out/
+CMakeUserPresets.json
+.cache/
+compile_commands.json
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/third_party/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Original game data: never commit
+*.DAW
+*.daw
+*.DTA
+*.dta
+*.EXE
+*.exe
+/gamedata/

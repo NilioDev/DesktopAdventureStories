@@ -76,7 +76,9 @@ or `--library DIR` (or `DAS_LIBRARY_DIR`) to keep the library somewhere else.
 | macOS | `~/Library/Application Support/DesktopAdventureStories/library` |
 
 For now this opens a data viewer (title screen, every zone and every tile),
-and you can walk around a zone: pick one and press Use.
+and you can walk around a zone: pick one and press Use. The zone scripts run:
+people talk to you in speech bubbles (Use for the next page), doors and
+switches react, and sound effects play.
 
 Tests that need the original files run only when `DAS_GAMEDATA_DIR` is set:
 

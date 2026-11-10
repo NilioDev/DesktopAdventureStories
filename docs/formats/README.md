@@ -10,6 +10,7 @@ writing an original file gives back the exact same bytes.
 | [container.md](container.md) | The section list, and how the two games differ |
 | [sections.md](sections.md) | VERS, STUP, SNDS, TILE, TNAM, ZONE (grid) |
 | [zone-records.md](zone-records.md) | Hotspots, placed characters, item lists, scripts |
+| [scripts.md](scripts.md) | What the zone scripts' conditions and instructions do |
 | [palette.md](palette.md) | Where the colours come from |
 | [pack.md](pack.md) | Our own open format that the originals are imported into |
 

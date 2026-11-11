@@ -163,6 +163,8 @@ public:
     InputDevice inputDevice() const { return device_; }
     // Whether the game itself is on screen and takes moves (no menu, map or
     // ending in the way): the time for the touch pad.
+    // In a game, menu or not: the screen has the cards around the field.
+    bool inPlay() const { return mode_ == ViewMode::Play && world_.has_value(); }
     bool playing() const { return mode_ == ViewMode::Play && page_ == Page::None && !showMap_ && banner_.empty(); }
     // A mouse click or a tap, in interface units.
     void pointerPressed(float x, float y);
@@ -305,7 +307,17 @@ private:
     void renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float cell, int camX, int camY) const;
     void renderBanner(SDL_Renderer* renderer, const SDL_FRect& field) const;
     void renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const;
-    void renderHud(SDL_Renderer* renderer, const SDL_FRect& panel) const;
+    // The map the player is on now (the world or the Dagobah map) and the
+    // cell of the current zone on it, -1 when it is not on it.
+    struct MapHere {
+        const world::Map* map = nullptr;
+        int x = -1;
+        int y = -1;
+    };
+    MapHere mapHere() const;
+    // The map's sites as rounded cells, `cell` units each, from (x, y).
+    void renderMapCells(SDL_Renderer* renderer, const MapHere& here, float x, float y, float cell) const;
+    void renderHud(SDL_Renderer* renderer, const ui::Layout& layout) const;
     void renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const char* heading) const;
     void renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;
     void renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;

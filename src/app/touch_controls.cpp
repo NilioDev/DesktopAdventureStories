@@ -21,23 +21,25 @@ void TouchControls::place(const ui::Layout& layout) {
     const float size = std::clamp(field.w / 3.6f, 64.0f, 120.0f);
     padRadius_ = size / 2;
     const float button = std::floor(size * 0.42f);
-    const float leftRoom = field.x;
-    const float rightRoom = layout.width - (layout.panel.x + layout.panel.w);
+    const float leftRoom = layout.left.w > 0 ? layout.left.x : field.x;
+    // In play the cards and the item bar take the room around the field.
+    const SDL_FRect panel = ui::hudArea(layout);
+    const float rightRoom = layout.width - (panel.x + panel.w);
     if (!layout.portrait && leftRoom >= size + 12 && rightRoom >= 2 * button + 20) {
         // In the empty strips left and right.
         padCenter_ = {std::floor(leftRoom / 2), field.y + field.h - padRadius_ - 6};
-        const float rx = layout.panel.x + layout.panel.w + std::floor((rightRoom - 2 * button - 8) / 2);
+        const float rx = panel.x + panel.w + std::floor((rightRoom - 2 * button - 8) / 2);
         attack_ = {rx, field.y + field.h - 6 - button, button, button};
         use_ = {rx + button + 8, attack_.y - std::floor(button * 0.6f), button, button};
         return;
     }
-    const float below = layout.height - (layout.panel.y + layout.panel.h);
+    const float below = layout.height - (panel.y + panel.h);
     if (layout.portrait && below >= kBottomRoom - 8) {
         // In the strip under the panel.
         padRadius_ = std::floor((below - 12) / 2);
         const float b = std::floor(padRadius_ * 0.85f);
-        padCenter_ = {layout.panel.x + padRadius_ + 4, layout.height - 6 - padRadius_};
-        use_ = {layout.panel.x + layout.panel.w - b - 4, layout.height - 6 - 2 * padRadius_, b, b};
+        padCenter_ = {panel.x + padRadius_ + 4, layout.height - 6 - padRadius_};
+        use_ = {panel.x + panel.w - b - 4, layout.height - 6 - 2 * padRadius_, b, b};
         attack_ = {use_.x - b - 10, layout.height - 6 - b, b, b};
         return;
     }

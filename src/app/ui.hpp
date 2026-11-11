@@ -52,14 +52,23 @@ struct Layout {
     float width = 0;  // the screen, in units
     float height = 0;
     SDL_FRect field{}; // the square play field
-    SDL_FRect panel{}; // the side (or bottom) panel
+    SDL_FRect panel{}; // the side (or bottom) panel; in play the right column
+    // In play (see layout's `hud`): the left column of cards and the item bar
+    // under the field. On a tall screen the columns share the room under
+    // the field, above the bar. Empty outside play.
+    SDL_FRect left{};
+    SDL_FRect bar{};
     bool portrait = false;
 };
 
+// Everything under or beside the field in play: left, panel and bar together.
+SDL_FRect hudArea(const Layout& layout);
+
 // The play field is 288 game pixels square. `pixelPerfect` keeps it at a
 // whole multiple of that on screen. On a tall screen `bottomRoom` units are
-// kept free under the panel (for the touch pad).
-Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom = 0);
+// kept free under the panel (for the touch pad). `hud` is for play: a column
+// of cards on each side of the field and the item bar under it.
+Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom = 0, bool hud = false);
 // The whole screen at a given scale, without a play field (the editor).
 Layout plainLayout(int pixelWidth, int pixelHeight, float scale);
 
@@ -104,6 +113,10 @@ std::string fit(std::string_view line, float width, float size = 1, Font font = 
 std::vector<std::string> wrap(std::string_view text, float width, float size = 1, Font font = Font::Interface);
 void textRight(SDL_Renderer* renderer, float right, float y, std::string_view line, Color c, float size = 1);
 void textCentered(SDL_Renderer* renderer, float centerX, float y, std::string_view line, Color c, float size = 1);
+// A ring around (cx, cy), filled clockwise from the top for `ratio` (0 to 1)
+// in `c`, the rest in `track`.
+void ring(SDL_Renderer* renderer, float cx, float cy, float radius, float thickness, float ratio, Color c,
+          Color track);
 // A bar filled for `ratio` (0 to 1).
 void bar(SDL_Renderer* renderer, const SDL_FRect& rect, float ratio, Color c);
 

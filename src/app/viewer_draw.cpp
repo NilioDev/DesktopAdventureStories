@@ -20,7 +20,6 @@ constexpr int kTilesPerPage = 9 * 9;
 constexpr int kView = 9; // cells across the play field
 constexpr float kPad = 8;
 constexpr float kRow = 18; // a menu row
-constexpr float kSlot = 36; // an inventory slot
 
 std::string fit(const std::string& line, float width) { return ui::fit(line, width); }
 
@@ -313,7 +312,7 @@ Viewer::MapHere Viewer::mapHere() const {
 void Viewer::renderMapCells(SDL_Renderer* renderer, const MapHere& here, float x, float y, float cell) const {
     const world::Map& map = *here.map;
     const bool blink = (SDL_GetTicks() / 400) % 2 == 0;
-    const float gap = cell >= 12 ? 2 : 1;
+    const float gap = cell >= 12 ? 2.0f : 1.0f;
     const float radius = std::floor(cell / 4);
     for (int cy = 0; cy < map.height; ++cy) {
         for (int cx = 0; cx < map.width; ++cx) {

@@ -30,7 +30,10 @@ inline constexpr Color background{18, 20, 26};
 inline constexpr Color panel{28, 31, 40};
 inline constexpr Color panelLight{38, 42, 54};
 inline constexpr Color border{56, 61, 76};
-inline constexpr Color accent{236, 196, 92};
+// The accent follows the game being played: amber for Indy, green for Yoda
+// (setAccent). The editor and the data viewer keep the last one set.
+inline Color accent{244, 176, 76};
+inline Color accentInk{26, 17, 8}; // text on the accent
 inline constexpr Color text{226, 229, 236};
 inline constexpr Color dim{146, 151, 164};
 inline constexpr Color faint{96, 101, 114};
@@ -74,9 +77,20 @@ void shutdown();
 // Starts drawing a frame in units.
 void begin(SDL_Renderer* renderer, const Layout& layout);
 
+// The accent colour (and the dark text drawn on it) of a game.
+void setAccent(Color accent, Color ink);
+inline constexpr Color kIndyAccent{244, 176, 76};
+inline constexpr Color kIndyInk{26, 17, 8};
+inline constexpr Color kYodaAccent{127, 217, 154};
+inline constexpr Color kYodaInk{8, 19, 15};
+
 void fill(SDL_Renderer* renderer, const SDL_FRect& rect, Color c);
+// A rectangle with round corners of `radius` units.
+void fillRounded(SDL_Renderer* renderer, const SDL_FRect& rect, float radius, Color c);
+// A thin line along a rounded rectangle's edge.
+void outlineRounded(SDL_Renderer* renderer, const SDL_FRect& rect, float radius, Color c);
 void outline(SDL_Renderer* renderer, const SDL_FRect& rect, Color c);
-// A panel: filled, with a border and a soft shadow.
+// A panel: rounded, filled, with a fine border and a soft shadow.
 void panel(SDL_Renderer* renderer, const SDL_FRect& rect, Color fillColor = color::panel);
 // One line of text (UTF-8) with its top at y, `size` times as large.
 void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color c, float size = 1,

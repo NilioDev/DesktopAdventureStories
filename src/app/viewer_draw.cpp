@@ -59,6 +59,14 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
     if (games_.empty()) {
         return;
     }
+    // Each game has its own colour; on the cards it is the chosen card's.
+    const bool picking = mode_ == ViewMode::Title && page_ == Page::Pick;
+    const bool indy = picking ? pickCard() == 0 : game().game == data::Layout::Indy;
+    ui::setAccent(indy ? ui::kIndyAccent : ui::kYodaAccent, indy ? ui::kIndyInk : ui::kYodaInk);
+    if (picking) {
+        renderPicker(renderer, layout);
+        return;
+    }
     const SDL_FRect& field = layout.field;
     // A thin frame around the play field.
     ui::outline(renderer, {field.x - 1, field.y - 1, field.w + 2, field.h + 2}, ui::color::border);
@@ -484,8 +492,8 @@ void Viewer::renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const cha
         const SDL_FRect rect{area.x, y, area.w, kRow - 2};
         const bool on = static_cast<int>(i) == active;
         if (on) {
-            ui::fill(renderer, rect, ui::color::panelLight);
-            ui::fill(renderer, {rect.x, rect.y, 2, rect.h}, ui::color::accent);
+            ui::fillRounded(renderer, rect, rect.h / 2, ui::color::panelLight);
+            ui::fillRounded(renderer, {rect.x + 3, rect.y + 4, 3, rect.h - 8}, 1.5f, ui::color::accent);
         }
         const float ty = rect.y + (rect.h - ui::kFont) / 2;
         ui::text(renderer, rect.x + 8, ty, row.label, on ? ui::color::accent : ui::color::text);

@@ -148,7 +148,11 @@ void Viewer::add(SDL_Renderer* renderer, pack::Pack pack) {
     current_ = games_.size() - 1;
     world_.reset();
     mode_ = mode_ == ViewMode::Play ? ViewMode::Title : mode_;
-    page_ = Page::Main;
+    // Back to the cards, on the game just added.
+    page_ = Page::Pick;
+    pickCard_ = games_.back()->game == data::Layout::Indy ? 0 : 1;
+    pickRow_ = 0;
+    pickButton_ = 0;
     zone_ = 0;
     tilePage_ = 0;
     applyFilter();
@@ -491,23 +495,49 @@ std::string Viewer::gameId() const { return game().game == data::Layout::Indy ? 
 
 int Viewer::difficultyValue() const { return difficulty_ == 0 ? 20 : difficulty_ == 2 ? 80 : 50; }
 
-std::filesystem::path Viewer::savePath(int slot) const {
+std::filesystem::path Viewer::savePathFor(const std::string& id, int slot) const {
     if (saveFolder_.empty()) {
         return {};
     }
     // The autosave keeps the name saves had before there were slots.
-    return saveFolder_ / (gameId() + (slot == 0 ? "" : ".slot" + std::to_string(slot)) + ".save.json");
+    return saveFolder_ / (id + (slot == 0 ? "" : ".slot" + std::to_string(slot)) + ".save.json");
 }
 
-int Viewer::newestSlot() const {
-    if (games_.empty() || saveFolder_.empty()) {
+namespace {
+
+// When a file was last written, as "11 Nov 19:20", or "" without the file.
+std::string fileDate(const std::filesystem::path& path) {
+    SDL_PathInfo info{};
+    SDL_DateTime t{};
+    if (path.empty() || !SDL_GetPathInfo(path.string().c_str(), &info) || info.type != SDL_PATHTYPE_FILE ||
+        !SDL_TimeToDateTime(info.modify_time, &t, true)) {
+        return {};
+    }
+    static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    char text[32];
+    SDL_snprintf(text, sizeof text, "%d %s %02d:%02d", t.day, kMonths[(t.month + 11) % 12], t.hour, t.minute);
+    return text;
+}
+
+} // namespace
+
+std::string Viewer::savedWhen(const std::string& id) const {
+    const int slot = newestSlotFor(id);
+    return slot < 0 ? std::string{} : fileDate(savePathFor(id, slot));
+}
+
+int Viewer::newestSlot() const { return games_.empty() ? -1 : newestSlotFor(gameId()); }
+
+int Viewer::newestSlotFor(const std::string& id) const {
+    if (saveFolder_.empty()) {
         return -1;
     }
     int newest = -1;
     SDL_Time newestTime = 0;
     for (int slot = 0; slot <= kSaveSlots; ++slot) {
         SDL_PathInfo info{};
-        if (SDL_GetPathInfo(savePath(slot).string().c_str(), &info) && info.type == SDL_PATHTYPE_FILE &&
+        if (SDL_GetPathInfo(savePathFor(id, slot).string().c_str(), &info) && info.type == SDL_PATHTYPE_FILE &&
             (newest < 0 || info.modify_time > newestTime)) {
             newest = slot;
             newestTime = info.modify_time;
@@ -662,16 +692,7 @@ void Viewer::openSlots(bool saving) {
     confirmSlot_ = -1;
     slotDates_.assign(static_cast<std::size_t>(kSaveSlots) + 1, "");
     for (int slot = 0; slot <= kSaveSlots; ++slot) {
-        SDL_PathInfo info{};
-        SDL_DateTime t{};
-        if (SDL_GetPathInfo(savePath(slot).string().c_str(), &info) && info.type == SDL_PATHTYPE_FILE &&
-            SDL_TimeToDateTime(info.modify_time, &t, true)) {
-            static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-            char text[32];
-            SDL_snprintf(text, sizeof text, "%d %s %02d:%02d", t.day, kMonths[(t.month + 11) % 12], t.hour, t.minute);
-            slotDates_[static_cast<std::size_t>(slot)] = text;
-        }
+        slotDates_[static_cast<std::size_t>(slot)] = fileDate(savePath(slot));
     }
     page_ = Page::Slots;
     menuItem_ = 0;
@@ -727,9 +748,11 @@ void Viewer::walk(const std::string& path) {
 
 void Viewer::selectGame(data::Layout which) {
     world_.reset();
-    if (mode_ == ViewMode::Play) {
+    if (mode_ == ViewMode::Play || mode_ == ViewMode::Title) {
+        // Straight to the game's own menu, past the cards.
         mode_ = ViewMode::Title;
         page_ = Page::Main;
+        menuItem_ = 0;
     }
     for (std::size_t i = 0; i < games_.size(); ++i) {
         if (games_[i]->game == which) {
@@ -759,9 +782,6 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         if (hasSave()) {
             rows.push_back({RowId::LoadGame, "Load game", ""});
         }
-        if (games_.size() > 1) {
-            rows.push_back({RowId::Game, "Game", game().game == data::Layout::Indy ? "Indy" : "Yoda"});
-        }
         rows.push_back({RowId::Size, "World size", sizeName(size_)});
         rows.push_back({RowId::Difficulty, "Difficulty", difficultyName(difficulty_)});
         rows.push_back({RowId::Options, "Options", ""});
@@ -770,11 +790,10 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
             rows.push_back({RowId::Mods, "Mods", on > 0 ? std::to_string(on) + " on" : ""});
             rows.push_back({RowId::Editor, "Editor", ""});
         }
-        rows.push_back({RowId::AddGames, "Add games", ""});
         if (!kMobile) {
             rows.push_back({RowId::DataViewer, "Data viewer", ""});
-            rows.push_back({RowId::Quit, "Quit", ""});
         }
+        rows.push_back({RowId::Back, "Other game", ""});
         break;
     case Page::Pause:
         rows.push_back({RowId::Resume, "Resume", ""});
@@ -890,6 +909,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Back, "Back", ""});
         break;
     }
+    case Page::Pick:
     case Page::None: break;
     }
     return rows;
@@ -949,11 +969,6 @@ void Viewer::menuActivate(const Row& row, int change) {
     switch (id) {
     case RowId::Continue: continueGame(); break;
     case RowId::NewGame: newGame(static_cast<std::uint32_t>(SDL_GetPerformanceCounter()), size_); break;
-    case RowId::Game:
-        current_ = static_cast<std::size_t>(wrapAround(static_cast<int>(current_) + change, static_cast<int>(games_.size())));
-        zone_ = 0;
-        tilePage_ = 0;
-        break;
     case RowId::Size: size_ = static_cast<world::WorldSize>(wrapAround(static_cast<int>(size_) + change, 3)); break;
     case RowId::Difficulty: difficulty_ = wrapAround(difficulty_ + change, 3); break;
     case RowId::Options:
@@ -1133,6 +1148,14 @@ void Viewer::menuBack() {
         menuItem_ = 0;
         break;
     case Page::Main:
+        if (mode_ == ViewMode::Title) {
+            page_ = Page::Pick;
+            pickCard_ = game().game == data::Layout::Indy ? 0 : 1;
+            pickRow_ = 0;
+            pickButton_ = 0;
+        }
+        break;
+    case Page::Pick:
     case Page::None: break;
     }
 }
@@ -1176,7 +1199,11 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
             titleSong_ = true;
             playSong("theme");
         }
-        updateMenu(actions, step);
+        if (page_ == Page::Pick) {
+            updatePicker(actions, step);
+        } else {
+            updateMenu(actions, step);
+        }
         if (mode_ != ViewMode::Title) {
             titleSong_ = false; // the next visit plays it again
         }
@@ -1233,6 +1260,10 @@ void Viewer::handleClick(Uint64 now) {
                 rows[static_cast<std::size_t>(hit->index)].id == RowId::BugNote) {
                 return; // a press on the note while typing ends the typing
             }
+        }
+        if (hit && hit->kind == Hit::Kind::Pick) {
+            pickActivate(hit->index / 10 - 1, hit->index % 10);
+            return;
         }
         if (hit && (hit->kind == Hit::Kind::Row || hit->kind == Hit::Kind::RowLeft)) {
             const auto rows = menuRows();

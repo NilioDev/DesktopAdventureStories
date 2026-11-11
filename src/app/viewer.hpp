@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The front end: the title screen and its menus, the game with its panel
+// The front end: the game picker, the title screen and its menus, the game with its panel
 // (health, weapon, inventory), the pause menu, the options and the map. It
 // also keeps the data viewer for zones and tiles. Keyboard, gamepad, mouse
 // and touch all reach it as actions or pointer presses.
@@ -178,11 +178,11 @@ public:
 
 private:
     // Menus: the title screen's, the pause menu and the options.
-    enum class Page { None, Main, Pause, Options, Controls, Mods, Slots, Help, Bug };
+    // Pick: the cards to choose a game with, the first screen.
+    enum class Page { None, Pick, Main, Pause, Options, Controls, Mods, Slots, Help, Bug };
     enum class RowId {
         Continue,
         NewGame,
-        Game,
         Size,
         Difficulty,
         Options,
@@ -227,10 +227,26 @@ private:
     };
     // A place on screen the pointer can press, found while drawing.
     struct Hit {
-        enum class Kind { Row, RowLeft, Field, Slot, Menu, Map } kind;
+        enum class Kind { Row, RowLeft, Field, Slot, Menu, Map, Pick } kind;
         SDL_FRect rect;
         int index = 0;
     };
+
+    // The game picker. Card 0 is Indy, card 1 Yoda; the row above the
+    // cards (kPickTop) holds Add games, Options and Quit.
+    static constexpr int kPickTop = -1;
+    struct PickButton {
+        enum class What { Continue, Play, AddGames, Options, Quit } what;
+        std::string label;
+        bool primary = false;
+    };
+    std::vector<PickButton> pickButtons(int card) const;
+    int pickCard() const; // the card chosen now
+    void updatePicker(const ActionState& actions, std::optional<Step> step);
+    void pickActivate(int card, int button);
+    void renderPicker(SDL_Renderer* renderer, const ui::Layout& layout) const;
+    // The loaded game of a card, or -1.
+    int gameOfCard(int card) const;
 
     LoadedGame& game() { return *games_[current_]; }
     const LoadedGame& game() const { return *games_[current_]; }
@@ -261,7 +277,12 @@ private:
     void playSong(const char* name);
     // Slot 0 is the autosave, 1 to kSaveSlots the player's own.
     static constexpr int kSaveSlots = 3;
-    std::filesystem::path savePath(int slot) const;
+    std::filesystem::path savePath(int slot) const { return savePathFor(gameId(), slot); }
+    std::filesystem::path savePathFor(const std::string& id, int slot) const;
+    // The newest slot of a game ("indy" or "yoda") with a save, or -1.
+    int newestSlotFor(const std::string& id) const;
+    // When a game was last saved, as "11 Nov 19:20", or "".
+    std::string savedWhen(const std::string& id) const;
     bool writeSave(int slot);
     bool loadGame(int slot);
     // Loads a save game's text into the current game.
@@ -327,7 +348,10 @@ private:
     bool showMap_ = false;
 
     // Menus and options.
-    Page page_ = Page::Main;
+    Page page_ = Page::Pick;
+    int pickCard_ = -1;  // -1: the card of the current game
+    int pickRow_ = 0;    // kPickTop or 0 (the card's buttons)
+    int pickButton_ = 0; // in the row
     Page optionsFrom_ = Page::Main;
     Page helpFrom_ = Page::None;
     int menuItem_ = 0;

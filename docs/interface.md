@@ -1,8 +1,10 @@
 # The interface
 
 The play field shows the original pixel art. Everything around it is our
-own, drawn with plain shapes and the Fira Sans font (SIL Open Font License,
-`assets/fonts`), in one colour scheme (`src/app/ui.hpp`). Speech bubbles
+own, drawn with plain shapes (panels and buttons with round corners,
+`ui::fillRounded`) and the Fira Sans font (SIL Open Font License,
+`assets/fonts`), in one colour scheme (`src/app/ui.hpp`). The accent colour follows the game:
+amber for Indy, green for Yoda (`ui::setAccent`). Speech bubbles
 during play use the 8x8 pixel font PxPlus IBM CGA (CC BY-SA 4.0), always at
 a whole multiple of its 8 pixels and without smoothing (`ui::Font::Story`). Text is drawn with
 SDL_ttf at the screen's own resolution, so it stays sharp at every interface
@@ -34,11 +36,18 @@ smaller, for screens at least 320 units on their short side.
   one button to choose it (Enter, Space or a gamepad's A press it too). A
   folder without game files says so in words, not as a path. After a game is
   added, the title screen says it is ready.
+- **Game cards:** the first screen (`viewer_picker.cpp`). A card for each
+  game, Indy first, each in its own colour, with the game's title picture
+  from the player's files, its name, when it was last saved, and buttons:
+  Continue (when there is a save) and New adventure, or Start adventure, or
+  Add game files for a game that is not installed. Left and right choose a
+  card, up and down a button; up from the first button reaches Add games,
+  Options and Quit (not on phones) at the top. Side by side on a wide
+  screen, above each other on a tall one.
 - **Title:** the game's own title picture in the field; the menu in the
   panel: Continue (the newest save), New game, Load game (when there is a
-  save), Game (when both games
-  are installed), World size, Difficulty, Options, Mods, Editor, Add games, Data
-  viewer and Quit (these two not on phones).
+  save), World size, Difficulty, Options, Mods, Editor, Data viewer (not on
+  phones) and Other game, which goes back to the cards (so does Back).
 - **Game:** the panel shows the puzzles solved, health, the weapon in hand,
   the inventory as a grid (scrolling to the selected item), the selected
   item's name, hints for the input device used last, and Map and Menu

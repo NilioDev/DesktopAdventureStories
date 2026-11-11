@@ -247,15 +247,97 @@ void fill(SDL_Renderer* renderer, const SDL_FRect& rect, Color c) {
     SDL_RenderFillRect(renderer, &rect);
 }
 
+void setAccent(Color accent, Color ink) {
+    color::accent = accent;
+    color::accentInk = ink;
+}
+
+namespace {
+
+// The edge of a rounded rectangle, clockwise from the top left corner.
+std::vector<SDL_FPoint> roundedEdge(const SDL_FRect& rect, float radius) {
+    const float r = std::clamp(radius, 0.0f, std::min(rect.w, rect.h) / 2);
+    constexpr int kSteps = 6; // per corner
+    constexpr float kQuarter = 1.5707964f;
+    const SDL_FPoint centres[4] = {{rect.x + r, rect.y + r},
+                                   {rect.x + rect.w - r, rect.y + r},
+                                   {rect.x + rect.w - r, rect.y + rect.h - r},
+                                   {rect.x + r, rect.y + rect.h - r}};
+    std::vector<SDL_FPoint> points;
+    points.reserve(4 * (kSteps + 1));
+    for (int corner = 0; corner < 4; ++corner) {
+        const float start = static_cast<float>(corner + 2) * kQuarter; // 180, 270, 0, 90 degrees
+        for (int i = 0; i <= kSteps; ++i) {
+            const float a = start + kQuarter * static_cast<float>(i) / kSteps;
+            points.push_back({centres[corner].x + r * std::cos(a), centres[corner].y + r * std::sin(a)});
+        }
+    }
+    return points;
+}
+
+} // namespace
+
+void fillRounded(SDL_Renderer* renderer, const SDL_FRect& rect, float radius, Color c) {
+    if (radius < 1 || rect.w < 2 || rect.h < 2) {
+        fill(renderer, rect, c);
+        return;
+    }
+    const auto edge = roundedEdge(rect, radius);
+    const SDL_FColor fc{c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f};
+    std::vector<SDL_Vertex> vertices;
+    vertices.reserve(edge.size() + 1);
+    vertices.push_back({{rect.x + rect.w / 2, rect.y + rect.h / 2}, fc, {0, 0}});
+    for (const auto& p : edge) {
+        vertices.push_back({p, fc, {0, 0}});
+    }
+    std::vector<int> indices;
+    indices.reserve(edge.size() * 3);
+    const int n = static_cast<int>(edge.size());
+    for (int i = 0; i < n; ++i) {
+        indices.push_back(0);
+        indices.push_back(1 + i);
+        indices.push_back(1 + (i + 1) % n);
+    }
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_RenderGeometry(renderer, nullptr, vertices.data(), static_cast<int>(vertices.size()), indices.data(),
+                       static_cast<int>(indices.size()));
+}
+
+void outlineRounded(SDL_Renderer* renderer, const SDL_FRect& rect, float radius, Color c) {
+    // A band one unit wide between the edge and the same shape one unit in,
+    // drawn as triangles so that its curves are smooth.
+    const auto outer = roundedEdge(rect, radius);
+    const auto inner = roundedEdge({rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2}, std::max(0.0f, radius - 1));
+    const SDL_FColor fc{c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f};
+    std::vector<SDL_Vertex> vertices;
+    vertices.reserve(outer.size() * 2);
+    for (std::size_t i = 0; i < outer.size(); ++i) {
+        vertices.push_back({outer[i], fc, {0, 0}});
+        vertices.push_back({inner[i], fc, {0, 0}});
+    }
+    std::vector<int> indices;
+    const int n = static_cast<int>(outer.size());
+    indices.reserve(static_cast<std::size_t>(n) * 6);
+    for (int i = 0; i < n; ++i) {
+        const int a0 = 2 * i;
+        const int b0 = 2 * ((i + 1) % n);
+        indices.insert(indices.end(), {a0, a0 + 1, b0, b0, a0 + 1, b0 + 1});
+    }
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_RenderGeometry(renderer, nullptr, vertices.data(), static_cast<int>(vertices.size()), indices.data(),
+                       static_cast<int>(indices.size()));
+}
+
 void outline(SDL_Renderer* renderer, const SDL_FRect& rect, Color c) {
     setColor(renderer, c);
     SDL_RenderRect(renderer, &rect);
 }
 
 void panel(SDL_Renderer* renderer, const SDL_FRect& rect, Color fillColor) {
-    fill(renderer, {rect.x + 2, rect.y + 2, rect.w, rect.h}, {0, 0, 0, 70});
-    fill(renderer, rect, fillColor);
-    outline(renderer, rect, color::border);
+    constexpr float kRadius = 8;
+    fillRounded(renderer, {rect.x - 1, rect.y + 2, rect.w + 2, rect.h + 2}, kRadius + 1, {0, 0, 0, 60});
+    fillRounded(renderer, rect, kRadius, fillColor);
+    outlineRounded(renderer, rect, kRadius, color::border);
 }
 
 void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color c, float size, Font which) {

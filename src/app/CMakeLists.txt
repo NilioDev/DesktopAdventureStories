@@ -3,6 +3,7 @@ set(DAS_APP_SOURCES
     input_bindings.cpp
     viewer.cpp
     viewer_draw.cpp
+    viewer_picker.cpp
     gui.cpp
     editor.cpp
     editor_zones.cpp

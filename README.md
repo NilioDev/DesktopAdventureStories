@@ -43,8 +43,13 @@ own adventures.
 - 🗺️ **A new adventure every time.** Worlds are generated just like in the
   originals: the same seed gives the same world. Pick the world size and the
   difficulty.
+- 🃏 **Pick your adventure.** The game starts with a card for each game,
+  Indiana Jones first and Yoda Stories next to it, showing the game's own
+  title screen from your files and when you last saved. Continue right away
+  or start a new adventure. Each game has its own colour: amber for Indy,
+  green for Yoda.
 - 🖥️ **Modern interface.** Your own game's pixel art, scaled sharply to any
-  window, with a clean side panel for health, weapon and inventory (below the
+  window, with rounded panels and a clean side panel for health, weapon and inventory (below the
   play field on tall screens). Menus use the easy-to-read Fira Sans font,
   sharp on every screen, and what characters say appears in a classic pixel
   font that suits the game's art. No Windows 3.1 look.
@@ -145,7 +150,7 @@ The easiest way is to give the program the **whole game folder** from your CD
 or installation, or a `.zip` of it. You can:
 
 - press *Choose the game folder* on the welcome screen at first start (on
-  Android: *Choose the zip*), or *Add games* in the title menu later,
+  Android: *Choose the zip*), or *Add games* on the game cards later,
 - drop the folder or zip on the window,
 - put the games in a `gamedata/yoda/` and `gamedata/indy/` folder next to the
   program (see [gamedata/README.md](gamedata/README.md)),
@@ -176,8 +181,11 @@ or touch screen; it is in the pause menu too.
 
 Every key and button can be changed under *Options → Controls*.
 
-The title screen starts a new game in a generated world, continues your
-newest save, loads another one, or opens the options. In the game, *Save
+The first screen has a card for each game. *Continue* picks up your newest
+save of that game; *Start adventure* (or *New adventure*) opens the game's
+menu, where you choose the world size and difficulty and start a new game in
+a generated world, load another save, or open the options. *Other game* in
+that menu goes back to the cards. In the game, *Save
 game* in the pause menu (Escape, or Start on a gamepad) keeps your game in
 one of three slots. On desktop, the *data viewer* in the title menu
 shows every zone and tile of a game. More about the screen layout in

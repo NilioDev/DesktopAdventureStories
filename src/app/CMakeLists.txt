@@ -33,5 +33,10 @@ else()
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
 endif()
 
-target_link_libraries(das_app PRIVATE das::core SDL3::SDL3)
+# The interface font (SIL Open Font License, see assets/fonts/OFL.txt) is
+# built into the program.
+include(DasEmbed)
+das_embed_file(das_app "${PROJECT_SOURCE_DIR}/assets/fonts/FiraSans-Medium.ttf" kInterfaceFont)
+
+target_link_libraries(das_app PRIVATE das::core SDL3_ttf::SDL3_ttf SDL3::SDL3)
 das_set_warnings(das_app)

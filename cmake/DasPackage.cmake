@@ -1,11 +1,13 @@
 # Desktop packages made with CPack: a zip on Windows, a disk image on macOS
 # and a tar.gz on Linux. Each holds the program (SDL is linked in), the
-# license and the readme. The game files are never part of a package.
+# licenses and the readme. The game files are never part of a package.
 
 install(TARGETS das_app
     RUNTIME DESTINATION .
     BUNDLE DESTINATION .)
 install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/README.md" DESTINATION .)
+# The font built into the program comes with its own license.
+install(FILES "${PROJECT_SOURCE_DIR}/assets/fonts/OFL.txt" DESTINATION . RENAME "LICENSE-FiraSans.txt")
 
 if(WIN32)
     set(DAS_PACKAGE_SYSTEM "windows")

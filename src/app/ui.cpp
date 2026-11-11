@@ -3,9 +3,17 @@
 
 #include "das/constants.hpp"
 
+#include <SDL3_ttf/SDL_ttf.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <string>
+#include <unordered_map>
+
+// Fira Sans Medium, built in by cmake/DasEmbed.cmake.
+extern const unsigned char kInterfaceFont[];
+extern const std::size_t kInterfaceFontSize;
 
 namespace das::app::ui {
 
@@ -18,6 +26,76 @@ constexpr float kField = static_cast<float>(kViewPixels); // 288
 constexpr float kMinShort = 320;
 
 float g_scale = 1;
+
+// --- the font ---------------------------------------------------------------
+//
+// Letters are drawn at the screen's own resolution: the font is opened at
+// the size in screen pixels, and drawn with the render scale at 1.
+
+constexpr float kFontSize = 10; // in units: capitals are about 7 units high
+constexpr float kBaseline = 7;  // from the top of a line, in units
+constexpr Uint64 kKeepFrames = 120; // drawn texts unused this long are freed
+
+struct CachedText {
+    TTF_Text* text = nullptr;
+    Uint64 used = 0;
+};
+
+struct Fonts {
+    bool ready = false;
+    TTF_TextEngine* engine = nullptr;
+    std::unordered_map<int, TTF_Font*> bySize; // by size in screen pixels
+    std::unordered_map<std::string, CachedText> texts; // by size and text
+    Uint64 frame = 0;
+};
+
+Fonts g_fonts;
+
+int pixelSize(float size) { return std::max(1, static_cast<int>(std::lround(kFontSize * size * g_scale))); }
+
+TTF_Font* fontAt(int pixels) {
+    if (!g_fonts.ready) {
+        return nullptr;
+    }
+    if (const auto it = g_fonts.bySize.find(pixels); it != g_fonts.bySize.end()) {
+        return it->second;
+    }
+    TTF_Font* font = nullptr;
+    if (SDL_IOStream* io = SDL_IOFromConstMem(kInterfaceFont, kInterfaceFontSize)) {
+        font = TTF_OpenFontIO(io, true, static_cast<float>(pixels));
+    }
+    if (font) {
+        TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
+    } else {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not open the font: %s", SDL_GetError());
+    }
+    g_fonts.bySize[pixels] = font;
+    return font;
+}
+
+TTF_Text* cachedText(TTF_Font* font, int pixels, std::string_view line) {
+    std::string key = std::to_string(pixels);
+    key += '\n';
+    key += line;
+    auto& entry = g_fonts.texts[key];
+    if (!entry.text) {
+        entry.text = TTF_CreateText(g_fonts.engine, font, line.data(), line.size());
+    }
+    entry.used = g_fonts.frame;
+    return entry.text;
+}
+
+// Steps back over one UTF-8 letter.
+std::size_t previousLetter(std::string_view s, std::size_t at) {
+    if (at == 0) {
+        return 0;
+    }
+    --at;
+    while (at > 0 && (static_cast<unsigned char>(s[at]) & 0xc0) == 0x80) {
+        --at;
+    }
+    return at;
+}
 
 void setColor(SDL_Renderer* r, Color c) {
     SDL_SetRenderDrawBlendMode(r, c.a == 255 ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
@@ -93,9 +171,57 @@ Layout plainLayout(int pixelWidth, int pixelHeight, float scale) {
     return l;
 }
 
+void init(SDL_Renderer* renderer) {
+    if (g_fonts.ready) {
+        return;
+    }
+    if (!TTF_Init()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not start SDL_ttf: %s", SDL_GetError());
+        return;
+    }
+    g_fonts.engine = TTF_CreateRendererTextEngine(renderer);
+    if (!g_fonts.engine) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not set up text drawing: %s", SDL_GetError());
+        TTF_Quit();
+        return;
+    }
+    g_fonts.ready = true;
+}
+
+void shutdown() {
+    for (auto& [key, entry] : g_fonts.texts) {
+        TTF_DestroyText(entry.text);
+    }
+    for (auto& [pixels, font] : g_fonts.bySize) {
+        if (font) {
+            TTF_CloseFont(font);
+        }
+    }
+    if (g_fonts.engine) {
+        TTF_DestroyRendererTextEngine(g_fonts.engine);
+    }
+    const bool started = g_fonts.ready || g_fonts.engine;
+    g_fonts = Fonts{};
+    if (started) {
+        TTF_Quit();
+    }
+}
+
 void begin(SDL_Renderer* renderer, const Layout& layout) {
     g_scale = layout.scale;
     SDL_SetRenderScale(renderer, g_scale, g_scale);
+    // Free the texts that were not drawn for a while.
+    ++g_fonts.frame;
+    if (g_fonts.frame % 60 == 0) {
+        for (auto it = g_fonts.texts.begin(); it != g_fonts.texts.end();) {
+            if (g_fonts.frame - it->second.used > kKeepFrames) {
+                TTF_DestroyText(it->second.text);
+                it = g_fonts.texts.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 }
 
 void fill(SDL_Renderer* renderer, const SDL_FRect& rect, Color c) {
@@ -115,19 +241,133 @@ void panel(SDL_Renderer* renderer, const SDL_FRect& rect, Color fillColor) {
 }
 
 void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color c, float size) {
-    setColor(renderer, c);
-    const std::string s(line);
-    if (size == 1) {
-        SDL_RenderDebugText(renderer, std::round(x), std::round(y), s.c_str());
+    if (line.empty()) {
         return;
     }
-    SDL_SetRenderScale(renderer, g_scale * size, g_scale * size);
-    SDL_RenderDebugText(renderer, std::round(x * g_scale) / (g_scale * size), std::round(y * g_scale) / (g_scale * size),
-                        s.c_str());
+    const int pixels = pixelSize(size);
+    TTF_Font* font = fontAt(pixels);
+    TTF_Text* drawn = font ? cachedText(font, pixels, line) : nullptr;
+    if (!drawn) {
+        // Without the font: SDL's built-in 8x8 letters.
+        setColor(renderer, c);
+        const std::string s(line);
+        SDL_SetRenderScale(renderer, g_scale * size, g_scale * size);
+        SDL_RenderDebugText(renderer, std::round(x * g_scale) / (g_scale * size),
+                            std::round(y * g_scale) / (g_scale * size), s.c_str());
+        SDL_SetRenderScale(renderer, g_scale, g_scale);
+        return;
+    }
+    TTF_SetTextColor(drawn, c.r, c.g, c.b, c.a);
+    // Draw in screen pixels. The clip rectangle is in units and SDL scales it
+    // with the render scale, so it is scaled by hand while the scale is 1.
+    const bool clipped = SDL_RenderClipEnabled(renderer);
+    SDL_Rect clip{};
+    if (clipped) {
+        SDL_GetRenderClipRect(renderer, &clip);
+    }
+    SDL_SetRenderScale(renderer, 1, 1);
+    if (clipped) {
+        const auto scaled = [](int v) { return static_cast<int>(std::lround(static_cast<float>(v) * g_scale)); };
+        const SDL_Rect pixelClip{scaled(clip.x), scaled(clip.y), scaled(clip.w), scaled(clip.h)};
+        SDL_SetRenderClipRect(renderer, &pixelClip);
+    }
+    const float baseline = std::round((y + kBaseline * size) * g_scale);
+    TTF_DrawRendererText(drawn, std::round(x * g_scale), baseline - static_cast<float>(TTF_GetFontAscent(font)));
     SDL_SetRenderScale(renderer, g_scale, g_scale);
+    if (clipped) {
+        SDL_SetRenderClipRect(renderer, &clip);
+    }
 }
 
-float textWidth(std::string_view line, float size) { return static_cast<float>(line.size()) * kFont * size; }
+float textWidth(std::string_view line, float size) {
+    if (line.empty()) {
+        return 0;
+    }
+    TTF_Font* font = fontAt(pixelSize(size));
+    int w = 0;
+    int h = 0;
+    if (!font || !TTF_GetStringSize(font, line.data(), line.size(), &w, &h)) {
+        return static_cast<float>(line.size()) * kFont * size; // the 8x8 letters
+    }
+    return static_cast<float>(w) / g_scale;
+}
+
+std::string fit(std::string_view line, float width, float size) {
+    if (textWidth(line, size) <= width) {
+        return std::string(line);
+    }
+    const std::string_view more = g_fonts.ready ? "\xE2\x80\xA6" : "..";
+    const float room = width - textWidth(more, size);
+    // The longest start that fits: find it by halving.
+    std::size_t low = 0;
+    std::size_t high = line.size();
+    while (low < high) {
+        const std::size_t mid = (low + high + 1) / 2;
+        if (textWidth(line.substr(0, mid), size) <= room) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    // Not in the middle of a UTF-8 letter.
+    while (low > 0 && low < line.size() && (static_cast<unsigned char>(line[low]) & 0xc0) == 0x80) {
+        --low;
+    }
+    std::string out(line.substr(0, low));
+    while (!out.empty() && out.back() == ' ') {
+        out.pop_back();
+    }
+    return out + std::string(more);
+}
+
+std::vector<std::string> wrap(std::string_view text, float width, float size) {
+    std::vector<std::string> lines;
+    const auto fits = [&](std::string_view s) { return textWidth(s, size) <= width; };
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t newline = text.find('\n', start);
+        std::string_view paragraph =
+            text.substr(start, newline == std::string_view::npos ? std::string_view::npos : newline - start);
+        std::string line;
+        while (!paragraph.empty()) {
+            const std::size_t cut = paragraph.find(' ');
+            std::string_view word = paragraph.substr(0, cut);
+            paragraph = cut == std::string_view::npos ? std::string_view{} : paragraph.substr(cut + 1);
+            if (word.empty()) {
+                continue;
+            }
+            if (!line.empty() && fits(line + " " + std::string(word))) {
+                line += " ";
+                line += word;
+                continue;
+            }
+            if (!line.empty()) {
+                lines.push_back(line);
+                line.clear();
+            }
+            // A word longer than a line is broken where it has to be.
+            while (!word.empty() && !fits(word)) {
+                std::size_t end = word.size();
+                while (end > 1 && !fits(word.substr(0, end))) {
+                    end = previousLetter(word, end);
+                }
+                end = std::max<std::size_t>(end, 1);
+                while (end < word.size() && (static_cast<unsigned char>(word[end]) & 0xc0) == 0x80) {
+                    ++end; // keep a letter whole
+                }
+                lines.emplace_back(word.substr(0, end));
+                word.remove_prefix(end);
+            }
+            line = std::string(word);
+        }
+        lines.push_back(line);
+        if (newline == std::string_view::npos) {
+            break;
+        }
+        start = newline + 1;
+    }
+    return lines;
+}
 
 void textRight(SDL_Renderer* renderer, float right, float y, std::string_view line, Color c, float size) {
     text(renderer, right - textWidth(line, size), y, line, c, size);

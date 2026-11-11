@@ -10,7 +10,7 @@
 
 namespace das::app {
 
-std::vector<std::string> wrapText(const std::string& text, std::size_t width); // viewer.cpp
+std::vector<std::string> wrapText(const std::string& text, float width); // viewer.cpp
 
 namespace {
 
@@ -22,13 +22,7 @@ constexpr float kPad = 8;
 constexpr float kRow = 18; // a menu row
 constexpr float kSlot = 36; // an inventory slot
 
-std::string fit(const std::string& line, float width) {
-    const auto chars = static_cast<std::size_t>(std::max(0.0f, width / ui::kFont));
-    if (line.size() <= chars) {
-        return line;
-    }
-    return chars > 2 ? line.substr(0, chars - 2) + ".." : line.substr(0, chars);
-}
+std::string fit(const std::string& line, float width) { return ui::fit(line, width); }
 
 ui::Color healthColor(float ratio) {
     if (ratio > 0.5f) {
@@ -111,7 +105,7 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
             const float w = std::min(field.w - 2 * kPad, card ? 272.0f : 240.0f);
             const auto rows = static_cast<float>(menuRows().size());
             auto cardLines =
-                card ? wrapText(help ? howToPlayText() : bugText(), static_cast<std::size_t>((w - 2 * kPad) / ui::kFont))
+                card ? wrapText(help ? howToPlayText() : bugText(), w - 2 * kPad)
                      : std::vector<std::string>{};
             if (!help && cardLines.size() > 9) {
                 cardLines.erase(cardLines.begin() + 1, cardLines.end() - 8); // the end of a long note
@@ -363,9 +357,9 @@ void Viewer::renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float 
     const world::Position speaker = bubble_->at.value_or(world_->player());
     constexpr float kLine = 11;
     const float width = field.w - 8;
-    bubbleColumns_ = static_cast<std::size_t>(std::max(8.0f, (width - 2 * kPad) / ui::kFont));
+    bubbleWidth_ = std::max(64.0f, width - 2 * kPad);
     bubbleLines_ = static_cast<std::size_t>(std::max(3.0f, (field.h * 0.6f) / kLine));
-    const auto all = wrapText(bubble_->text, bubbleColumns_);
+    const auto all = wrapText(bubble_->text, bubbleWidth_);
     const std::size_t first = static_cast<std::size_t>(bubblePage_) * bubbleLines_;
     const std::vector<std::string> lines(
         all.begin() + static_cast<std::ptrdiff_t>(std::min(first, all.size())),
@@ -466,7 +460,7 @@ std::string Viewer::howToPlayText() const {
 
 void Viewer::renderHints(SDL_Renderer* renderer, const SDL_FRect& area) const {
     const std::string hint = hintText();
-    const auto lines = wrapText(hint, static_cast<std::size_t>(area.w / ui::kFont));
+    const auto lines = wrapText(hint, area.w);
     float y = area.y + area.h - static_cast<float>(lines.size()) * 10;
     if (y < area.y) {
         return; // no room
@@ -500,7 +494,7 @@ void Viewer::renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const cha
             // Long values (a list of keys) are cut to the room left.
             // A save slot's date is not a value to step through.
             const bool arrows = on && row.id != RowId::Slot;
-            const float room = rect.w - 6 - 8 - ui::textWidth(row.label) - (arrows ? 5 : 2) * ui::kFont;
+            const float room = rect.w - 6 - 8 - ui::textWidth(row.label) - ui::textWidth(arrows ? "<  >" : "  ") - ui::kFont;
             const std::string shown = fit(row.value, room);
             const std::string value = arrows ? "< " + shown + " >" : shown + "  ";
             ui::textRight(renderer, rect.x + rect.w - 6, ty, value, on ? ui::color::text : ui::color::dim);
@@ -532,7 +526,7 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
     renderMenu(renderer, {x, y, w, rows * kRow}, heading);
     y += rows * kRow + (heading ? 18 : 0) + kPad;
     const auto paragraph = [&](const std::string& text, ui::Color color, std::size_t maxLines) {
-        const auto lines = wrapText(text, static_cast<std::size_t>(w / ui::kFont));
+        const auto lines = wrapText(text, w);
         for (std::size_t i = 0; i < lines.size() && i < maxLines; ++i) {
             ui::text(renderer, x, y, lines[i], color);
             y += 10;
@@ -611,7 +605,7 @@ void Viewer::renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) c
     }
     const char* hint = mode_ == ViewMode::Zone ? "Arrows browse\nSpace walk here\nM tiles  Esc back"
                                                : "Arrows browse\nM zones  Esc back";
-    const auto lines = wrapText(hint, static_cast<std::size_t>(w / ui::kFont));
+    const auto lines = wrapText(hint, w);
     float hy = panel.y + panel.h - kPad - static_cast<float>(lines.size()) * 10;
     for (const auto& l : lines) {
         ui::text(renderer, x, hy, l, ui::color::faint);

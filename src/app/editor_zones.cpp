@@ -849,7 +849,7 @@ void Editor::zoneInspector(const SDL_FRect& r) {
     ui::text(renderer_, x + 40, y + 4, std::to_string(tile_), ui::color::text);
     const std::string name = tileName(tile_);
     if (!name.empty()) {
-        ui::text(renderer_, x + 40, y + 16, name.substr(0, static_cast<std::size_t>((w - 40) / ui::kFont)),
+        ui::text(renderer_, x + 40, y + 16, ui::fit(name, w - 40),
                  ui::color::dim);
     }
     y += 32 + kPad;

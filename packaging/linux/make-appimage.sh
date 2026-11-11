@@ -45,6 +45,7 @@ install -Dm644 "$here/$id.metainfo.xml" "$app/usr/share/metainfo/$id.appdata.xml
 install -Dm644 "$here/$id.png" "$app/usr/share/icons/hicolor/256x256/apps/$id.png"
 install -Dm644 "$here/$id.svg" "$app/usr/share/icons/hicolor/scalable/apps/$id.svg"
 install -Dm644 "$root/LICENSE" "$app/usr/share/doc/DesktopAdventureStories/LICENSE"
+install -Dm644 "$root/assets/fonts/OFL.txt" "$app/usr/share/doc/DesktopAdventureStories/LICENSE-FiraSans.txt"
 ln -s "usr/share/applications/$id.desktop" "$app/$id.desktop"
 ln -s "usr/share/icons/hicolor/256x256/apps/$id.png" "$app/$id.png"
 ln -s "$id.png" "$app/.DirIcon"

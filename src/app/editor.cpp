@@ -490,7 +490,7 @@ void Editor::tour(const gui::Input& in, float width, float height) {
     }
     // The box: in the middle of the spot, or below or above a thin one.
     const float bw = std::min(360.0f, width - 32);
-    const auto lines = gui::wrap(step.text, static_cast<std::size_t>((bw - 20) / ui::kFont));
+    const auto lines = gui::wrap(step.text, bw - 20);
     const float bh = 44 + static_cast<float>(lines.size()) * 10 + gui::kRow;
     float bx = (width - bw) / 2;
     float by = (height - bh) / 2;

@@ -519,7 +519,7 @@ int Viewer::newestSlot() const {
     int newest = -1;
     SDL_Time newestTime = 0;
     for (int slot = 0; slot <= kSaveSlots; ++slot) {
-        SDL_PathInfo info;
+        SDL_PathInfo info{};
         if (SDL_GetPathInfo(savePath(slot).string().c_str(), &info) && info.type == SDL_PATHTYPE_FILE &&
             (newest < 0 || info.modify_time > newestTime)) {
             newest = slot;
@@ -634,8 +634,8 @@ void Viewer::openSlots(bool saving) {
     confirmSlot_ = -1;
     slotDates_.assign(static_cast<std::size_t>(kSaveSlots) + 1, "");
     for (int slot = 0; slot <= kSaveSlots; ++slot) {
-        SDL_PathInfo info;
-        SDL_DateTime t;
+        SDL_PathInfo info{};
+        SDL_DateTime t{};
         if (SDL_GetPathInfo(savePath(slot).string().c_str(), &info) && info.type == SDL_PATHTYPE_FILE &&
             SDL_TimeToDateTime(info.modify_time, &t, true)) {
             static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",

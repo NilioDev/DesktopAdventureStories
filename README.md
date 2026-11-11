@@ -47,8 +47,8 @@ own adventures.
   play field on tall screens). No Windows 3.1 look.
 - 🎮 **Play your way.** Keyboard, mouse, gamepad or touch. Every key and button
   can be changed.
-- 💾 **Saves itself.** The game is saved when you go back to the title screen
-  or close the app.
+- 💾 **Never lose your game.** It saves itself every few minutes and whenever
+  you leave, and you can save in three slots of your own.
 - 📱 **Everywhere.** Windows, macOS, Linux and Android, from one codebase.
 - 🛠️ **Editor and mods.** Change or add zones, tiles, characters, puzzles,
   scripts and sounds in a beginner-friendly editor, and share them as mods.
@@ -166,8 +166,10 @@ library. After that the original files are no longer needed.
 
 Every key and button can be changed under *Options → Controls*.
 
-The title screen starts a new game in a generated world, continues a saved
-one, or opens the options. On desktop, the *data viewer* in the title menu
+The title screen starts a new game in a generated world, continues your
+newest save, loads another one, or opens the options. In the game, *Save
+game* in the pause menu (Escape, or Start on a gamepad) keeps your game in
+one of three slots. On desktop, the *data viewer* in the title menu
 shows every zone and tile of a game. More about the screen layout in
 [docs/interface.md](docs/interface.md).
 

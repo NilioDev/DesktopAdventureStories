@@ -111,10 +111,15 @@ public:
 
     // Where games are saved; without it nothing is saved.
     void setSaveFolder(std::filesystem::path folder) { saveFolder_ = std::move(folder); }
-    // Saves a game in progress so that Continue picks it up.
-    void autosave();
+    // Saves a game in progress in the autosave slot, so that Continue picks
+    // it up. Returns whether it was written (not while a script waits).
+    bool autosave();
     bool hasSave() const;
+    // Loads the newest save of the current game.
     bool continueGame();
+    // The app went to the background (a phone may close it there without
+    // warning): save, and pause so the player comes back to the menu.
+    void enterBackground();
 
     void setInputDevice(InputDevice device) { device_ = device; }
     InputDevice inputDevice() const { return device_; }
@@ -135,7 +140,7 @@ public:
 
 private:
     // Menus: the title screen's, the pause menu and the options.
-    enum class Page { None, Main, Pause, Options, Controls, Mods };
+    enum class Page { None, Main, Pause, Options, Controls, Mods, Slots };
     enum class RowId {
         Continue,
         NewGame,
@@ -149,6 +154,9 @@ private:
         Resume,
         Map,
         SaveAndQuit,
+        SaveGame,
+        LoadGame,
+        Slot,
         Fullscreen,
         Scaling,
         Filter,
@@ -205,7 +213,14 @@ private:
     std::string itemName(std::uint16_t tile) const;
     // Plays the game's song whose file name has `name` in it, if it has one.
     void playSong(const char* name);
-    std::filesystem::path savePath() const;
+    // Slot 0 is the autosave, 1 to kSaveSlots the player's own.
+    static constexpr int kSaveSlots = 3;
+    std::filesystem::path savePath(int slot) const;
+    bool writeSave(int slot);
+    bool loadGame(int slot);
+    // The newest slot with a save, or -1.
+    int newestSlot() const;
+    void openSlots(bool saving);
     std::string gameId() const;
     int difficultyValue() const;
 
@@ -261,6 +276,10 @@ private:
     int menuItem_ = 0;
     std::filesystem::path saveFolder_;
     world::GeneratorOptions options_; // of the game being played
+    Uint64 nextAutosaveAt_ = 0;     // in play, the next timed autosave
+    bool slotsSaving_ = false;      // the Slots page saves (else loads)
+    int confirmSlot_ = -1;          // a slot pressed once, to overwrite
+    std::vector<std::string> slotDates_; // when each slot was saved, "" for empty
     world::WorldSize size_ = world::WorldSize::Medium;
     int difficulty_ = 1; // 0 easy, 1 normal, 2 hard
     bool settingsChanged_ = false;

@@ -6,18 +6,31 @@ extend. The originals' save files are not read.
 
 ## When the game is saved
 
-There is one save per game, in a `saves` folder next to the library
-(`indy.save.json`, `yoda.save.json`). The app saves when the player leaves
-play for the title screen and when the app closes. A game that has been won
-or lost removes its save, so it is not continued.
+Each game has an autosave and three slots of the player's own, in a `saves`
+folder next to the library:
+
+- `indy.save.json`, `yoda.save.json`: the autosave. It is written when the
+  player leaves play for the title screen, when the app closes, every two
+  minutes of play, and when the app goes to the background or its window is
+  minimised. A phone may close an app in the background without warning, so
+  the game is saved before that can happen, and it waits in the pause menu
+  when the player comes back.
+- `indy.slot1.save.json` to `indy.slot3.save.json` (and the same for `yoda`):
+  written only when the player picks *Save game* in the pause menu and a
+  slot. A slot that is in use asks *Overwrite?* first.
+
+A game that has been won or lost removes its autosave, so it is not
+continued; the player's own slots are kept.
 
 A save is only written when the world is at rest (`World::canSave`): no
 speech bubble or script is waiting for the player. The file is written to
 `<name>.new` first and then renamed over the old save, so a crash during the
 write never leaves a broken save behind.
 
-The title screen offers *Continue* when a save exists, next to *New game*,
-the world size (small, medium, large) and the difficulty (easy, normal,
+*Continue* on the title screen loads the newest save of all four. *Load
+game*, on the title screen and in the pause menu, lists them with the day
+and time they were saved. Next to *New game* the title screen offers the
+world size (small, medium, large) and the difficulty (easy, normal,
 hard).
 
 ## What is in a save

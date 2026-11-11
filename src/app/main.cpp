@@ -718,6 +718,17 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_GAMEPAD_ADDED: openGamepad(app, event->gdevice.which); break;
     case SDL_EVENT_GAMEPAD_REMOVED: closeGamepad(app, event->gdevice.which); break;
     case SDL_EVENT_WINDOW_FOCUS_LOST: app.bindings.reset(app.actions); break;
+    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+    case SDL_EVENT_TERMINATING:
+    case SDL_EVENT_LOW_MEMORY:
+    case SDL_EVENT_WINDOW_MINIMIZED:
+        // A phone may close the app from the background without telling
+        // it, so the game is saved now and waits in the pause menu.
+        if (app.screenshotPath.empty()) {
+            app.viewer.enterBackground();
+        }
+        app.bindings.reset(app.actions);
+        break;
     case SDL_EVENT_DROP_FILE:
         if (event->drop.data) {
             app.loadMessage.clear();

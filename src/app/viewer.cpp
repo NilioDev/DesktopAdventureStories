@@ -428,6 +428,7 @@ void Viewer::startPlay() {
     selected_ = 0;
     showMap_ = false;
     walkTarget_.reset();
+    nextAutosaveAt_ = 0; // set on the first frame of play
 }
 
 void Viewer::play() {
@@ -503,56 +504,103 @@ std::string Viewer::gameId() const { return game().game == data::Layout::Indy ? 
 
 int Viewer::difficultyValue() const { return difficulty_ == 0 ? 20 : difficulty_ == 2 ? 80 : 50; }
 
-std::filesystem::path Viewer::savePath() const {
-    return saveFolder_.empty() ? std::filesystem::path{} : saveFolder_ / (gameId() + ".save.json");
+std::filesystem::path Viewer::savePath(int slot) const {
+    if (saveFolder_.empty()) {
+        return {};
+    }
+    // The autosave keeps the name saves had before there were slots.
+    return saveFolder_ / (gameId() + (slot == 0 ? "" : ".slot" + std::to_string(slot)) + ".save.json");
 }
 
-bool Viewer::hasSave() const {
-    std::error_code ec;
-    return !games_.empty() && !saveFolder_.empty() && std::filesystem::is_regular_file(savePath(), ec);
+int Viewer::newestSlot() const {
+    if (games_.empty() || saveFolder_.empty()) {
+        return -1;
+    }
+    int newest = -1;
+    SDL_Time newestTime = 0;
+    for (int slot = 0; slot <= kSaveSlots; ++slot) {
+        SDL_PathInfo info;
+        if (SDL_GetPathInfo(savePath(slot).string().c_str(), &info) && info.type == SDL_PATHTYPE_FILE &&
+            (newest < 0 || info.modify_time > newestTime)) {
+            newest = slot;
+            newestTime = info.modify_time;
+        }
+    }
+    return newest;
 }
 
-void Viewer::autosave() {
+bool Viewer::hasSave() const { return newestSlot() >= 0; }
+
+bool Viewer::autosave() {
     if (!world_ || !generated_ || saveFolder_.empty()) {
-        return;
+        return false;
     }
-    std::error_code ec;
     if (world_->outcome() != world::Outcome::Playing) {
-        std::filesystem::remove(savePath(), ec); // a finished game is not continued
-        return;
+        std::error_code ec;
+        std::filesystem::remove(savePath(0), ec); // a finished game is not continued
+        return false;
     }
-    if (!world_->canSave()) {
-        return;
+    return writeSave(0);
+}
+
+bool Viewer::writeSave(int slot) {
+    if (!world_ || !generated_ || saveFolder_.empty() || !world_->canSave()) {
+        return false;
     }
     try {
+        std::error_code ec;
         std::filesystem::create_directories(saveFolder_, ec);
         const std::string text = world::writeSaveGame(*world_, options_, gameId(), game().mods);
-        const auto temp = savePath().string() + ".new";
+        const auto path = savePath(slot);
+        const auto temp = path.string() + ".new";
+        bool ok = false;
         if (FILE* f = std::fopen(temp.c_str(), "wb")) {
-            const bool ok = std::fwrite(text.data(), 1, text.size(), f) == text.size();
-            std::fclose(f);
-            if (ok) {
-                std::filesystem::rename(temp, savePath(), ec);
-            }
+            ok = std::fwrite(text.data(), 1, text.size(), f) == text.size();
+            ok = std::fclose(f) == 0 && ok;
         }
+        if (ok) {
+            std::filesystem::rename(temp, path, ec);
+            ok = !ec;
+        }
+        return ok;
     } catch (const std::exception& e) {
         SDL_Log("Could not save the game: %s", e.what());
+        return false;
+    }
+}
+
+void Viewer::enterBackground() {
+    if (mode_ != ViewMode::Play || !world_ || !generated_) {
+        return;
+    }
+    autosave();
+    if (page_ == Page::None && world_->outcome() == world::Outcome::Playing) {
+        openMenu(false);
+        walkTarget_.reset();
     }
 }
 
 bool Viewer::continueGame() {
-    if (!hasSave()) {
+    const int slot = newestSlot();
+    return slot >= 0 && loadGame(slot);
+}
+
+bool Viewer::loadGame(int slot) {
+    if (games_.empty() || saveFolder_.empty()) {
         return false;
     }
     try {
         std::string text;
-        if (FILE* f = std::fopen(savePath().string().c_str(), "rb")) {
+        if (FILE* f = std::fopen(savePath(slot).string().c_str(), "rb")) {
             char buffer[65536];
             std::size_t n = 0;
             while ((n = std::fread(buffer, 1, sizeof buffer, f)) > 0) {
                 text.append(buffer, n);
             }
             std::fclose(f);
+        }
+        if (text.empty()) {
+            return false;
         }
         const world::SaveGame save = world::readSaveGame(text);
         if (save.game != gameId()) {
@@ -575,9 +623,30 @@ bool Viewer::continueGame() {
         return true;
     } catch (const std::exception& e) {
         SDL_Log("Could not load the saved game: %s", e.what());
+        notice_ = "This save could not be read";
         world_.reset();
         return false;
     }
+}
+
+void Viewer::openSlots(bool saving) {
+    slotsSaving_ = saving;
+    confirmSlot_ = -1;
+    slotDates_.assign(static_cast<std::size_t>(kSaveSlots) + 1, "");
+    for (int slot = 0; slot <= kSaveSlots; ++slot) {
+        SDL_PathInfo info;
+        SDL_DateTime t;
+        if (SDL_GetPathInfo(savePath(slot).string().c_str(), &info) && info.type == SDL_PATHTYPE_FILE &&
+            SDL_TimeToDateTime(info.modify_time, &t, true)) {
+            static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+            char text[32];
+            SDL_snprintf(text, sizeof text, "%d %s %02d:%02d", t.day, kMonths[(t.month + 11) % 12], t.hour, t.minute);
+            slotDates_[static_cast<std::size_t>(slot)] = text;
+        }
+    }
+    page_ = Page::Slots;
+    menuItem_ = 0;
 }
 
 std::string Viewer::itemName(std::uint16_t tile) const {
@@ -659,6 +728,9 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
             rows.push_back({RowId::Continue, "Continue", ""});
         }
         rows.push_back({RowId::NewGame, "New game", ""});
+        if (hasSave()) {
+            rows.push_back({RowId::LoadGame, "Load game", ""});
+        }
         if (games_.size() > 1) {
             rows.push_back({RowId::Game, "Game", game().game == data::Layout::Indy ? "Indy" : "Yoda"});
         }
@@ -680,6 +752,12 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Resume, "Resume", ""});
         if (generated_) {
             rows.push_back({RowId::Map, "Map", ""});
+        }
+        if (generated_) {
+            rows.push_back({RowId::SaveGame, "Save game", ""});
+            if (hasSave()) {
+                rows.push_back({RowId::LoadGame, "Load game", ""});
+            }
         }
         rows.push_back({RowId::Options, "Options", ""});
         rows.push_back({RowId::SaveAndQuit, generated_ ? "Save and quit" : "Back to viewer", ""});
@@ -749,6 +827,21 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Back, "Back", ""});
         break;
     }
+    case Page::Slots:
+        // Saving goes to the player's own slots; the autosave is only loaded.
+        for (int slot = slotsSaving_ ? 1 : 0; slot <= kSaveSlots; ++slot) {
+            const std::string& date =
+                static_cast<std::size_t>(slot) < slotDates_.size() ? slotDates_[static_cast<std::size_t>(slot)] : "";
+            if (!slotsSaving_ && date.empty()) {
+                continue;
+            }
+            Row row{RowId::Slot, slot == 0 ? "Autosave" : "Slot " + std::to_string(slot),
+                    confirmSlot_ == slot ? "Overwrite?" : date.empty() ? "Empty" : date};
+            row.index = slot;
+            rows.push_back(row);
+        }
+        rows.push_back({RowId::Back, "Back", ""});
+        break;
     case Page::None: break;
     }
     return rows;
@@ -828,6 +921,51 @@ void Viewer::menuActivate(const Row& row, int change) {
         showMap_ = true;
         break;
     case RowId::SaveAndQuit: leavePlay(); break;
+    case RowId::SaveGame:
+        if (world_ && !world_->canSave()) {
+            notice_ = "Finish the conversation first";
+        } else {
+            openSlots(true);
+        }
+        break;
+    case RowId::LoadGame: openSlots(false); break;
+    case RowId::Slot: {
+        if (change != 1) {
+            break; // left and right do not save or load
+        }
+        const int slot = row.index;
+        if (!slotsSaving_) {
+            const bool inGame = mode_ == ViewMode::Play;
+            if (loadGame(slot)) {
+                break;
+            }
+            if (notice_.empty()) {
+                notice_ = "This save could not be read";
+            }
+            if (inGame && !world_) {
+                // The game in play was dropped for the save that failed.
+                mode_ = ViewMode::Title;
+            }
+            page_ = mode_ == ViewMode::Play ? Page::Pause : Page::Main;
+            menuItem_ = 0;
+            break;
+        }
+        const bool used = static_cast<std::size_t>(slot) < slotDates_.size() &&
+                          !slotDates_[static_cast<std::size_t>(slot)].empty();
+        if (used && confirmSlot_ != slot) {
+            confirmSlot_ = slot; // press again to overwrite
+            break;
+        }
+        if (writeSave(slot)) {
+            notice_ = "Saved in slot " + std::to_string(slot);
+            page_ = Page::Pause;
+            menuItem_ = 0;
+        } else {
+            notice_ = "Could not save";
+            confirmSlot_ = -1;
+        }
+        break;
+    }
     case RowId::Fullscreen: changeSetting([](Settings& s) { s.fullscreen = !s.fullscreen; }); break;
     case RowId::Scaling: changeSetting([](Settings& s) { s.pixelPerfect = !s.pixelPerfect; }); break;
     case RowId::Filter:
@@ -908,6 +1046,10 @@ void Viewer::menuBack() {
     case Page::Pause: page_ = Page::None; break;
     case Page::Mods:
         page_ = Page::Main;
+        menuItem_ = 0;
+        break;
+    case Page::Slots:
+        page_ = mode_ == ViewMode::Play ? Page::Pause : Page::Main;
         menuItem_ = 0;
         break;
     case Page::Main:
@@ -1156,6 +1298,17 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
         updateMenu(actions, step); // the game waits while a menu is open
         lastUpdate_ = now;
         return;
+    }
+    notice_.clear(); // a "Saved" note is for the pause menu only
+    if (generated_) {
+        // Saved every few minutes of play, at the first moment at rest.
+        constexpr Uint64 kAutosaveEvery = 2 * 60 * 1000;
+        if (nextAutosaveAt_ == 0) {
+            nextAutosaveAt_ = now + kAutosaveEvery;
+        } else if (now >= nextAutosaveAt_ && world_->canSave()) {
+            autosave();
+            nextAutosaveAt_ = now + kAutosaveEvery;
+        }
     }
     if (actions.wasPressed(Action::Menu)) {
         if (showMap_) {

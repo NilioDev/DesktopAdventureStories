@@ -25,6 +25,7 @@ constexpr float kMargin = 8;
 constexpr float kPanelWidth = 200;
 constexpr float kSide = 128; // a column of cards beside the field in play
 constexpr float kBar = 48;   // the item bar under the field in play
+constexpr float kSideMost = 200; // the widest a column of cards gets
 constexpr float kField = static_cast<float>(kViewPixels); // 288
 // The smallest screen in units the interface is laid out for.
 constexpr float kMinShort = 320;
@@ -148,12 +149,25 @@ Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect,
         areaW = out.width - 3 * kMargin - kPanelWidth;
         areaH = out.height - 2 * kMargin;
     }
-    const float room = std::max(64.0f, std::min(areaW, areaH)) * out.scale; // in pixels
-    float fieldPixels = room;
-    if (pixelPerfect && room >= kField) {
-        fieldPixels = std::floor(room / kField) * kField;
+    const auto fieldFor = [&](float w, float h) {
+        const float room = std::max(64.0f, std::min(w, h)) * out.scale; // in pixels
+        float fieldPixels = room;
+        if (pixelPerfect && room >= kField) {
+            fieldPixels = std::floor(room / kField) * kField;
+        }
+        return fieldPixels / out.scale;
+    };
+    float field = fieldFor(areaW, areaH);
+    // On a wide screen the item bar can go in the right column instead of
+    // under the field, when that lets the field grow.
+    bool barBeside = false;
+    if (hud && !out.portrait) {
+        const float tall = fieldFor(areaW, out.height - 2 * kMargin);
+        if (tall > field) {
+            field = tall;
+            barBeside = true;
+        }
     }
-    const float field = fieldPixels / out.scale;
 
     if (out.portrait) {
         const float x = std::floor((out.width - field) / 2);
@@ -171,13 +185,20 @@ Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect,
             out.bar = {all.x, all.y + columnH + kMargin, all.w, kBar};
         }
     } else if (hud) {
-        const float total = field + 2 * (kMargin + kSide);
+        // The columns take the room beside the field, up to kSideMost.
+        const float side = std::clamp(std::floor((out.width - field - 4 * kMargin) / 2), kSide, kSideMost);
+        const float total = field + 2 * (kMargin + side);
         const float x = std::floor((out.width - total) / 2);
-        const float y = std::floor((out.height - field - kMargin - kBar) / 2);
-        out.left = {x, y, kSide, field};
-        out.field = {x + kSide + kMargin, y, field, field};
-        out.panel = {out.field.x + field + kMargin, y, kSide, field};
-        out.bar = {out.field.x, y + field + kMargin, field, kBar};
+        const float y = std::floor((out.height - field - (barBeside ? 0 : kMargin + kBar)) / 2);
+        out.left = {x, y, side, field};
+        out.field = {x + side + kMargin, y, field, field};
+        out.panel = {out.field.x + field + kMargin, y, side, field};
+        if (barBeside) {
+            out.panel.h = field - kMargin - kBar;
+            out.bar = {out.panel.x, out.panel.y + out.panel.h + kMargin, side, kBar};
+        } else {
+            out.bar = {out.field.x, y + field + kMargin, field, kBar};
+        }
     } else {
         const float total = field + kMargin + kPanelWidth;
         const float x = std::floor((out.width - total) / 2);

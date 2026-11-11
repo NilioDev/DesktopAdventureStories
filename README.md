@@ -52,7 +52,8 @@ own adventures.
   window. In the game, floating cards around the play field show your health
   as a ring, your weapon, a **minimap** with the puzzles still open and the
   ones you solved, how many puzzles you solved, and the item in your hand;
-  your items sit in a bar under the field (below the field on tall screens).
+  your items sit in a bar under the field, or beside it when that lets the
+  field grow. The play field takes as much of the window as it can.
   The pause screen has tabs for the menu, a large map with your progress and
   your backpack; switch them with Q / E or LB / RB. Menus use the easy-to-read Fira Sans font,
   sharp on every screen, and what characters say appears in a classic pixel

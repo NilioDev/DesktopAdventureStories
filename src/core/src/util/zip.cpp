@@ -110,4 +110,77 @@ std::vector<Entry> read(ByteView archive) {
     return entries;
 }
 
+namespace {
+
+void put16(data::Bytes& out, std::uint32_t v) {
+    out.push_back(static_cast<std::uint8_t>(v));
+    out.push_back(static_cast<std::uint8_t>(v >> 8));
+}
+
+void put32(data::Bytes& out, std::uint32_t v) {
+    put16(out, v & 0xffffu);
+    put16(out, v >> 16);
+}
+
+} // namespace
+
+data::Bytes write(const std::vector<Entry>& entries) {
+    if (entries.size() >= 0xffff) {
+        throw DataError("too many files for a zip archive");
+    }
+    constexpr std::uint32_t kDate = (0u << 9) | (1u << 5) | 1u; // 1 January 1980: no time is kept
+    data::Bytes out;
+    data::Bytes directory;
+    for (const Entry& entry : entries) {
+        if (entry.content.size() >= 0xffffffffu || entry.name.size() >= 0xffff) {
+            throw DataError("file too large for a zip archive: " + entry.name);
+        }
+        const std::uint32_t crc = zlib::crc32(entry.content);
+        data::Bytes packed = zlib::deflate(entry.content);
+        std::uint16_t method = 8;
+        if (packed.size() >= entry.content.size()) {
+            packed = entry.content;
+            method = 0;
+        }
+        const auto offset = static_cast<std::uint32_t>(out.size());
+        const auto writeCommon = [&](data::Bytes& to) {
+            put16(to, 20); // version needed: 2.0
+            put16(to, 0x0800); // flags: names are UTF-8
+            put16(to, method);
+            put16(to, 0); // time
+            put16(to, kDate);
+            put32(to, crc);
+            put32(to, static_cast<std::uint32_t>(packed.size()));
+            put32(to, static_cast<std::uint32_t>(entry.content.size()));
+            put16(to, static_cast<std::uint32_t>(entry.name.size()));
+            put16(to, 0); // extra field
+        };
+        put32(out, kLocalHeader);
+        writeCommon(out);
+        out.insert(out.end(), entry.name.begin(), entry.name.end());
+        out.insert(out.end(), packed.begin(), packed.end());
+
+        put32(directory, kDirectoryEntry);
+        put16(directory, 20); // made by: version 2.0
+        writeCommon(directory);
+        put16(directory, 0); // comment
+        put16(directory, 0); // disk
+        put16(directory, 0); // internal attributes
+        put32(directory, 0); // external attributes
+        put32(directory, offset);
+        directory.insert(directory.end(), entry.name.begin(), entry.name.end());
+    }
+    const auto directoryOffset = static_cast<std::uint32_t>(out.size());
+    out.insert(out.end(), directory.begin(), directory.end());
+    put32(out, kEndOfDirectory);
+    put16(out, 0);
+    put16(out, 0);
+    put16(out, static_cast<std::uint32_t>(entries.size()));
+    put16(out, static_cast<std::uint32_t>(entries.size()));
+    put32(out, static_cast<std::uint32_t>(directory.size()));
+    put32(out, directoryOffset);
+    put16(out, 0); // comment
+    return out;
+}
+
 } // namespace das::zip

@@ -15,6 +15,7 @@ add_library(das_core STATIC
     src/world/zone_rules.cpp
     src/world/combat.cpp
     src/world/savegame.cpp
+    src/world/snapshot.cpp
     src/world/indy_generator.cpp
     src/world/yoda_layout.cpp
     src/world/world.cpp

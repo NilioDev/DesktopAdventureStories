@@ -34,8 +34,9 @@ own adventures.
 > [!NOTE]
 > **Status: playable.** Both games can be played from start to finish in
 > generated worlds, and the editor makes mods. It has not been tested much on
-> real devices yet, so please use **Options → Report a problem** when
-> something goes wrong, or go through the [device test list](docs/device-testing.md).
+> real devices yet, so please press **F8** (or *Report a bug* in the pause
+> menu) when something goes wrong, or go through the
+> [device test list](docs/device-testing.md).
 
 ## Features
 
@@ -49,6 +50,9 @@ own adventures.
   can be changed.
 - 💾 **Never lose your game.** It saves itself every few minutes and whenever
   you leave, and you can save in three slots of your own.
+- 🐞 **Report bugs from the game.** F8, both gamepad sticks or the pause menu
+  save a snapshot of the moment (your note, a screenshot and the game's state)
+  and fill in a bug report for you.
 - 📱 **Everywhere.** Windows, macOS, Linux and Android, from one codebase.
 - 🛠️ **Editor and mods.** Change or add zones, tiles, characters, puzzles,
   scripts and sounds in a beginner-friendly editor, and share them as mods.
@@ -166,6 +170,7 @@ or touch screen; it is in the pause menu too.
 | Previous / next item | Q / E | LB / RB | Click an item |
 | Map | M / Tab | Back / Select | Map button |
 | Menu, back | Esc | Start (B goes back in menus) | Menu button |
+| Report a bug | F8 | Both sticks pressed in (L3 + R3) | Menu → Report a bug |
 
 Every key and button can be changed under *Options → Controls*.
 
@@ -216,12 +221,19 @@ on macOS right-click the app and choose *Open*. See
 <details>
 <summary><b>Something doesn't work.</b></summary>
 
-Choose **Options → Report a problem** in the game. It opens a bug report in
-your browser with the version, your system and the end of the log already
-filled in; you only write what happened. Without a browser, please
+Press **F8** (both sticks on a gamepad, or *Report a bug* in the pause menu)
+right when it happens. Pick what kind of problem it is, add a note and choose
+*Report on GitHub*: the game saves a snapshot of the moment, opens a bug
+report in your browser with your note, the game's state, the version, your
+system and the end of the log filled in, and opens the folder with the
+snapshot so you can drag it onto the report. Snapshots stay on your device
+until you add one yourself. More in [docs/bug-snapshots.md](docs/bug-snapshots.md).
+
+Without a browser, please
 [open an issue](https://github.com/NilioDev/DesktopAdventureStories/issues/new?template=bug_report.yml)
-and add `log.txt` from the app's folder (next to the `library` folder in the
-table above). Want to help test on your own computer, phone or tablet? See
+and add the snapshot, or `log.txt` from the app's folder (next to the
+`library` folder in the table above). Want to help test on your own
+computer, phone or tablet? See
 the [device test list](docs/device-testing.md).
 </details>
 

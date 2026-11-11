@@ -242,7 +242,7 @@ DAS_TEST("games are found in a zip or loose files handed over in memory") {
 
 DAS_TEST("report links encode their fields and fit the log in") {
     DAS_CHECK(report::urlEncode("a b/ü~") == "a%20b%2F%C3%BC~");
-    report::Problem p{"0.1.2", "Android", "first\nsecond\nthird"};
+    report::Problem p{"0.1.2", "Android", "first\nsecond\nthird", "", ""};
     const std::string url = report::issueUrl("https://github.com/x/y", p);
     DAS_CHECK(url == "https://github.com/x/y/issues/new?template=bug_report.yml&labels=bug&version=0.1.2"
                      "&system=Android&log=first%0Asecond%0Athird");
@@ -252,4 +252,48 @@ DAS_TEST("report links encode their fields and fit the log in") {
     DAS_CHECK(shorter.find("log=third") != std::string::npos || shorter.find("log=second%0Athird") != std::string::npos);
     // No room for any log at all: the link without it.
     DAS_CHECK(report::issueUrl("https://github.com/x/y", p, 100).find("log=") == std::string::npos);
+}
+
+DAS_TEST("zip archives we write are read back") {
+    const data::Bytes big(5000, 'x');
+    const data::Bytes small = bytes("hi");
+    const data::Bytes archive = zip::write({{"report.txt", small}, {"logs/big.txt", big}, {"empty", {}}});
+    const auto entries = zip::read(archive);
+    DAS_CHECK(entries.size() == 3);
+    DAS_CHECK(entries[0].name == "report.txt" && entries[0].content == small);
+    DAS_CHECK(entries[1].name == "logs/big.txt" && entries[1].content == big);
+    DAS_CHECK(entries[2].name == "empty" && entries[2].content.empty());
+    DAS_CHECK(archive.size() < big.size()); // the big one was deflated
+}
+
+DAS_TEST("RGBA PNG files we write are read back") {
+    png::RgbaImage image;
+    image.width = 5;
+    image.height = 3;
+    for (int i = 0; i < 15; ++i) {
+        image.pixels.insert(image.pixels.end(), {static_cast<std::uint8_t>(i * 17), static_cast<std::uint8_t>(255 - i),
+                                                 static_cast<std::uint8_t>(i % 2 ? 0 : 200), 255});
+    }
+    const png::RgbaImage back = png::readRgba(png::writeRgba(image));
+    DAS_CHECK(back.width == 5 && back.height == 3);
+    DAS_CHECK(back.pixels == image.pixels);
+    image.pixels.pop_back();
+    DAS_CHECK(throws([&] { (void)png::writeRgba(image); }));
+}
+
+DAS_TEST("report links carry the player's words and the snapshot") {
+    report::Problem p{"0.2", "Linux", "log line", "[Stuck] door won't open", "Zone: 5\nHero: at 1,2\n"};
+    const std::string url = report::issueUrl("https://github.com/x/y", p);
+    DAS_CHECK(url.find("&what=%5BStuck%5D%20door%20won%27t%20open") != std::string::npos);
+    DAS_CHECK(url.find("&snapshot=Zone%3A%205%0AHero%3A%20at%201%2C2%0A") != std::string::npos);
+    DAS_CHECK(url.find("&log=log%20line") != std::string::npos);
+    // Short of room: the log goes first, then the end of the snapshot; the
+    // player's words stay.
+    const std::string noLog = report::issueUrl("https://github.com/x/y", p, url.size() - 15);
+    DAS_CHECK(noLog.find("log=") == std::string::npos);
+    DAS_CHECK(noLog.find("snapshot=Zone%3A%205%0AHero") != std::string::npos);
+    const std::string tight = report::issueUrl("https://github.com/x/y", p, noLog.size() - 10);
+    DAS_CHECK(tight.size() <= noLog.size() - 10);
+    DAS_CHECK(tight.find("what=") != std::string::npos);
+    DAS_CHECK(tight.find("snapshot=Zone%3A%205%0A") != std::string::npos || tight.find("snapshot=") == std::string::npos);
 }

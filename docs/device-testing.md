@@ -57,6 +57,8 @@ Never attach the original game files to an issue.
 - If the game closes by itself, start it again: the title screen says it
   stopped unexpectedly. Use **Options → Report a problem** then, because
   the log of the run that went wrong is still kept (`log-previous.txt`).
+- Anything else: press **F8** (both sticks on a gamepad, or *Report a bug*
+  in the pause menu) right when it happens. See [bug-snapshots.md](bug-snapshots.md).
 - The log is `log.txt` in the app's folder, next to `settings.json`:
   - Windows: `%APPDATA%\DesktopAdventureStories`
   - macOS: `~/Library/Application Support/DesktopAdventureStories`

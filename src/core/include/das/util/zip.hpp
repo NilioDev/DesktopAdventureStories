@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Reading zip archives (stored and deflated entries), so players can import
-// a game straight from the zip file it came in.
+// a game straight from the zip file it came in, and writing small ones (bug
+// snapshots).
 #pragma once
 
 #include "das/data/binary.hpp"
@@ -19,5 +20,9 @@ struct Entry {
 // Reads every file entry (folders are skipped). Throws data::DataError for
 // archives we cannot read, such as encrypted or multi-part ones.
 std::vector<Entry> read(data::ByteView archive);
+
+// Writes the entries as a zip archive, each one deflated (or stored when
+// that is smaller). Names are kept as given; use '/' between folders.
+data::Bytes write(const std::vector<Entry>& entries);
 
 } // namespace das::zip

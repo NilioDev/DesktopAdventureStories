@@ -33,7 +33,31 @@ data::Bytes tinySong() {
     return out;
 }
 
+// Like the Windows 3.1 and 95 songs: the same note for a General MIDI
+// synthesizer on channel 1 and for an FM card on channel 13.
+data::Bytes dualSong() {
+    const std::vector<std::uint8_t> track = {
+        0x00, 0x90, 60, 100, // channel 1
+        0x00, 0x9c, 60, 100, // channel 13
+        0x60, 0x80, 60, 0,   //
+        0x00, 0x8c, 60, 0,   //
+        0x00, 0xff, 0x2f, 0x00,
+    };
+    data::Bytes out = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 'M', 'T', 'r', 'k', 0, 0, 0,
+                       static_cast<std::uint8_t>(track.size())};
+    out.insert(out.end(), track.begin(), track.end());
+    return out;
+}
+
 } // namespace
+
+DAS_TEST("a song stored twice plays only its General MIDI part") {
+    const auto song = audio::parseMidi(dualSong());
+    DAS_CHECK(song.events.size() == 2);
+    for (const auto& e : song.events) {
+        DAS_CHECK((e.status & 0x0f) == 0);
+    }
+}
 
 DAS_TEST("a MIDI file is read into timed channel messages") {
     const auto song = audio::parseMidi(tinySong());

@@ -23,6 +23,8 @@ struct Settings {
     int volume = 80; // sound effects, 0 to 100
     int music = 70;  // 0 to 100
     TouchPad touchPad = TouchPad::Auto;
+    // The "How to play" card was shown once, at the first game.
+    bool howToPlaySeen = false;
     // Controls, per action (by its actionName): keys by SDL scancode name
     // and gamepad buttons by SDL button name. A missing action keeps its
     // default controls.

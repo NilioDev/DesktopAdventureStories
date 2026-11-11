@@ -22,6 +22,12 @@ smaller, for screens at least 320 units on their short side.
 
 ## Screens
 
+- **Welcome:** before any game is installed. It says what is needed (the
+  player's own copy of one or both games), where to find it in three steps,
+  which file shows the right folder (`DESKTOP.DAW` or `YODESK.DTA`), and has
+  one button to choose it (Enter, Space or a gamepad's A press it too). A
+  folder without game files says so in words, not as a path. After a game is
+  added, the title screen says it is ready.
 - **Title:** the game's own title picture in the field; the menu in the
   panel: Continue (the newest save), New game, Load game (when there is a
   save), Game (when both games
@@ -31,8 +37,12 @@ smaller, for screens at least 320 units on their short side.
   the inventory as a grid (scrolling to the selected item), the selected
   item's name, hints for the input device used last, and Map and Menu
   buttons.
-- **Pause menu:** Resume, Map, Save game, Load game, Options, Save and
-  quit. The game waits while it is open. *Save game* lists the three slots;
+- **How to play:** a card with the aim of the game and the controls of
+  the device used last (keyboard, gamepad or touch). It opens by itself at
+  the very first game (`howToPlaySeen` in the settings) and from the pause
+  menu.
+- **Pause menu:** Resume, Map, Save game, Load game, How to play, Options,
+  Save and quit. The game waits while it is open. *Save game* lists the three slots;
   one in use asks *Overwrite?* first. It is also where the game waits after
   the app was in the background.
 - **Options:** Fullscreen (desktop), Scaling (Pixel / Fill), Filter (Sharp,

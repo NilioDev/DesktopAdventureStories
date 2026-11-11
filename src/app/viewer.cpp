@@ -116,7 +116,8 @@ int wrapAround(int value, int count) { return ((value % count) + count) % count;
 
 } // namespace
 
-// Splits text into lines of at most `width` characters, at spaces.
+// Splits text into lines of at most `width` characters, at spaces. A word
+// longer than a line (a file path) is cut.
 std::vector<std::string> wrapText(const std::string& text, std::size_t width) {
     std::vector<std::string> lines;
     std::size_t start = 0;
@@ -131,10 +132,14 @@ std::vector<std::string> wrapText(const std::string& text, std::size_t width) {
             if (end == std::string::npos) {
                 end = paragraph.size();
             }
-            const std::string word = paragraph.substr(i, end - i);
+            std::string word = paragraph.substr(i, end - i);
             if (!line.empty() && line.size() + 1 + word.size() > width) {
                 lines.push_back(line);
                 line.clear();
+            }
+            while (width > 0 && word.size() > width) {
+                lines.push_back(word.substr(0, width));
+                word.erase(0, width);
             }
             line += (line.empty() ? "" : " ") + word;
             i = end + 1;
@@ -465,6 +470,14 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
     world_->begin();
     startPlay();
     generated_ = true;
+    if (settings_ && !settings_->howToPlaySeen) {
+        // The very first game starts with how to play it.
+        settings_->howToPlaySeen = true;
+        settingsChanged_ = true;
+        helpFrom_ = Page::None;
+        page_ = Page::Help;
+        menuItem_ = 0;
+    }
 }
 
 void Viewer::leavePlay() {
@@ -759,6 +772,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
                 rows.push_back({RowId::LoadGame, "Load game", ""});
             }
         }
+        rows.push_back({RowId::HowToPlay, "How to play", ""});
         rows.push_back({RowId::Options, "Options", ""});
         rows.push_back({RowId::SaveAndQuit, generated_ ? "Save and quit" : "Back to viewer", ""});
         break;
@@ -843,6 +857,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         }
         rows.push_back({RowId::Back, "Back", ""});
         break;
+    case Page::Help: rows.push_back({RowId::Back, helpFrom_ == Page::None ? "Let's go" : "Back", ""}); break;
     case Page::None: break;
     }
     return rows;
@@ -892,6 +907,7 @@ void Viewer::startCapture(Action action) {
 void Viewer::menuActivate(const Row& row, int change) {
     const RowId id = row.id;
     notice_.clear();
+    noticeGood_ = false;
     auto changeSetting = [&](auto&& apply) {
         if (settings_) {
             apply(*settings_);
@@ -1031,6 +1047,11 @@ void Viewer::menuActivate(const Row& row, int change) {
         break;
     }
     case RowId::Report: report_ = true; break;
+    case RowId::HowToPlay:
+        helpFrom_ = page_;
+        page_ = Page::Help;
+        menuItem_ = 0;
+        break;
     case RowId::Back: menuBack(); break;
     }
 }
@@ -1052,6 +1073,10 @@ void Viewer::menuBack() {
         break;
     case Page::Slots:
         page_ = mode_ == ViewMode::Play ? Page::Pause : Page::Main;
+        menuItem_ = 0;
+        break;
+    case Page::Help:
+        page_ = helpFrom_;
         menuItem_ = 0;
         break;
     case Page::Main:

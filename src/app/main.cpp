@@ -45,6 +45,10 @@
 #include <string>
 #include <vector>
 
+namespace das::app {
+std::vector<std::string> wrapText(const std::string& text, std::size_t width); // viewer.cpp
+} // namespace das::app
+
 namespace {
 
 constexpr int kWindowWidth = 1280;
@@ -123,7 +127,8 @@ void importFrom(App& app, const das::pack::Source& source, const std::string& wh
         }
         if (wanted.empty()) {
             if (!onlyMissing) {
-                note(app, "No game files found in " + where);
+                note(app, "No game files found in " + std::filesystem::path(where).filename().string() +
+                              ". Choose the folder with DESKTOP.DAW or YODESK.DTA in it, or a zip of it.");
             }
             return;
         }
@@ -138,6 +143,10 @@ void importFrom(App& app, const das::pack::Source& source, const std::string& wh
                 }
             }
             show(app, std::move(pack));
+            if (!onlyMissing) {
+                // Chosen by the player: say what to do next.
+                app.viewer.setNotice(gameTitle(id) + " is ready. Choose New game to start.", true);
+            }
         }
     } catch (const std::exception& e) {
         note(app, "Import failed: " + std::string(e.what()));
@@ -148,7 +157,8 @@ void importGames(App& app, const std::filesystem::path& where, bool onlyMissing)
     try {
         const auto source = das::pack::openSource(where);
         if (!source) {
-            note(app, "Nothing to import at " + where.string());
+            note(app, "No game files found in " + where.filename().string() +
+                          ". Choose the folder with DESKTOP.DAW or YODESK.DTA in it, or a zip of it.");
             return;
         }
         importFrom(app, *source, where.string(), onlyMissing);
@@ -381,37 +391,90 @@ void update(App& app, Uint64 now, Uint32 elapsedMs) {
 }
 
 // Without games: say how to get them in.
+// The first screen, before any game is installed: what is needed, where to
+// find it and one button to choose it. Enter, Space or a gamepad's A press
+// the button too.
 void renderWelcome(App& app) {
     namespace ui = das::app::ui;
     SDL_Renderer* r = app.renderer;
     const auto& l = app.layout;
-    const float w = std::min(l.width - 32, 360.0f);
-    const SDL_FRect box{std::floor((l.width - w) / 2), std::floor(l.height / 2 - 84), w, 168};
+    const float w = std::min(l.width - 16, 420.0f);
+    const float inner = w - 28;
+    const auto columns = static_cast<std::size_t>(inner / ui::kFont);
+    const auto columnsSteps = static_cast<std::size_t>((inner - 16) / ui::kFont);
+#if defined(SDL_PLATFORM_ANDROID)
+    const char* steps[] = {
+        "Find your game: on its CD, or in the folder on an old computer where it was installed.",
+        "Put that folder in a zip file and copy the zip to this device.",
+        "Choose the zip below. The game is copied into the app once.",
+    };
+    const char* button = "Choose the zip";
+#else
+    const char* steps[] = {
+        "Find your game: on its CD, or in the folder on an old computer where it was installed.",
+        "Choose that folder below, or drop the folder (or a zip of it) on this window.",
+        "The game is copied into the app once. You will not need the CD again.",
+    };
+    const char* button = "Choose the game folder";
+#endif
+    // Lay everything out first, to know how high the box is.
+    struct Line {
+        std::string text;
+        ui::Color color;
+        float x;
+        float gapAfter;
+    };
+    std::vector<Line> lines;
+    const auto add = [&](const std::string& text, ui::Color color, std::size_t width, float x, float gapAfter) {
+        const auto wrapped = das::app::wrapText(text, width);
+        for (std::size_t i = 0; i < wrapped.size(); ++i) {
+            lines.push_back({wrapped[i], color, x, i + 1 == wrapped.size() ? gapAfter : 0});
+        }
+    };
+    add("Play Indiana Jones and His Desktop Adventures and Star Wars: Yoda Stories again. Bring your own copy of "
+        "one or both games.",
+        ui::color::text, columns, 0, 8);
+    for (std::size_t i = 0; i < std::size(steps); ++i) {
+        lines.push_back({std::to_string(i + 1), ui::color::accent, 0, 0});
+        const std::size_t first = lines.size();
+        add(steps[i], ui::color::text, columnsSteps, 16, 5);
+        lines[first - 1].gapAfter = -10; // the number sits on the step's first line
+    }
+    add("The right folder has DESKTOP.DAW (Indy) or YODESK.DTA (Yoda) in it.", ui::color::dim, columns, 0, 0);
+    std::vector<std::string> problems;
+    if (!app.loadMessage.empty()) {
+        problems = das::app::wrapText(app.loadMessage, columns);
+        problems.resize(std::min<std::size_t>(problems.size(), 4));
+    }
+    float textH = 0;
+    for (const auto& line : lines) {
+        textH += 10 + line.gapAfter;
+    }
+    const float h = 14 + 24 + textH + 12 + 22 + (problems.empty() ? 0 : 6 + 10 * static_cast<float>(problems.size())) + 14;
+    const SDL_FRect box{std::floor((l.width - w) / 2), std::floor(std::max(8.0f, (l.height - h) / 2)), w, h};
     ui::panel(r, box);
     float y = box.y + 14;
-    ui::text(r, box.x + 14, y, das::kProjectName, ui::color::accent);
-    ui::textRight(r, box.x + box.w - 14, y, das::kVersion, ui::color::faint);
-    y += 24;
-#if defined(SDL_PLATFORM_ANDROID)
-    const char* lines[] = {"Needs the files of the original", "Indiana Jones and His Desktop",
-                           "Adventures or Yoda Stories:", "a zip of the game folder."};
-#else
-    const char* lines[] = {"Needs the files of the original", "Indiana Jones and His Desktop",
-                           "Adventures or Yoda Stories.", "Choose the game folder, or drop", "it (or a zip) on this window."};
-#endif
-    for (const char* line : lines) {
-        ui::text(r, box.x + 14, y, line, ui::color::text);
-        y += 11;
+    const std::string_view title =
+        ui::textWidth("Welcome to Desktop Adventure Stories") <= inner ? "Welcome to Desktop Adventure Stories" : "Welcome!";
+    ui::text(r, box.x + 14, y, title, ui::color::accent);
+    if (ui::textWidth(title) + ui::textWidth(das::kVersion) + 16 <= inner) {
+        ui::textRight(r, box.x + box.w - 14, y, das::kVersion, ui::color::faint);
     }
-    app.chooseButton = {box.x + 14, box.y + box.h - 14 - 20, box.w - 28, 20};
+    y += 24;
+    for (const auto& line : lines) {
+        ui::text(r, box.x + 14 + line.x, y, line.text, line.color);
+        y += 10 + line.gapAfter;
+    }
+    y += 12;
+    app.chooseButton = {box.x + 14, y, box.w - 28, 22};
     ui::fill(r, app.chooseButton, ui::color::panelLight);
     ui::outline(r, app.chooseButton, ui::color::accent);
-    ui::textCentered(r, app.chooseButton.x + app.chooseButton.w / 2, app.chooseButton.y + 6, "Choose game files",
+    ui::textCentered(r, app.chooseButton.x + app.chooseButton.w / 2, app.chooseButton.y + 7, button,
                      ui::color::accent);
-    if (!app.loadMessage.empty()) {
-        const auto& m = app.loadMessage;
-        const std::size_t chars = static_cast<std::size_t>(std::max(8.0f, (l.width - 16) / ui::kFont));
-        ui::text(r, 8, box.y + box.h + 10, m.size() > chars ? m.substr(0, chars) : m, ui::color::danger);
+    y += 22 + 6;
+    for (const auto& line : problems) {
+        ui::text(r, box.x + 14, y, line, ui::color::danger);
+        y += 10;
     }
 }
 

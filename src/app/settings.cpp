@@ -74,6 +74,9 @@ Settings loadSettings(const std::filesystem::path& file) {
             const std::string& name = x->asString();
             s.touchPad = name == "on" ? TouchPad::On : name == "off" ? TouchPad::Off : TouchPad::Auto;
         }
+        if (const auto* x = v.find("howToPlaySeen")) {
+            s.howToPlaySeen = x->asBool();
+        }
         if (const auto* x = v.find("keys")) {
             s.keys = readControls(*x);
         }
@@ -99,6 +102,7 @@ void saveSettings(const Settings& s, const std::filesystem::path& file) {
         {"volume", s.volume},
         {"music", s.music},
         {"touchPad", s.touchPad == TouchPad::On ? "on" : s.touchPad == TouchPad::Off ? "off" : "auto"},
+        {"howToPlaySeen", s.howToPlaySeen},
         {"keys", writeControls(s.keys)},
         {"buttons", writeControls(s.buttons)},
         {"mods", writeControls(s.mods)},

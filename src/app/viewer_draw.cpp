@@ -99,19 +99,37 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
             // The game waits under a dimmed screen.
             ui::fill(renderer, {0, 0, layout.width, layout.height}, ui::color::shade);
             hits_.clear(); // only the menu takes presses now
-            const float w = std::min(field.w - 2 * kPad, 240.0f);
+            const bool help = page_ == Page::Help;
+            const float w = std::min(field.w - 2 * kPad, help ? 272.0f : 240.0f);
             const auto rows = static_cast<float>(menuRows().size());
-            const float h = 40 + rows * kRow + (notice_.empty() ? 0 : 14);
-            const SDL_FRect box{std::floor(field.x + (field.w - w) / 2), std::floor(field.y + (field.h - h) / 2), w, h};
+            const auto helpLines =
+                help ? wrapText(howToPlayText(), static_cast<std::size_t>((w - 2 * kPad) / ui::kFont))
+                     : std::vector<std::string>{};
+            const float textH = static_cast<float>(helpLines.size()) * 10 + (help ? 6 : 0);
+            const float h = (help ? 2 * kPad + 18 + 2 : 40) + rows * kRow + textH + (notice_.empty() ? 0 : 14);
+            const SDL_FRect box{std::floor(field.x + (field.w - w) / 2),
+                                std::floor(std::max(field.y, field.y + (field.h - h) / 2)), w, h};
             ui::panel(renderer, box);
-            renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad},
-                       page_ == Page::Options    ? "Options"
-                       : page_ == Page::Controls ? "Controls"
-                       : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
-                                                 : "Paused");
+            const char* heading = page_ == Page::Options    ? "Options"
+                                  : page_ == Page::Controls ? "Controls"
+                                  : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
+                                  : help                    ? "How to play"
+                                                            : "Paused";
+            if (help) {
+                float ty = box.y + kPad;
+                ui::text(renderer, box.x + kPad, ty, heading, ui::color::accent);
+                ty += 18;
+                for (const auto& line : helpLines) {
+                    ui::text(renderer, box.x + kPad, ty, line, ui::color::text);
+                    ty += 10;
+                }
+                renderMenu(renderer, {box.x + kPad, ty + 6, box.w - 2 * kPad, rows * kRow}, nullptr);
+            } else {
+                renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad}, heading);
+            }
             if (!notice_.empty()) {
-                ui::text(renderer, box.x + kPad + 8, box.y + kPad + 18 + rows * kRow + 4,
-                         fit(notice_, box.w - 2 * kPad - 8), ui::color::accent);
+                ui::text(renderer, box.x + kPad + 8, box.y + box.h - kPad - 14,
+                         fit(notice_, box.w - 2 * kPad - 8), noticeGood_ ? ui::color::good : ui::color::accent);
             }
         }
         break;
@@ -380,19 +398,21 @@ void Viewer::renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float 
 
 // --- the panel --------------------------------------------------------------
 
+std::string Viewer::controlName(Action action) const {
+    if (!bindings_) {
+        return "?";
+    }
+    const std::string names =
+        device_ == InputDevice::Gamepad ? bindings_->buttonNames(action) : bindings_->keyNames(action);
+    return names.substr(0, names.find(','));
+}
+
 std::string Viewer::hintText() const {
     const bool menu = mode_ == ViewMode::Title || page_ != Page::None;
     if (capture_) {
         return device_ == InputDevice::Gamepad ? "Press the new button" : "Press the new key\nEsc cancels";
     }
-    // The first key or button of an action.
-    const auto key = [&](Action a) {
-        if (!bindings_) {
-            return std::string("?");
-        }
-        const std::string names = device_ == InputDevice::Gamepad ? bindings_->buttonNames(a) : bindings_->keyNames(a);
-        return names.substr(0, names.find(','));
-    };
+    const auto key = [&](Action a) { return controlName(a); };
     switch (device_) {
     case InputDevice::Touch: return menu ? "Tap to choose" : "Tap to walk and talk\nTap an item twice\nto use it";
     case InputDevice::Gamepad:
@@ -406,6 +426,30 @@ std::string Viewer::hintText() const {
                 : "Arrows walk  " + key(Action::Attack) + " attack\n" + key(Action::Use) + " use  " +
                       key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) + " items\n" + key(Action::Map) +
                       " map  " + key(Action::Menu) + " menu";
+}
+
+std::string Viewer::howToPlayText() const {
+    std::string text =
+        "Explore, talk to everyone and pick up what you find. Most people want something before they help you: "
+        "bring it and use it on them. The map shows the puzzles still open; solve them all to reach the final one.\n\n";
+    const auto key = [&](Action a) { return controlName(a); };
+    switch (device_) {
+    case InputDevice::Touch:
+        text += "Tap a place to walk there, or a person to talk. Tap an item to pick it, and again to use it. "
+                "The pad and Hit button walk and attack.";
+        break;
+    case InputDevice::Gamepad:
+        text += "Stick or D-pad: walk and push.\n" + key(Action::Use) + ": talk and use the item.\n" +
+                key(Action::Attack) + ": attack.\n" + key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) +
+                ": choose an item.\n" + key(Action::Map) + ": map.  " + key(Action::Menu) + ": menu and save.";
+        break;
+    case InputDevice::Keyboard:
+        text += "Arrows: walk and push, or click where to go.\n" + key(Action::Use) + ": talk and use the item.\n" +
+                key(Action::Attack) + ": attack.\n" + key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) +
+                ": choose an item.\n" + key(Action::Map) + ": map.  " + key(Action::Menu) + ": menu and save.";
+        break;
+    }
+    return text;
 }
 
 void Viewer::renderHints(SDL_Renderer* renderer, const SDL_FRect& area) const {
@@ -486,7 +530,7 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
         paragraph("No .EXE found: greyscale", ui::color::danger, 1);
     }
     if (!notice_.empty()) {
-        paragraph(notice_, ui::color::danger, 4);
+        paragraph(notice_, noticeGood_ ? ui::color::good : ui::color::danger, 4);
     }
     if (!game().modProblem.empty() && (page_ == Page::Main || page_ == Page::Mods)) {
         paragraph(game().modProblem, ui::color::danger, 6);

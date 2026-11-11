@@ -138,14 +138,17 @@ games; the program reads these files from it:
 The easiest way is to give the program the **whole game folder** from your CD
 or installation, or a `.zip` of it. You can:
 
-- press *Choose game files* on first start (or *Add games* in the title menu),
+- press *Choose the game folder* on the welcome screen at first start (on
+  Android: *Choose the zip*), or *Add games* in the title menu later,
 - drop the folder or zip on the window,
 - put the games in a `gamedata/yoda/` and `gamedata/indy/` folder next to the
   program (see [gamedata/README.md](gamedata/README.md)),
 - or pass the folder or zip on the command line.
 
 The first time, each game is imported into our own open format in the app's
-library. After that the original files are no longer needed.
+library. After that the original files are no longer needed. Your very
+first game starts with a short *How to play* card for your keyboard, gamepad
+or touch screen; it is in the pause menu too.
 
 | System | Library folder |
 | --- | --- |

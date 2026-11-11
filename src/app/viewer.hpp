@@ -103,8 +103,12 @@ public:
         report_ = false;
         return asked;
     }
-    // A short message under the menu (cleared by the next menu choice).
-    void setNotice(std::string text) { notice_ = std::move(text); }
+    // A short message under the menu (cleared by the next menu choice): a
+    // problem, or with `good` news such as a game that is ready.
+    void setNotice(std::string text, bool good = false) {
+        notice_ = std::move(text);
+        noticeGood_ = good;
+    }
     bool takeAddGames() {
         const bool asked = addGames_;
         addGames_ = false;
@@ -148,7 +152,7 @@ public:
 
 private:
     // Menus: the title screen's, the pause menu and the options.
-    enum class Page { None, Main, Pause, Options, Controls, Mods, Slots };
+    enum class Page { None, Main, Pause, Options, Controls, Mods, Slots, Help };
     enum class RowId {
         Continue,
         NewGame,
@@ -178,6 +182,7 @@ private:
         Mod,
         OpenModsFolder,
         Report,
+        HowToPlay,
         Editor,
         Back,
     };
@@ -251,6 +256,10 @@ private:
     void renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) const;
     void renderHints(SDL_Renderer* renderer, const SDL_FRect& panel) const;
     std::string hintText() const;
+    // The first key or button of an action, for the device used last.
+    std::string controlName(Action action) const;
+    // The "How to play" card: the aim of the game and the controls.
+    std::string howToPlayText() const;
     void addHit(Hit::Kind kind, const SDL_FRect& rect, int index = 0) const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
@@ -259,6 +268,7 @@ private:
     std::vector<pack::Mod> mods_; // every mod found, of both games
     std::vector<std::string> modScanProblems_;
     std::string notice_; // a short message under the title menu
+    bool noticeGood_ = false;
     std::unique_ptr<Editor> editor_;
     bool testing_ = false; // playing a zone from the editor
     std::size_t current_ = 0;
@@ -282,6 +292,7 @@ private:
     // Menus and options.
     Page page_ = Page::Main;
     Page optionsFrom_ = Page::Main;
+    Page helpFrom_ = Page::None;
     int menuItem_ = 0;
     std::filesystem::path saveFolder_;
     world::GeneratorOptions options_; // of the game being played

@@ -23,15 +23,18 @@ smaller, for screens at least 320 units on their short side.
 ## Screens
 
 - **Title:** the game's own title picture in the field; the menu in the
-  panel: Continue (when there is a save), New game, Game (when both games
+  panel: Continue (the newest save), New game, Load game (when there is a
+  save), Game (when both games
   are installed), World size, Difficulty, Options, Mods, Editor, Add games, Data
   viewer and Quit (these two not on phones).
 - **Game:** the panel shows the puzzles solved, health, the weapon in hand,
   the inventory as a grid (scrolling to the selected item), the selected
   item's name, hints for the input device used last, and Map and Menu
   buttons.
-- **Pause menu:** Resume, Map, Options, Save and quit. The game waits
-  while it is open.
+- **Pause menu:** Resume, Map, Save game, Load game, Options, Save and
+  quit. The game waits while it is open. *Save game* lists the three slots;
+  one in use asks *Overwrite?* first. It is also where the game waits after
+  the app was in the background.
 - **Options:** Fullscreen (desktop), Scaling (Pixel / Fill), Filter (Sharp,
   Smooth, or Scanlines over the play field), Sound and Music volume, Touch
   pad and Controls.

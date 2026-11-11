@@ -101,11 +101,18 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
             hits_.clear(); // only the menu takes presses now
             const float w = std::min(field.w - 2 * kPad, 240.0f);
             const auto rows = static_cast<float>(menuRows().size());
-            const float h = 40 + rows * kRow;
+            const float h = 40 + rows * kRow + (notice_.empty() ? 0 : 14);
             const SDL_FRect box{std::floor(field.x + (field.w - w) / 2), std::floor(field.y + (field.h - h) / 2), w, h};
             ui::panel(renderer, box);
             renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad},
-                       page_ == Page::Options ? "Options" : page_ == Page::Controls ? "Controls" : "Paused");
+                       page_ == Page::Options    ? "Options"
+                       : page_ == Page::Controls ? "Controls"
+                       : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
+                                                 : "Paused");
+            if (!notice_.empty()) {
+                ui::text(renderer, box.x + kPad + 8, box.y + kPad + 18 + rows * kRow + 4,
+                         fit(notice_, box.w - 2 * kPad - 8), ui::color::accent);
+            }
         }
         break;
     }
@@ -435,9 +442,11 @@ void Viewer::renderMenu(SDL_Renderer* renderer, const SDL_FRect& area, const cha
         addHit(Hit::Kind::Row, rect, static_cast<int>(i));
         if (!row.value.empty()) {
             // Long values (a list of keys) are cut to the room left.
-            const float room = rect.w - 6 - 8 - ui::textWidth(row.label) - 5 * ui::kFont;
+            // A save slot's date is not a value to step through.
+            const bool arrows = on && row.id != RowId::Slot;
+            const float room = rect.w - 6 - 8 - ui::textWidth(row.label) - (arrows ? 5 : 2) * ui::kFont;
             const std::string shown = fit(row.value, room);
-            const std::string value = on ? "< " + shown + " >" : shown + "  ";
+            const std::string value = arrows ? "< " + shown + " >" : shown + "  ";
             ui::textRight(renderer, rect.x + rect.w - 6, ty, value, on ? ui::color::text : ui::color::dim);
             // The left arrow (or the left part of the value) steps back.
             const float valueX = rect.x + rect.w - 6 - ui::textWidth(value);
@@ -461,6 +470,7 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
     const char* heading = page_ == Page::Options    ? "Options"
                           : page_ == Page::Controls ? "Controls"
                           : page_ == Page::Mods     ? "Mods"
+                          : page_ == Page::Slots    ? "Load game"
                                                     : nullptr;
     renderMenu(renderer, {x, y, w, rows * kRow}, heading);
     y += rows * kRow + (heading ? 18 : 0) + kPad;

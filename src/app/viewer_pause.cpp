@@ -316,7 +316,7 @@ void Viewer::renderBackpack(SDL_Renderer* renderer, const SDL_FRect& area) const
         return;
     }
     const auto item = inventory[static_cast<std::size_t>(cursor)];
-    const float big = tall ? 56 : 76;
+    const float big = tall ? 56.0f : 76.0f;
     const SDL_FRect well{info.x + 4, info.y + 4, big, big};
     ui::fillRounded(renderer, well, 12, kWell);
     ui::outlineRounded(renderer, well, 12, ui::color::border);

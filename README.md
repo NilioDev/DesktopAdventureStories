@@ -57,7 +57,8 @@ own adventures.
   your backpack; switch them with Q / E or LB / RB. Menus use the easy-to-read Fira Sans font,
   sharp on every screen, and what characters say appears in a classic pixel
   font that suits the game's art. No Windows 3.1 look.
-- 🎮 **Play your way.** Keyboard, mouse, gamepad or touch. Every key and button
+- 🎮 **Play your way.** Keyboard, mouse, gamepad or touch (a round stick and
+  big Use, Hit and Item buttons on phones and tablets). Every key and button
   can be changed.
 - 💾 **Never lose your game.** It saves itself every few minutes and whenever
   you leave, and you can save in three slots of your own.

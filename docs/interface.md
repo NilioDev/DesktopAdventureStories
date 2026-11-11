@@ -110,10 +110,12 @@ back. In the game:
 
 ## The touch pad
 
-On a touch screen a direction pad and *Use* and *Hit* (attack) buttons show
-while the game is on screen: in the empty strips beside the field when the
-screen is held sideways, in a strip under the panel when it is held upright,
-and over the field's bottom corners otherwise. Several fingers work at once.
+On a touch screen a round stick (its knob leans the way it is held) and
+round buttons show while the game is on screen: a large *Use* in the game's
+colour, *Hit* (attack) and *Item* (the next item). They sit in the empty
+strips beside the cards when the screen is held sideways, in a strip under
+the cards when it is held upright, and over the field's bottom corners
+otherwise. Several fingers work at once.
 A finger that starts on the pad keeps steering wherever it moves; in the
 pad's middle it holds nothing. Options, *Touch pad*: Auto (shown once the
 screen was touched), On or Off. Touches are read as fingers, not as a mouse.

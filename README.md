@@ -80,7 +80,7 @@ The first time you start it, it asks for your game files (see
 2. Double-click `DesktopAdventureStories.exe`.
 3. Windows SmartScreen may warn the first time because the program is not
    signed: choose *More info*, then *Run anyway*.
-4. Press *Choose game files*, or put your games in a `gamedata` folder next to
+4. Press *Choose the game folder*, or put your games in a `gamedata` folder next to
    the `.exe` before starting.
 
 </details>
@@ -92,7 +92,7 @@ The first time you start it, it asks for your game files (see
    app to *Applications*.
 2. The app is not signed, so the first time right-click it and choose *Open*,
    then *Open* again.
-3. Press *Choose game files*, or drop your game folder on the window.
+3. Press *Choose the game folder*, or drop your game folder on the window.
 
 </details>
 
@@ -105,7 +105,7 @@ The first time you start it, it asks for your game files (see
    program* (in some file managers: *Executable as Program*, or a
    *Permissions* tab).
 3. Double-click it.
-4. Press *Choose game files* and pick your game folder or a zip of it. Or put
+4. Press *Choose the game folder* and pick your game folder or a zip of it. Or put
    your games in a `gamedata` folder next to the AppImage before starting.
 
 To get it in your application menu, use a tool such as

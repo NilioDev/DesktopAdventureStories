@@ -1,0 +1,9 @@
+PxPlus IBM CGA (PxPlus_IBM_CGA.ttf)
+
+From "The Ultimate Oldschool PC Font Pack" by VileR, https://int10h.org/oldschool-pc-fonts/
+
+Licensed under the Creative Commons Attribution-ShareAlike 4.0 International
+License (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+
+DesktopAdventureStories uses this font, unchanged, for the text in speech
+bubbles during play. It is built into the program.

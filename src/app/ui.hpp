@@ -5,8 +5,9 @@
 //
 // Everything is drawn in interface units. One unit is a whole number of
 // screen pixels (the interface scale), so the panels stay sharp on every
-// screen. Text uses our font (Fira Sans, built into the program), drawn at the
-// screen's own resolution.
+// screen. Text uses Fira Sans, and the speech bubbles during play the pixel
+// font PxPlus IBM CGA (both built into the program), drawn at the screen's own
+// resolution.
 #pragma once
 
 #include <SDL3/SDL.h>
@@ -59,7 +60,12 @@ Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRo
 // The whole screen at a given scale, without a play field (the editor).
 Layout plainLayout(int pixelWidth, int pixelHeight, float scale);
 
-// Loads the font for this renderer. Without it (it should not happen) text
+enum class Font {
+    Interface, // Fira Sans: menus, panels, the editor
+    Story,     // PxPlus IBM CGA, 8x8 pixels: what characters say during play
+};
+
+// Loads the fonts for this renderer. Without it (it should not happen) text
 // falls back to SDL's small built-in font.
 void init(SDL_Renderer* renderer);
 // Frees the font, before the renderer goes.
@@ -73,14 +79,15 @@ void outline(SDL_Renderer* renderer, const SDL_FRect& rect, Color c);
 // A panel: filled, with a border and a soft shadow.
 void panel(SDL_Renderer* renderer, const SDL_FRect& rect, Color fillColor = color::panel);
 // One line of text (UTF-8) with its top at y, `size` times as large.
-void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color c, float size = 1);
+void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color c, float size = 1,
+          Font font = Font::Interface);
 // How wide a line is, in units.
-float textWidth(std::string_view line, float size = 1);
+float textWidth(std::string_view line, float size = 1, Font font = Font::Interface);
 // The line itself when it fits in `width`, otherwise its start and "…".
-std::string fit(std::string_view line, float width, float size = 1);
+std::string fit(std::string_view line, float width, float size = 1, Font font = Font::Interface);
 // Text split at spaces into lines that fit in `width`. A newline starts a new
 // line; a word longer than a line (a file path) is cut.
-std::vector<std::string> wrap(std::string_view text, float width, float size = 1);
+std::vector<std::string> wrap(std::string_view text, float width, float size = 1, Font font = Font::Interface);
 void textRight(SDL_Renderer* renderer, float right, float y, std::string_view line, Color c, float size = 1);
 void textCentered(SDL_Renderer* renderer, float centerX, float y, std::string_view line, Color c, float size = 1);
 // A bar filled for `ratio` (0 to 1).

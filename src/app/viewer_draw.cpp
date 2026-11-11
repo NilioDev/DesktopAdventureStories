@@ -359,7 +359,7 @@ void Viewer::renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float 
     const float width = field.w - 8;
     bubbleWidth_ = std::max(64.0f, width - 2 * kPad);
     bubbleLines_ = static_cast<std::size_t>(std::max(3.0f, (field.h * 0.6f) / kLine));
-    const auto all = wrapText(bubble_->text, bubbleWidth_);
+    const auto all = ui::wrap(bubble_->text, bubbleWidth_, 1, ui::Font::Story);
     const std::size_t first = static_cast<std::size_t>(bubblePage_) * bubbleLines_;
     const std::vector<std::string> lines(
         all.begin() + static_cast<std::ptrdiff_t>(std::min(first, all.size())),
@@ -389,7 +389,7 @@ void Viewer::renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float 
     }
     ui::outline(renderer, {bx, by, width, height}, ink);
     for (std::size_t i = 0; i < lines.size(); ++i) {
-        ui::text(renderer, bx + kPad, by + kPad + static_cast<float>(i) * kLine, lines[i], ink);
+        ui::text(renderer, bx + kPad, by + kPad + static_cast<float>(i) * kLine, lines[i], ink, 1, ui::Font::Story);
     }
     if (more) {
         // A small arrow: there is another page.

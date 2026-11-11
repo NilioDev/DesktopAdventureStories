@@ -45,8 +45,9 @@ own adventures.
   difficulty.
 - 🖥️ **Modern interface.** Your own game's pixel art, scaled sharply to any
   window, with a clean side panel for health, weapon and inventory (below the
-  play field on tall screens). Menus and text use the easy-to-read Fira Sans
-  font, sharp on every screen. No Windows 3.1 look.
+  play field on tall screens). Menus use the easy-to-read Fira Sans font,
+  sharp on every screen, and what characters say appears in a classic pixel
+  font that suits the game's art. No Windows 3.1 look.
 - 🎮 **Play your way.** Keyboard, mouse, gamepad or touch. Every key and button
   can be changed.
 - 💾 **Never lose your game.** It saves itself every few minutes and whenever
@@ -266,7 +267,13 @@ the [device test list](docs/device-testing.md).
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
 
-The interface font is [Fira Sans](https://github.com/mozilla/Fira) by the
-Mozilla Foundation and Telefonica S.A., under the SIL Open Font License 1.1
-(see [assets/fonts/OFL.txt](assets/fonts/OFL.txt)). It is built into the
-program and its license comes with every package.
+The fonts are built into the program, and their licenses come with every
+package:
+
+- [Fira Sans](https://github.com/mozilla/Fira) by the Mozilla Foundation and
+  Telefonica S.A., under the SIL Open Font License 1.1
+  ([assets/fonts/OFL.txt](assets/fonts/OFL.txt)), for menus and panels.
+- PxPlus IBM CGA from [The Ultimate Oldschool PC Font Pack](https://int10h.org/oldschool-pc-fonts/)
+  by VileR, under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+  ([assets/fonts/LICENSE-PxPlus_IBM_CGA.txt](assets/fonts/LICENSE-PxPlus_IBM_CGA.txt)),
+  for speech bubbles.

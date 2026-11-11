@@ -11,9 +11,11 @@
 #include <string>
 #include <unordered_map>
 
-// Fira Sans Medium, built in by cmake/DasEmbed.cmake.
+// Built in by cmake/DasEmbed.cmake: Fira Sans Medium and PxPlus IBM CGA.
 extern const unsigned char kInterfaceFont[];
 extern const std::size_t kInterfaceFontSize;
+extern const unsigned char kStoryFont[];
+extern const std::size_t kStoryFontSize;
 
 namespace das::app::ui {
 
@@ -32,8 +34,10 @@ float g_scale = 1;
 // Letters are drawn at the screen's own resolution: the font is opened at
 // the size in screen pixels, and drawn with the render scale at 1.
 
-constexpr float kFontSize = 10; // in units: capitals are about 7 units high
-constexpr float kBaseline = 7;  // from the top of a line, in units
+// Both fonts have capitals about 7 units high, on a baseline 7 units below
+// the top of a line, like SDL's 8x8 letters they replace.
+constexpr float kBaseline = 7;
+float fontSize(Font font) { return font == Font::Story ? 8 : 10; } // in units
 constexpr Uint64 kKeepFrames = 120; // drawn texts unused this long are freed
 
 struct CachedText {
@@ -44,37 +48,51 @@ struct CachedText {
 struct Fonts {
     bool ready = false;
     TTF_TextEngine* engine = nullptr;
-    std::unordered_map<int, TTF_Font*> bySize; // by size in screen pixels
+    std::unordered_map<int, TTF_Font*> bySize; // by font and size in screen pixels
     std::unordered_map<std::string, CachedText> texts; // by size and text
     Uint64 frame = 0;
 };
 
 Fonts g_fonts;
 
-int pixelSize(float size) { return std::max(1, static_cast<int>(std::lround(kFontSize * size * g_scale))); }
+// The font's size in screen pixels. The pixel font only at whole multiples
+// of its 8 pixels, so its letters stay square.
+int pixelSize(float size, Font font) {
+    if (font == Font::Story) {
+        return std::max(1, static_cast<int>(std::lround(size * g_scale))) * 8;
+    }
+    return std::max(1, static_cast<int>(std::lround(fontSize(font) * size * g_scale)));
+}
 
-TTF_Font* fontAt(int pixels) {
+// A key for a font at a size.
+int fontKey(int pixels, Font font) { return pixels * 2 + (font == Font::Story ? 1 : 0); }
+
+TTF_Font* fontAt(int pixels, Font which) {
     if (!g_fonts.ready) {
         return nullptr;
     }
-    if (const auto it = g_fonts.bySize.find(pixels); it != g_fonts.bySize.end()) {
+    const int key = fontKey(pixels, which);
+    if (const auto it = g_fonts.bySize.find(key); it != g_fonts.bySize.end()) {
         return it->second;
     }
+    const bool story = which == Font::Story;
     TTF_Font* font = nullptr;
-    if (SDL_IOStream* io = SDL_IOFromConstMem(kInterfaceFont, kInterfaceFontSize)) {
+    if (SDL_IOStream* io = story ? SDL_IOFromConstMem(kStoryFont, kStoryFontSize)
+                                 : SDL_IOFromConstMem(kInterfaceFont, kInterfaceFontSize)) {
         font = TTF_OpenFontIO(io, true, static_cast<float>(pixels));
     }
     if (font) {
-        TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
+        // The pixel font without smoothing: every pixel stays a sharp square.
+        TTF_SetFontHinting(font, story ? TTF_HINTING_MONO : TTF_HINTING_LIGHT);
     } else {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not open the font: %s", SDL_GetError());
     }
-    g_fonts.bySize[pixels] = font;
+    g_fonts.bySize[key] = font;
     return font;
 }
 
-TTF_Text* cachedText(TTF_Font* font, int pixels, std::string_view line) {
-    std::string key = std::to_string(pixels);
+TTF_Text* cachedText(TTF_Font* font, int fontKey, std::string_view line) {
+    std::string key = std::to_string(fontKey);
     key += '\n';
     key += line;
     auto& entry = g_fonts.texts[key];
@@ -192,7 +210,7 @@ void shutdown() {
     for (auto& [key, entry] : g_fonts.texts) {
         TTF_DestroyText(entry.text);
     }
-    for (auto& [pixels, font] : g_fonts.bySize) {
+    for (auto& [key, font] : g_fonts.bySize) {
         if (font) {
             TTF_CloseFont(font);
         }
@@ -240,13 +258,13 @@ void panel(SDL_Renderer* renderer, const SDL_FRect& rect, Color fillColor) {
     outline(renderer, rect, color::border);
 }
 
-void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color c, float size) {
+void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color c, float size, Font which) {
     if (line.empty()) {
         return;
     }
-    const int pixels = pixelSize(size);
-    TTF_Font* font = fontAt(pixels);
-    TTF_Text* drawn = font ? cachedText(font, pixels, line) : nullptr;
+    const int pixels = pixelSize(size, which);
+    TTF_Font* font = fontAt(pixels, which);
+    TTF_Text* drawn = font ? cachedText(font, fontKey(pixels, which), line) : nullptr;
     if (!drawn) {
         // Without the font: SDL's built-in 8x8 letters.
         setColor(renderer, c);
@@ -279,11 +297,11 @@ void text(SDL_Renderer* renderer, float x, float y, std::string_view line, Color
     }
 }
 
-float textWidth(std::string_view line, float size) {
+float textWidth(std::string_view line, float size, Font which) {
     if (line.empty()) {
         return 0;
     }
-    TTF_Font* font = fontAt(pixelSize(size));
+    TTF_Font* font = fontAt(pixelSize(size, which), which);
     int w = 0;
     int h = 0;
     if (!font || !TTF_GetStringSize(font, line.data(), line.size(), &w, &h)) {
@@ -292,18 +310,18 @@ float textWidth(std::string_view line, float size) {
     return static_cast<float>(w) / g_scale;
 }
 
-std::string fit(std::string_view line, float width, float size) {
-    if (textWidth(line, size) <= width) {
+std::string fit(std::string_view line, float width, float size, Font font) {
+    if (textWidth(line, size, font) <= width) {
         return std::string(line);
     }
     const std::string_view more = g_fonts.ready ? "\xE2\x80\xA6" : "..";
-    const float room = width - textWidth(more, size);
+    const float room = width - textWidth(more, size, font);
     // The longest start that fits: find it by halving.
     std::size_t low = 0;
     std::size_t high = line.size();
     while (low < high) {
         const std::size_t mid = (low + high + 1) / 2;
-        if (textWidth(line.substr(0, mid), size) <= room) {
+        if (textWidth(line.substr(0, mid), size, font) <= room) {
             low = mid;
         } else {
             high = mid - 1;
@@ -320,9 +338,9 @@ std::string fit(std::string_view line, float width, float size) {
     return out + std::string(more);
 }
 
-std::vector<std::string> wrap(std::string_view text, float width, float size) {
+std::vector<std::string> wrap(std::string_view text, float width, float size, Font font) {
     std::vector<std::string> lines;
-    const auto fits = [&](std::string_view s) { return textWidth(s, size) <= width; };
+    const auto fits = [&](std::string_view s) { return textWidth(s, size, font) <= width; };
     std::size_t start = 0;
     while (start <= text.size()) {
         const std::size_t newline = text.find('\n', start);

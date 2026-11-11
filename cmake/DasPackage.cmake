@@ -6,8 +6,9 @@ install(TARGETS das_app
     RUNTIME DESTINATION .
     BUNDLE DESTINATION .)
 install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/README.md" DESTINATION .)
-# The font built into the program comes with its own license.
+# The fonts built into the program come with their own licenses.
 install(FILES "${PROJECT_SOURCE_DIR}/assets/fonts/OFL.txt" DESTINATION . RENAME "LICENSE-FiraSans.txt")
+install(FILES "${PROJECT_SOURCE_DIR}/assets/fonts/LICENSE-PxPlus_IBM_CGA.txt" DESTINATION .)
 
 if(WIN32)
     set(DAS_PACKAGE_SYSTEM "windows")

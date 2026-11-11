@@ -1493,7 +1493,7 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
         effects_.push_back(std::move(e));
     }
     if (bubble_ && (actions.wasPressed(Action::Use) || actions.wasPressed(Action::Attack))) {
-        const std::size_t lines = wrapText(bubble_->text, bubbleWidth_).size();
+        const std::size_t lines = ui::wrap(bubble_->text, bubbleWidth_, 1, ui::Font::Story).size();
         if (static_cast<std::size_t>(bubblePage_ + 1) * bubbleLines_ < lines) {
             ++bubblePage_;
         } else {

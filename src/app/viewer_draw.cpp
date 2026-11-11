@@ -486,7 +486,7 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
         paragraph("No .EXE found: greyscale", ui::color::danger, 1);
     }
     if (!notice_.empty()) {
-        paragraph(notice_, ui::color::danger, 3);
+        paragraph(notice_, ui::color::danger, 4);
     }
     if (!game().modProblem.empty() && (page_ == Page::Main || page_ == Page::Mods)) {
         paragraph(game().modProblem, ui::color::danger, 6);

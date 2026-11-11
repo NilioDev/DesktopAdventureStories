@@ -776,6 +776,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         if (bindings_) {
             rows.push_back({RowId::Controls, "Controls", ""});
         }
+        rows.push_back({RowId::Report, "Report a problem", ""});
         rows.push_back({RowId::Back, "Back", ""});
         break;
     }
@@ -1029,6 +1030,7 @@ void Viewer::menuActivate(const Row& row, int change) {
         }
         break;
     }
+    case RowId::Report: report_ = true; break;
     case RowId::Back: menuBack(); break;
     }
 }

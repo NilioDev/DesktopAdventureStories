@@ -23,6 +23,7 @@ add_library(das_core STATIC
     src/script/script_text.cpp
     src/util/json.cpp
     src/util/png.cpp
+    src/util/report.cpp
     src/util/text.cpp
     src/util/zlib.cpp
     src/pack/pack.cpp

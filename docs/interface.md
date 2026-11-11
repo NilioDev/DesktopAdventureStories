@@ -37,7 +37,9 @@ smaller, for screens at least 320 units on their short side.
   the app was in the background.
 - **Options:** Fullscreen (desktop), Scaling (Pixel / Fill), Filter (Sharp,
   Smooth, or Scanlines over the play field), Sound and Music volume, Touch
-  pad and Controls.
+  pad, Controls and Report a problem. *Report a problem* opens a new GitHub
+  issue in the browser with the version, the system and the end of the log
+  filled in (`src/app/problem_log.hpp`).
 - **Controls:** every action with its keys, or its gamepad buttons when a
   gamepad was used last. Choosing one waits six seconds for the new key or
   button (Esc cancels); it becomes the only one for that action and is taken

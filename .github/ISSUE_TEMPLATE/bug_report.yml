@@ -1,0 +1,41 @@
+name: Report a problem
+description: Something goes wrong while playing or in the editor.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping! *Report a problem* in the game's Options fills in the version, your system and the log for you.
+        Please never attach the original game files.
+  - type: textarea
+    id: what
+    attributes:
+      label: What went wrong?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the report the game opens for you, or the name of the package you downloaded.
+  - type: input
+    id: system
+    attributes:
+      label: System and device
+      description: For example "Windows 11, Xbox controller" or "Android 15, Pixel 8".
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - Indiana Jones and His Desktop Adventures
+        - Star Wars Yoda Stories
+        - Both
+        - Not about a game
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: The end of the game's log. The game fills this in; otherwise add log.txt from the app's folder.
+      render: text

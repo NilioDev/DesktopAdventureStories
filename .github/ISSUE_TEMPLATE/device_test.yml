@@ -1,0 +1,69 @@
+name: Device test
+description: Went through the test list on a real computer, phone or tablet? Share how it went.
+labels: [device-test]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The full list, with what to look for, is in [docs/device-testing.md](https://github.com/NilioDev/DesktopAdventureStories/blob/main/docs/device-testing.md).
+        Tick what worked. For anything that did not, write a line below, or use *Report a problem* in the game's Options.
+  - type: input
+    id: device
+    attributes:
+      label: Device and system
+      description: For example "Samsung Galaxy Tab S9, Android 14" or "MacBook Air M2, macOS 15".
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or package
+    validations:
+      required: true
+  - type: checkboxes
+    id: install
+    attributes:
+      label: Installing and first start
+      options:
+        - label: The package installs and the app starts
+        - label: Adding the games (folder or zip) works
+        - label: The title screen fits the screen and the text is readable
+  - type: checkboxes
+    id: play
+    attributes:
+      label: Playing
+      options:
+        - label: A new game starts, walking, talking, using and attacking work
+        - label: The map and the inventory work
+        - label: Sound and music play, and the volume options work
+        - label: Fullscreen, scaling and filter options work (desktop)
+  - type: checkboxes
+    id: controls
+    attributes:
+      label: Controls
+      options:
+        - label: Keyboard and mouse
+        - label: Gamepad (which one? write it below)
+        - label: Touch, tapping and the touch pad (phone or tablet)
+        - label: Turning the phone or tablet (portrait and landscape)
+        - label: Changing a key or button in Controls
+  - type: checkboxes
+    id: saving
+    attributes:
+      label: Saving
+      options:
+        - label: Save game in a slot, and Load game brings it back
+        - label: Continue picks up the game after closing the app
+        - label: After switching to another app and back (phone), the game is still there
+  - type: checkboxes
+    id: other
+    attributes:
+      label: Mods and editor
+      options:
+        - label: The editor opens, and trying a zone out works
+        - label: A mod can be switched on and off
+  - type: textarea
+    id: notes
+    attributes:
+      label: What did not work, or felt wrong?
+      description: Anything strange, slow, hard to read or hard to understand is useful.

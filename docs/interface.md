@@ -63,7 +63,14 @@ smaller, for screens at least 320 units on their short side.
   the device used last (keyboard, gamepad or touch). It opens by itself at
   the very first game (`howToPlaySeen` in the settings) and from the pause
   menu.
-- **Pause menu:** Resume, Map, Save game, Load game, How to play, Report a
+- **Pause screen** (`viewer_pause.cpp`): tabs Menu, Map and Backpack at the
+  top, switched with the item keys or buttons (Q/E, LB/RB) or a press on a
+  tab; the Map key opens the Map tab directly and closes it again. *Map*: the
+  big map with the puzzles solved, the world size, the difficulty, a progress
+  bar and what the colours mean. *Backpack*: every item in a grid, the chosen
+  one large with its name; Use (or a second press) takes it in hand. Map and
+  Backpack cover the game; Menu shows the game dimmed under it.
+- **Pause menu** (the Menu tab): Resume, Save game, Load game, How to play, Report a
   bug, Options, Save and quit. The game waits while it is open. *Save game* lists the three slots;
   one in use asks *Overwrite?* first. It is also where the game waits after
   the app was in the background.

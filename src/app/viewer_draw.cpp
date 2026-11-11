@@ -100,45 +100,53 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
             // The game waits under a dimmed screen.
             ui::fill(renderer, {0, 0, layout.width, layout.height}, ui::color::shade);
             hits_.clear(); // only the menu takes presses now
-            const bool help = page_ == Page::Help;
-            const bool card = help || page_ == Page::Bug; // a text above the rows
-            const float w = std::min(field.w - 2 * kPad, card ? 272.0f : 240.0f);
-            const auto rows = static_cast<float>(menuRows().size());
-            auto cardLines =
-                card ? wrapText(help ? howToPlayText() : bugText(), w - 2 * kPad)
-                     : std::vector<std::string>{};
-            if (!help && cardLines.size() > 9) {
-                cardLines.erase(cardLines.begin() + 1, cardLines.end() - 8); // the end of a long note
-            }
-            const float textH = static_cast<float>(cardLines.size()) * 10 + (card ? 6 : 0);
-            const float h = (card ? 2 * kPad + 18 + 2 : 40) + rows * kRow + textH + (notice_.empty() ? 0 : 14);
-            const SDL_FRect box{std::floor(field.x + (field.w - w) / 2),
-                                std::floor(std::max(field.y, field.y + (field.h - h) / 2)), w, h};
-            ui::panel(renderer, box);
-            const char* heading = page_ == Page::Options    ? "Options"
-                                  : page_ == Page::Controls ? "Controls"
-                                  : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
-                                  : help                    ? "How to play"
-                                  : card                    ? "Report a bug"
-                                                            : "Paused";
-            if (card) {
-                float ty = box.y + kPad;
-                ui::text(renderer, box.x + kPad, ty, heading, ui::color::accent);
-                ty += 18;
-                for (const auto& line : cardLines) {
-                    ui::text(renderer, box.x + kPad, ty, line, help ? ui::color::text : ui::color::dim);
-                    ty += 10;
-                }
-                renderMenu(renderer, {box.x + kPad, ty + 6, box.w - 2 * kPad, rows * kRow}, nullptr);
+            if (page_ == Page::Pause && generated_) {
+                renderPause(renderer, layout);
             } else {
-                renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad}, heading);
-            }
-            if (!notice_.empty()) {
-                ui::text(renderer, box.x + kPad + 8, box.y + box.h - kPad - 14,
-                         fit(notice_, box.w - 2 * kPad - 8), noticeGood_ ? ui::color::good : ui::color::accent);
+                renderMenuCard(renderer, field);
             }
         }
         break;
+    }
+}
+
+void Viewer::renderMenuCard(SDL_Renderer* renderer, const SDL_FRect& field) const {
+    const bool help = page_ == Page::Help;
+    const bool card = help || page_ == Page::Bug; // a text above the rows
+    const float w = std::min(field.w - 2 * kPad, card ? 272.0f : 240.0f);
+    const auto rows = static_cast<float>(menuRows().size());
+    auto cardLines =
+        card ? wrapText(help ? howToPlayText() : bugText(), w - 2 * kPad)
+             : std::vector<std::string>{};
+    if (!help && cardLines.size() > 9) {
+        cardLines.erase(cardLines.begin() + 1, cardLines.end() - 8); // the end of a long note
+    }
+    const float textH = static_cast<float>(cardLines.size()) * 10 + (card ? 6 : 0);
+    const float h = (card ? 2 * kPad + 18 + 2 : 40) + rows * kRow + textH + (notice_.empty() ? 0 : 14);
+    const SDL_FRect box{std::floor(field.x + (field.w - w) / 2),
+                        std::floor(std::max(field.y, field.y + (field.h - h) / 2)), w, h};
+    ui::panel(renderer, box);
+    const char* heading = page_ == Page::Options    ? "Options"
+                          : page_ == Page::Controls ? "Controls"
+                          : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
+                          : help                    ? "How to play"
+                          : card                    ? "Report a bug"
+                                                    : "Paused";
+    if (card) {
+        float ty = box.y + kPad;
+        ui::text(renderer, box.x + kPad, ty, heading, ui::color::accent);
+        ty += 18;
+        for (const auto& line : cardLines) {
+            ui::text(renderer, box.x + kPad, ty, line, help ? ui::color::text : ui::color::dim);
+            ty += 10;
+        }
+        renderMenu(renderer, {box.x + kPad, ty + 6, box.w - 2 * kPad, rows * kRow}, nullptr);
+    } else {
+        renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad}, heading);
+    }
+    if (!notice_.empty()) {
+        ui::text(renderer, box.x + kPad + 8, box.y + box.h - kPad - 14,
+                 fit(notice_, box.w - 2 * kPad - 8), noticeGood_ ? ui::color::good : ui::color::accent);
     }
 }
 
@@ -247,9 +255,6 @@ void Viewer::renderPlay(SDL_Renderer* renderer, const SDL_FRect& field, Uint64 n
     }
     if (bubble_) {
         renderBubble(renderer, field, cell, camX, camY);
-    }
-    if (showMap_) {
-        renderMap(renderer, field);
     }
     renderBanner(renderer, field);
 }

@@ -52,7 +52,9 @@ own adventures.
   window. In the game, floating cards around the play field show your health
   as a ring, your weapon, a **minimap** with the puzzles still open and the
   ones you solved, how many puzzles you solved, and the item in your hand;
-  your items sit in a bar under the field (below the field on tall screens). Menus use the easy-to-read Fira Sans font,
+  your items sit in a bar under the field (below the field on tall screens).
+  The pause screen has tabs for the menu, a large map with your progress and
+  your backpack; switch them with Q / E or LB / RB. Menus use the easy-to-read Fira Sans font,
   sharp on every screen, and what characters say appears in a classic pixel
   font that suits the game's art. No Windows 3.1 look.
 - 🎮 **Play your way.** Keyboard, mouse, gamepad or touch. Every key and button
@@ -176,7 +178,7 @@ or touch screen; it is in the pause menu too.
 | Move | Arrow keys / WASD | D-pad / left stick | Click or tap where to go |
 | Use the selected item, talk | Space / Enter | A (south) | Click the selected item again |
 | Attack | Ctrl / X | B (east) | |
-| Previous / next item | Q / E | LB / RB | Click an item |
+| Previous / next item (tabs in the pause screen) | Q / E | LB / RB | Click an item |
 | Map | M / Tab | Back / Select | Map button |
 | Menu, back | Esc | Start (B goes back in menus) | Menu button |
 | Report a bug | F8 | Both sticks pressed in (L3 + R3) | Menu → Report a bug |

@@ -62,8 +62,9 @@ jobs:
             echo "The tag $RELEASE_TAG is not a version such as v1.2.3"
             exit 1
           fi
-          perl -pi -e 's/^(\s*VERSION )[0-9.]+$/${1}'"${RELEASE_TAG#v}"'/' CMakeLists.txt
-          grep -q "^ *VERSION ${RELEASE_TAG#v}$" CMakeLists.txt
+          # Windows checks files out with CRLF line ends: keep them.
+          perl -pi -e 's/^(\s*VERSION )[0-9.]+(\s*)$/${1}'"${RELEASE_TAG#v}"'${2}/' CMakeLists.txt
+          grep -Eq "^ *VERSION ${RELEASE_TAG#v}[[:space:]]*$" CMakeLists.txt
 
       - name: Install SDL build dependencies (Linux)
         if: runner.os == 'Linux'
@@ -122,8 +123,9 @@ jobs:
             echo "The tag $RELEASE_TAG is not a version such as v1.2.3"
             exit 1
           fi
-          perl -pi -e 's/^(\s*VERSION )[0-9.]+$/${1}'"${RELEASE_TAG#v}"'/' CMakeLists.txt
-          grep -q "^ *VERSION ${RELEASE_TAG#v}$" CMakeLists.txt
+          # Windows checks files out with CRLF line ends: keep them.
+          perl -pi -e 's/^(\s*VERSION )[0-9.]+(\s*)$/${1}'"${RELEASE_TAG#v}"'${2}/' CMakeLists.txt
+          grep -Eq "^ *VERSION ${RELEASE_TAG#v}[[:space:]]*$" CMakeLists.txt
 
       - uses: actions/setup-java@v4
         with:

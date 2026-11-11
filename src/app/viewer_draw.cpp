@@ -20,7 +20,6 @@ constexpr int kTilesPerPage = 9 * 9;
 constexpr int kView = 9; // cells across the play field
 constexpr float kPad = 8;
 constexpr float kRow = 18; // a menu row
-constexpr float kSlot = 36; // an inventory slot
 
 std::string fit(const std::string& line, float width) { return ui::fit(line, width); }
 
@@ -32,13 +31,6 @@ ui::Color healthColor(float ratio) {
         return ui::color::accent;
     }
     return ui::color::danger;
-}
-
-// A button with a centred label.
-void button(SDL_Renderer* r, const SDL_FRect& rect, const char* label) {
-    ui::fill(r, rect, ui::color::panelLight);
-    ui::outline(r, rect, ui::color::border);
-    ui::textCentered(r, rect.x + rect.w / 2, rect.y + (rect.h - ui::kFont) / 2, label, ui::color::text);
 }
 
 } // namespace
@@ -96,7 +88,7 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
     case ViewMode::Play:
         renderPlay(renderer, field, now);
         renderScanlines(renderer, field, layout.scale);
-        renderHud(renderer, layout.panel);
+        renderHud(renderer, layout);
         if (showCoordinates_ && !capturePending_) {
             const std::string where = "zone " + std::to_string(world_->zoneIndex()) + "  " +
                                       std::to_string(world_->player().x) + "," + std::to_string(world_->player().y);
@@ -289,73 +281,90 @@ void Viewer::renderBanner(SDL_Renderer* renderer, const SDL_FRect& field) const 
     ui::textCentered(renderer, box.x + box.w / 2, box.y + 36, "Menu: back to the title", ui::color::dim);
 }
 
-void Viewer::renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const {
+namespace {
+
+// The colours of the map's sites.
+constexpr ui::Color kTown{110, 160, 230};
+constexpr ui::Color kSolved{96, 112, 128};
+constexpr ui::Color kGoal{244, 211, 94};
+constexpr ui::Color kPlain{78, 88, 100};
+
+} // namespace
+
+Viewer::MapHere Viewer::mapHere() const {
     const auto& wm = world_->map();
     // The map of the current zone: the one listing it, or the map with the
     // site the zone belongs to.
-    const world::Map* map = &wm.world;
-    int hereX = -1;
-    int hereY = -1;
+    MapHere here{&wm.world};
     for (const world::Map* m : {&wm.world, &wm.dagobah}) {
         for (int cy = 0; cy < m->height; ++cy) {
             for (int cx = 0; cx < m->width; ++cx) {
                 const auto& zones = m->at(cx, cy).zones;
                 if (std::find(zones.begin(), zones.end(), world_->zoneIndex()) != zones.end()) {
-                    map = m;
-                    hereX = cx;
-                    hereY = cy;
+                    here = {m, cx, cy};
                 }
             }
         }
     }
-    ui::fill(renderer, field, {12, 14, 20, 235});
-    ui::text(renderer, field.x + kPad, field.y + kPad, "Map", ui::color::accent);
-    const float legendH = 14;
-    const float area = std::min(field.w, field.h - 2 * legendH) - 4 * kPad;
-    const float cell = std::floor(area / static_cast<float>(std::max(1, std::max(map->width, map->height))));
-    const float ox = std::floor(field.x + (field.w - cell * static_cast<float>(map->width)) / 2);
-    const float oy = std::floor(field.y + 2 * kPad + 8 + (area - cell * static_cast<float>(map->height)) / 2);
-    const ui::Color town{90, 150, 230};
-    const ui::Color open{230, 180, 80};
-    const ui::Color goal{220, 80, 70};
-    const ui::Color plain{62, 72, 66};
+    return here;
+}
+
+void Viewer::renderMapCells(SDL_Renderer* renderer, const MapHere& here, float x, float y, float cell) const {
+    const world::Map& map = *here.map;
     const bool blink = (SDL_GetTicks() / 400) % 2 == 0;
-    for (int cy = 0; cy < map->height; ++cy) {
-        for (int cx = 0; cx < map->width; ++cx) {
-            const auto& site = map->at(cx, cy);
+    const float gap = cell >= 12 ? 2.0f : 1.0f;
+    const float radius = std::floor(cell / 4);
+    for (int cy = 0; cy < map.height; ++cy) {
+        for (int cx = 0; cx < map.width; ++cx) {
+            const auto& site = map.at(cx, cy);
+            const SDL_FRect box{x + static_cast<float>(cx) * cell, y + static_cast<float>(cy) * cell, cell - gap,
+                                cell - gap};
             if (site.kind == world::SiteKind::None) {
+                ui::fillRounded(renderer, box, radius, {255, 255, 255, 10});
                 continue;
             }
-            ui::Color c = plain;
+            ui::Color c = kPlain;
             switch (site.kind) {
-            case world::SiteKind::Town: c = town; break;
-            case world::SiteKind::Goal: c = goal; break;
-            case world::SiteKind::Puzzle: c = world_->goal(site.zone).solved ? ui::color::good : open; break;
+            case world::SiteKind::Town: c = kTown; break;
+            case world::SiteKind::Goal: c = kGoal; break;
+            case world::SiteKind::Puzzle: c = world_->goal(site.zone).solved ? kSolved : ui::color::accent; break;
             default: break;
             }
-            const SDL_FRect box{ox + static_cast<float>(cx) * cell + 1, oy + static_cast<float>(cy) * cell + 1,
-                                cell - 2, cell - 2};
-            ui::fill(renderer, box, c);
-            if (cx == hereX && cy == hereY) {
-                ui::outline(renderer, {box.x - 1, box.y - 1, box.w + 2, box.h + 2}, ui::color::text);
+            ui::fillRounded(renderer, box, radius, c);
+            if (cx == here.x && cy == here.y) {
+                ui::outlineRounded(renderer, {box.x - 1, box.y - 1, box.w + 2, box.h + 2}, radius + 1,
+                                   ui::color::text);
                 if (blink) {
                     const float m = std::floor(cell / 3);
-                    ui::fill(renderer, {box.x + m - 1, box.y + m - 1, box.w - 2 * m + 2, box.h - 2 * m + 2},
-                             ui::color::text);
+                    ui::fillRounded(renderer, {box.x + m - 1, box.y + m - 1, box.w - 2 * m + 2, box.h - 2 * m + 2},
+                                    radius, ui::color::text);
                 }
             }
         }
     }
+}
+
+void Viewer::renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const {
+    const MapHere here = mapHere();
+    const world::Map& map = *here.map;
+    ui::fill(renderer, field, {12, 14, 20, 235});
+    ui::text(renderer, field.x + kPad + 2, field.y + kPad + 2, "Map", ui::color::accent, 1.4f);
+    const float legendH = 14;
+    const float area = std::min(field.w, field.h - 2 * legendH) - 4 * kPad;
+    const float cell = std::floor(area / static_cast<float>(std::max(1, std::max(map.width, map.height))));
+    const float ox = std::floor(field.x + (field.w - cell * static_cast<float>(map.width)) / 2);
+    const float oy = std::floor(field.y + 2 * kPad + 8 + (area - cell * static_cast<float>(map.height)) / 2);
+    renderMapCells(renderer, here, ox, oy, cell);
     // The legend.
     struct Entry {
         ui::Color c;
         const char* name;
     };
-    const Entry entries[] = {{town, "Town"}, {open, "Puzzle"}, {ui::color::good, "Done"}, {goal, "Goal"}};
+    const Entry entries[] = {{kTown, "Town"}, {ui::color::accent, "Puzzle"}, {kSolved, "Done"}, {kGoal, "Goal"}};
     float lx = field.x + kPad;
     const float ly = field.y + field.h - kPad - 8;
     for (const auto& e : entries) {
-        ui::fill(renderer, {lx, ly, 8, 8}, e.c);
+        ui::fillRounded(renderer, {lx, ly, 8, 8}, 2, e.c);
         ui::text(renderer, lx + 11, ly, e.name, ui::color::dim);
         lx += 11 + ui::textWidth(e.name) + 12;
     }
@@ -621,18 +630,107 @@ void Viewer::renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) c
     }
 }
 
-void Viewer::renderHud(SDL_Renderer* renderer, const SDL_FRect& panel) const {
-    ui::panel(renderer, panel);
-    const auto& w = *world_;
-    const float x = panel.x + kPad;
-    const float width = panel.w - 2 * kPad;
-    const float bottom = panel.y + panel.h - kPad;
-    float y = panel.y + kPad + 2;
+namespace {
 
-    // Title and the puzzles solved so far.
+constexpr float kCardPad = 8;
+constexpr ui::Color kWell{14, 16, 22}; // behind an item's picture
+
+// A card of the play screen, `h` high at the top of what is left of a
+// column; returns false (and draws nothing) when it does not fit.
+bool card(SDL_Renderer* r, SDL_FRect& column, float h, SDL_FRect& out) {
+    if (h > column.h) {
+        return false;
+    }
+    out = {column.x, column.y, column.w, h};
+    ui::panel(r, out);
+    column.y += h + 6;
+    column.h -= h + 6;
+    return true;
+}
+
+// A small rounded label for a key or button, such as LB.
+float keyLabel(SDL_Renderer* r, float x, float centerY, const std::string& name) {
+    const float w = ui::textWidth(name) + 8;
+    const SDL_FRect box{x, std::floor(centerY - 7), w, 14};
+    ui::outlineRounded(r, box, 4, {74, 79, 92});
+    ui::text(r, box.x + 4, box.y + 3, name, ui::color::text);
+    return w;
+}
+
+} // namespace
+
+void Viewer::renderHud(SDL_Renderer* renderer, const ui::Layout& layout) const {
+    const auto& w = *world_;
     const bool indy = game().game == data::Layout::Indy;
-    ui::text(renderer, x, y, generated_ ? (indy ? "Indiana Jones" : "Yoda Stories") : "Zone test", ui::color::accent);
+
+    // --- the left column: health, weapon, buttons and hints ----------------
+    SDL_FRect left = layout.left;
+    SDL_FRect box{};
+    const float ratio = static_cast<float>(w.health()) / static_cast<float>(world::kMaxHealth);
+    if (card(renderer, left, 44, box)) {
+        const float radius = 15;
+        const float cx = box.x + kCardPad + radius;
+        const float cy = box.y + box.h / 2;
+        ui::ring(renderer, cx, cy, radius, 5, ratio, healthColor(ratio), {255, 255, 255, 30});
+        const float tx = cx + radius + 8;
+        ui::text(renderer, tx, box.y + 9, "Health", ui::color::dim);
+        char percent[16];
+        std::snprintf(percent, sizeof percent, "%d%%", static_cast<int>(std::ceil(ratio * 100)));
+        ui::text(renderer, tx, box.y + 21, percent, ui::color::text, 1.5f);
+    }
+    if (card(renderer, left, 48, box)) {
+        const SDL_FRect well{box.x + kCardPad, box.y + 6, 36, 36};
+        ui::fillRounded(renderer, well, 6, kWell);
+        if (w.weapon() != data::kNoTile) {
+            renderTile(renderer, w.weapon(), {well.x + 2, well.y + 2, kTile, kTile});
+        }
+        const float tx = well.x + well.w + 8;
+        const float tw = box.x + box.w - kCardPad - tx;
+        ui::text(renderer, tx, box.y + 12, "Weapon", ui::color::dim);
+        ui::text(renderer, tx, box.y + 25, fit(w.weapon() != data::kNoTile ? itemName(w.weapon()) : "None", tw),
+                 ui::color::text);
+    }
+    // Map and Menu at the bottom of the column, hints above them.
+    if (left.h >= kRow + 4) {
+        const float y = left.y + left.h - kRow;
+        const float half = std::floor((left.w - 6) / 2);
+        const SDL_FRect mapButton{left.x, y, half, kRow};
+        const SDL_FRect menuButton{left.x + left.w - half, y, half, kRow};
+        const auto pill = [&](const SDL_FRect& r, const char* label) {
+            ui::fillRounded(renderer, r, r.h / 2, ui::color::panelLight);
+            ui::outlineRounded(renderer, r, r.h / 2, ui::color::border);
+            ui::textCentered(renderer, r.x + r.w / 2, r.y + (r.h - ui::kFont) / 2, label, ui::color::text);
+        };
+        if (generated_) {
+            pill(mapButton, "Map");
+            addHit(Hit::Kind::Map, mapButton);
+        }
+        pill(menuButton, generated_ ? "Menu" : "Back");
+        addHit(Hit::Kind::Menu, menuButton);
+        left.h -= kRow + 6;
+        if (left.h >= 40 && device_ != InputDevice::Touch) {
+            renderHints(renderer, {left.x + 2, left.y, left.w - 2, left.h});
+        }
+    }
+
+    // --- the right column: the map and how far the player is ---------------
+    SDL_FRect right = layout.panel;
     if (generated_) {
+        const MapHere here = mapHere();
+        const int span = std::max(1, std::max(here.map->width, here.map->height));
+        // Small maps (Dagobah) keep small cells, in the middle of the card.
+        const float cell = std::min(14.0f, std::floor((right.w - 2 * kCardPad) / static_cast<float>(span)));
+        const float mapH = cell * static_cast<float>(here.map->height);
+        if (cell >= 4 && card(renderer, right, 24 + mapH + kCardPad, box)) {
+            ui::text(renderer, box.x + kCardPad, box.y + 7, "Map", ui::color::text);
+            if (device_ != InputDevice::Touch) {
+                const std::string key = controlName(Action::Map);
+                ui::textRight(renderer, box.x + box.w - kCardPad, box.y + 7, fit(key, box.w / 2), ui::color::faint);
+            }
+            const float mapW = cell * static_cast<float>(here.map->width);
+            renderMapCells(renderer, here, std::floor(box.x + (box.w - mapW) / 2), box.y + 22, cell);
+            addHit(Hit::Kind::Map, box);
+        }
         int solved = 0;
         int total = 0;
         for (const auto& site : w.map().world.sites) {
@@ -641,106 +739,87 @@ void Viewer::renderHud(SDL_Renderer* renderer, const SDL_FRect& panel) const {
                 solved += w.goal(site.zone).solved ? 1 : 0;
             }
         }
-        char line[32];
-        std::snprintf(line, sizeof line, "%d/%d", solved, total);
-        ui::textRight(renderer, x + width, y, line, ui::color::dim);
-    } else {
-        char line[32];
-        std::snprintf(line, sizeof line, "%d", w.zoneIndex());
-        ui::textRight(renderer, x + width, y, line, ui::color::dim);
+        if (card(renderer, right, 46, box)) {
+            ui::text(renderer, box.x + kCardPad, box.y + 8, indy ? "Indiana Jones" : "Yoda Stories", ui::color::accent);
+            char line[48];
+            std::snprintf(line, sizeof line, "%d of %d puzzles", solved, total);
+            ui::text(renderer, box.x + kCardPad, box.y + 20, line, ui::color::text);
+            const SDL_FRect track{box.x + kCardPad, box.y + 34, box.w - 2 * kCardPad, 5};
+            ui::fillRounded(renderer, track, 2.5f, {255, 255, 255, 26});
+            if (total > 0 && solved > 0) {
+                ui::fillRounded(renderer,
+                                {track.x, track.y, std::max(5.0f, track.w * static_cast<float>(solved) / static_cast<float>(total)), track.h},
+                                2.5f, ui::color::accent);
+            }
+        }
+    } else if (card(renderer, right, 34, box)) {
+        char line[48];
+        std::snprintf(line, sizeof line, "Zone %d", w.zoneIndex());
+        ui::text(renderer, box.x + kCardPad, box.y + 7, "Zone test", ui::color::accent);
+        ui::text(renderer, box.x + kCardPad, box.y + 19, line, ui::color::dim);
     }
-    y += 16;
-
-    // Health.
-    const float ratio = static_cast<float>(w.health()) / static_cast<float>(world::kMaxHealth);
-    ui::text(renderer, x, y, "Health", ui::color::dim);
-    char percent[16];
-    std::snprintf(percent, sizeof percent, "%d%%", static_cast<int>(std::ceil(ratio * 100)));
-    ui::textRight(renderer, x + width, y, percent, ui::color::text);
-    y += 11;
-    ui::bar(renderer, {x, y, width, 8}, ratio, healthColor(ratio));
-    y += 16;
-
-    // The weapon in hand.
-    const SDL_FRect weaponBox{x, y, kSlot - 2, kSlot - 2};
-    ui::fill(renderer, weaponBox, {16, 18, 24});
-    ui::outline(renderer, weaponBox, ui::color::border);
-    if (w.weapon() != data::kNoTile) {
-        renderTile(renderer, w.weapon(), {x + 1, y + 1, kTile, kTile});
-    }
-    ui::text(renderer, x + kSlot + 4, y + 6, "Weapon", ui::color::dim);
-    ui::text(renderer, x + kSlot + 4, y + 18,
-             fit(w.weapon() != data::kNoTile ? itemName(w.weapon()) : "None", width - kSlot - 4), ui::color::text);
-    y += kSlot + 8;
-
-    // The buttons at the bottom, and the hints above them.
-    const float buttonY = bottom - kRow;
-    const float half = std::floor((width - 4) / 2);
-    const SDL_FRect mapButton{x, buttonY, half, kRow};
-    const SDL_FRect menuButton{x + width - half, buttonY, half, kRow};
-    if (generated_) {
-        button(renderer, mapButton, "Map");
-        addHit(Hit::Kind::Map, mapButton);
-    }
-    button(renderer, menuButton, generated_ ? "Menu" : "Back");
-    addHit(Hit::Kind::Menu, menuButton);
-
-    // The inventory as a grid; it scrolls to keep the selection in sight.
+    // The selected item, with its name.
     const auto& inventory = w.inventory();
-    char count[32];
-    std::snprintf(count, sizeof count, "%zu", inventory.size());
-    ui::text(renderer, x, y, "Inventory", ui::color::dim);
-    ui::textRight(renderer, x + width, y, count, ui::color::faint);
-    y += 12;
-    const int columns = std::max(1, static_cast<int>(width / kSlot));
-    const float nameH = 14;
-    const float hintsH = 34;
-    float gridRoom = buttonY - 6 - nameH - y;
-    bool hints = gridRoom - hintsH >= 2 * kSlot;
-    if (hints) {
-        gridRoom -= hintsH;
-    }
-    const int rowCount = (static_cast<int>(inventory.size()) + columns - 1) / columns;
-    // Not more empty rows than needed: at least two, then as many as fit.
-    const int rowsVisible = std::max(1, std::min(static_cast<int>(gridRoom / kSlot), std::max(2, rowCount)));
-    const int selectedRow = static_cast<int>(selected_) / columns;
-    const int firstRow = std::clamp(selectedRow - rowsVisible + 1, 0, std::max(0, rowCount - rowsVisible));
-    const float gridX = x + std::floor((width - static_cast<float>(columns) * kSlot) / 2);
-    for (int r = 0; r < rowsVisible; ++r) {
-        for (int c = 0; c < columns; ++c) {
-            const auto i = static_cast<std::size_t>((firstRow + r) * columns + c);
-            const SDL_FRect slot{gridX + static_cast<float>(c) * kSlot, y + static_cast<float>(r) * kSlot, kSlot - 2,
-                                 kSlot - 2};
-            ui::fill(renderer, slot, {16, 18, 24});
-            if (i >= inventory.size()) {
-                continue;
-            }
-            renderTile(renderer, inventory[i], {slot.x + 1, slot.y + 1, kTile, kTile});
-            if (i == selected_) {
-                ui::outline(renderer, slot, ui::color::accent);
-                ui::outline(renderer, {slot.x + 1, slot.y + 1, slot.w - 2, slot.h - 2}, ui::color::accent);
-            }
-            addHit(Hit::Kind::Slot, slot, static_cast<int>(i));
+    if (card(renderer, right, 48, box)) {
+        const SDL_FRect well{box.x + kCardPad, box.y + 6, 36, 36};
+        ui::fillRounded(renderer, well, 6, kWell);
+        const float tx = well.x + well.w + 8;
+        const float tw = box.x + box.w - kCardPad - tx;
+        ui::text(renderer, tx, box.y + 12, "In hand", ui::color::dim);
+        if (inventory.empty()) {
+            ui::text(renderer, tx, box.y + 25, fit("Nothing yet", tw), ui::color::faint);
+        } else {
+            const auto item = inventory[std::min(selected_, inventory.size() - 1)];
+            renderTile(renderer, item, {well.x + 2, well.y + 2, kTile, kTile});
+            const auto lines = ui::wrap(itemName(item), tw);
+            ui::text(renderer, tx, box.y + 25, fit(lines.empty() ? "" : lines[0], tw), ui::color::text);
         }
     }
-    if (rowCount > rowsVisible) {
-        // A thin scroll bar at the right of the grid.
-        const float gridH = static_cast<float>(rowsVisible) * kSlot - 2;
-        const float knob = gridH * static_cast<float>(rowsVisible) / static_cast<float>(rowCount);
-        const float top = gridH * static_cast<float>(firstRow) / static_cast<float>(rowCount);
-        ui::fill(renderer, {x + width - 1, y, 2, gridH}, {16, 18, 24});
-        ui::fill(renderer, {x + width - 1, y + top, 2, knob}, ui::color::dim);
+
+    // --- the item bar under the field --------------------------------------
+    const SDL_FRect bar = layout.bar;
+    if (bar.w <= 0) {
+        return;
     }
-    y += static_cast<float>(rowsVisible) * kSlot;
-    if (inventory.empty()) {
-        ui::text(renderer, x, y, "Nothing carried", ui::color::faint);
-    } else {
-        ui::text(renderer, x, y, fit(itemName(inventory[std::min(selected_, inventory.size() - 1)]), width),
-                 ui::color::text);
+    constexpr float kCell = 36; // an item's place in the bar
+    constexpr float kGap = 4;
+    const bool keys = device_ != InputDevice::Touch && !inventory.empty();
+    const std::string prev = keys ? controlName(Action::InventoryPrev) : "";
+    const std::string next = keys ? controlName(Action::InventoryNext) : "";
+    const float labels = keys ? ui::textWidth(prev) + ui::textWidth(next) + 2 * 8 + 2 * 6 : 0;
+    const int fits = std::max(1, static_cast<int>((bar.w - labels - 2 * 6 + kGap) / (kCell + kGap)));
+    const int count = static_cast<int>(inventory.size());
+    const int shown = std::max(1, std::min(fits, count));
+    // Scroll to keep the selected item in sight.
+    const int first = std::clamp(static_cast<int>(selected_) - shown / 2, 0, std::max(0, count - shown));
+    const float inner = static_cast<float>(shown) * (kCell + kGap) - kGap;
+    const SDL_FRect strip{std::floor(bar.x + (bar.w - inner - 12) / 2), bar.y + std::floor((bar.h - kCell - 12) / 2),
+                          inner + 12, kCell + 12};
+    ui::panel(renderer, strip);
+    for (int i = 0; i < shown; ++i) {
+        const int index = first + i;
+        const SDL_FRect slot{strip.x + 6 + static_cast<float>(i) * (kCell + kGap), strip.y + 6, kCell, kCell};
+        const bool on = index == static_cast<int>(selected_) && index < count;
+        ui::fillRounded(renderer, slot, 7, on ? ui::Color{255, 255, 255, 36} : ui::Color{255, 255, 255, 12});
+        if (index >= count) {
+            continue;
+        }
+        renderTile(renderer, inventory[static_cast<std::size_t>(index)], {slot.x + 2, slot.y + 2, kTile, kTile});
+        if (on) {
+            ui::outlineRounded(renderer, slot, 7, ui::color::accent);
+            ui::outlineRounded(renderer, {slot.x + 1, slot.y + 1, slot.w - 2, slot.h - 2}, 6, ui::color::accent);
+        }
+        addHit(Hit::Kind::Slot, slot, index);
     }
-    y += nameH;
-    if (hints) {
-        renderHints(renderer, {x, y, width, buttonY - 6 - y});
+    if (keys) {
+        const float cy = strip.y + strip.h / 2;
+        keyLabel(renderer, strip.x - 6 - ui::textWidth(prev) - 8, cy, prev);
+        keyLabel(renderer, strip.x + strip.w + 6, cy, next);
+    }
+    if (first > 0 || first + shown < count) {
+        char more[24];
+        std::snprintf(more, sizeof more, "%zu / %d", selected_ + 1, count);
+        ui::textRight(renderer, bar.x + bar.w, bar.y + bar.h - ui::kFont, more, ui::color::faint);
     }
 }
 

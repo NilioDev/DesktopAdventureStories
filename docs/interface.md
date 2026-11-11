@@ -24,6 +24,10 @@ has.
   high as the field.
 - On a tall screen (a phone held upright) the panel sits below the field and
   takes the rest of the screen.
+- In play (`ui::layout` with `hud`) there is a column of cards on each side
+  of the field (128 units each, `layout.left` and `layout.panel`) and the
+  item bar (48 units, `layout.bar`) under it. On a tall screen the two
+  columns share the room under the field, side by side, above the bar.
 
 The interface scale is the largest one that does not make the play field
 smaller, for screens at least 320 units on their short side.
@@ -48,10 +52,13 @@ smaller, for screens at least 320 units on their short side.
   panel: Continue (the newest save), New game, Load game (when there is a
   save), World size, Difficulty, Options, Mods, Editor, Data viewer (not on
   phones) and Other game, which goes back to the cards (so does Back).
-- **Game:** the panel shows the puzzles solved, health, the weapon in hand,
-  the inventory as a grid (scrolling to the selected item), the selected
-  item's name, hints for the input device used last, and Map and Menu
-  buttons.
+- **Game:** floating cards around the field. Left: health as a ring, the
+  weapon, hints for the input device used last, and Map and Menu buttons.
+  Right: the minimap (the sites of the map the player is on, in the same
+  colours as the big map, the current zone blinking; pressing it opens the
+  map), the puzzles solved with a progress bar, and the item in hand with
+  its name. Under the field: the items as a bar that scrolls to keep the
+  selected one in sight, with the keys or buttons that step through them.
 - **How to play:** a card with the aim of the game and the controls of
   the device used last (keyboard, gamepad or touch). It opens by itself at
   the very first game (`howToPlaySeen` in the settings) and from the pause

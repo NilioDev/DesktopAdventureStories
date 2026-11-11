@@ -644,7 +644,8 @@ void render(App& app, Uint64 now) {
     app.layout = app.viewer.editing()
                      ? das::app::ui::plainLayout(pw, ph, app.viewer.editorScale(pw, ph))
                      : das::app::ui::layout(pw, ph, app.settings.pixelPerfect,
-                                            app.touch.visible() ? das::app::TouchControls::kBottomRoom : 0);
+                                            app.touch.visible() ? das::app::TouchControls::kBottomRoom : 0,
+                                            app.viewer.inPlay());
     // The editor's text fields and the bug note want the keyboard (on
     // phones: the on-screen one).
     const bool typing = app.viewer.editorTyping() || app.viewer.typingNote();

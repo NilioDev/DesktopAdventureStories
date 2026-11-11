@@ -49,8 +49,10 @@ own adventures.
   or start a new adventure. Each game has its own colour: amber for Indy,
   green for Yoda.
 - 🖥️ **Modern interface.** Your own game's pixel art, scaled sharply to any
-  window, with rounded panels and a clean side panel for health, weapon and inventory (below the
-  play field on tall screens). Menus use the easy-to-read Fira Sans font,
+  window. In the game, floating cards around the play field show your health
+  as a ring, your weapon, a **minimap** with the puzzles still open and the
+  ones you solved, how many puzzles you solved, and the item in your hand;
+  your items sit in a bar under the field (below the field on tall screens). Menus use the easy-to-read Fira Sans font,
   sharp on every screen, and what characters say appears in a classic pixel
   font that suits the game's art. No Windows 3.1 look.
 - 🎮 **Play your way.** Keyboard, mouse, gamepad or touch. Every key and button

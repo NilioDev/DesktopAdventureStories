@@ -23,6 +23,8 @@ namespace {
 
 constexpr float kMargin = 8;
 constexpr float kPanelWidth = 200;
+constexpr float kSide = 128; // a column of cards beside the field in play
+constexpr float kBar = 48;   // the item bar under the field in play
 constexpr float kField = static_cast<float>(kViewPixels); // 288
 // The smallest screen in units the interface is laid out for.
 constexpr float kMinShort = 320;
@@ -124,7 +126,7 @@ void setColor(SDL_Renderer* r, Color c) {
 
 namespace {
 
-Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom) {
+Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom, bool hud) {
     Layout out;
     const auto pw = static_cast<float>(std::max(1, pixelWidth));
     const auto ph = static_cast<float>(std::max(1, pixelHeight));
@@ -139,6 +141,9 @@ Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect,
     if (out.portrait) {
         areaW = out.width - 2 * kMargin;
         areaH = out.height - 2 * kMargin - 150; // keep room for the panel
+    } else if (hud) {
+        areaW = out.width - 4 * kMargin - 2 * kSide;
+        areaH = out.height - 3 * kMargin - kBar;
     } else {
         areaW = out.width - 3 * kMargin - kPanelWidth;
         areaH = out.height - 2 * kMargin;
@@ -156,6 +161,23 @@ Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect,
         const float panelY = out.field.y + field + kMargin;
         out.panel = {kMargin, panelY, out.width - 2 * kMargin,
                      std::max(120.0f, out.height - panelY - kMargin - bottomRoom)};
+        if (hud) {
+            // Two columns side by side, the bar under them.
+            const SDL_FRect all = out.panel;
+            const float columnH = std::max(40.0f, all.h - kBar - kMargin);
+            const float half = std::floor((all.w - kMargin) / 2);
+            out.left = {all.x, all.y, half, columnH};
+            out.panel = {all.x + half + kMargin, all.y, all.w - half - kMargin, columnH};
+            out.bar = {all.x, all.y + columnH + kMargin, all.w, kBar};
+        }
+    } else if (hud) {
+        const float total = field + 2 * (kMargin + kSide);
+        const float x = std::floor((out.width - total) / 2);
+        const float y = std::floor((out.height - field - kMargin - kBar) / 2);
+        out.left = {x, y, kSide, field};
+        out.field = {x + kSide + kMargin, y, field, field};
+        out.panel = {out.field.x + field + kMargin, y, kSide, field};
+        out.bar = {out.field.x, y + field + kMargin, field, kBar};
     } else {
         const float total = field + kMargin + kPanelWidth;
         const float x = std::floor((out.width - total) / 2);
@@ -168,12 +190,23 @@ Layout layoutAt(float scale, int pixelWidth, int pixelHeight, bool pixelPerfect,
 
 } // namespace
 
-Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom) {
+SDL_FRect hudArea(const Layout& layout) {
+    if (layout.left.w <= 0) {
+        return layout.panel;
+    }
+    const float x0 = std::min({layout.left.x, layout.panel.x, layout.bar.x});
+    const float y0 = std::min({layout.left.y, layout.panel.y, layout.bar.y});
+    const float x1 = std::max({layout.left.x + layout.left.w, layout.panel.x + layout.panel.w, layout.bar.x + layout.bar.w});
+    const float y1 = std::max({layout.left.y + layout.left.h, layout.panel.y + layout.panel.h, layout.bar.y + layout.bar.h});
+    return {x0, y0, x1 - x0, y1 - y0};
+}
+
+Layout layout(int pixelWidth, int pixelHeight, bool pixelPerfect, float bottomRoom, bool hud) {
     // The largest interface that does not make the play field smaller.
     const float most = std::max(1.0f, std::floor(static_cast<float>(std::min(pixelWidth, pixelHeight)) / kMinShort));
-    Layout best = layoutAt(1, pixelWidth, pixelHeight, pixelPerfect, bottomRoom);
+    Layout best = layoutAt(1, pixelWidth, pixelHeight, pixelPerfect, bottomRoom, hud);
     for (float scale = 2; scale <= most; ++scale) {
-        const Layout next = layoutAt(scale, pixelWidth, pixelHeight, pixelPerfect, bottomRoom);
+        const Layout next = layoutAt(scale, pixelWidth, pixelHeight, pixelPerfect, bottomRoom, hud);
         if (next.field.w * next.scale >= best.field.w * best.scale - 0.5f) {
             best = next;
         }
@@ -475,6 +508,35 @@ void textRight(SDL_Renderer* renderer, float right, float y, std::string_view li
 
 void textCentered(SDL_Renderer* renderer, float centerX, float y, std::string_view line, Color c, float size) {
     text(renderer, std::floor(centerX - textWidth(line, size) / 2), y, line, c, size);
+}
+
+void ring(SDL_Renderer* renderer, float cx, float cy, float radius, float thickness, float ratio, Color c,
+          Color track) {
+    constexpr int kSteps = 64;
+    constexpr float kTurn = 6.2831853f;
+    const float r = std::clamp(ratio, 0.0f, 1.0f);
+    const auto colorOf = [](Color k) { return SDL_FColor{k.r / 255.0f, k.g / 255.0f, k.b / 255.0f, k.a / 255.0f}; };
+    const SDL_FColor on = colorOf(c);
+    const SDL_FColor off = colorOf(track);
+    const float inner = std::max(0.0f, radius - thickness);
+    std::vector<SDL_Vertex> vertices;
+    std::vector<int> indices;
+    vertices.reserve(kSteps * 4);
+    indices.reserve(kSteps * 6);
+    for (int i = 0; i < kSteps; ++i) {
+        const float a0 = kTurn * static_cast<float>(i) / kSteps - kTurn / 4;
+        const float a1 = kTurn * static_cast<float>(i + 1) / kSteps - kTurn / 4;
+        const SDL_FColor fc = (static_cast<float>(i) + 0.5f) / kSteps <= r ? on : off;
+        const int base = static_cast<int>(vertices.size());
+        vertices.push_back({{cx + radius * std::cos(a0), cy + radius * std::sin(a0)}, fc, {0, 0}});
+        vertices.push_back({{cx + inner * std::cos(a0), cy + inner * std::sin(a0)}, fc, {0, 0}});
+        vertices.push_back({{cx + radius * std::cos(a1), cy + radius * std::sin(a1)}, fc, {0, 0}});
+        vertices.push_back({{cx + inner * std::cos(a1), cy + inner * std::sin(a1)}, fc, {0, 0}});
+        indices.insert(indices.end(), {base, base + 1, base + 2, base + 2, base + 1, base + 3});
+    }
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_RenderGeometry(renderer, nullptr, vertices.data(), static_cast<int>(vertices.size()), indices.data(),
+                       static_cast<int>(indices.size()));
 }
 
 void bar(SDL_Renderer* renderer, const SDL_FRect& rect, float ratio, Color c) {

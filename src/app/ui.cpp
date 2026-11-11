@@ -37,7 +37,7 @@ float g_scale = 1;
 // Both fonts have capitals about 7 units high, on a baseline 7 units below
 // the top of a line, like SDL's 8x8 letters they replace.
 constexpr float kBaseline = 7;
-float fontSize(Font font) { return font == Font::Story ? 8 : 10; } // in units
+float fontSize(Font font) { return font == Font::Story ? 8.0f : 10.0f; } // in units
 constexpr Uint64 kKeepFrames = 120; // drawn texts unused this long are freed
 
 struct CachedText {

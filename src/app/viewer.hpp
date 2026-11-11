@@ -97,6 +97,14 @@ public:
     bool takeSettingsChanged();
     bool quitRequested() const { return quit_; }
     // True once after the player chose Add games in the menu.
+    // The player asked to report a problem (Options); the app opens the link.
+    bool takeReport() {
+        const bool asked = report_;
+        report_ = false;
+        return asked;
+    }
+    // A short message under the menu (cleared by the next menu choice).
+    void setNotice(std::string text) { notice_ = std::move(text); }
     bool takeAddGames() {
         const bool asked = addGames_;
         addGames_ = false;
@@ -169,6 +177,7 @@ private:
         Mods,
         Mod,
         OpenModsFolder,
+        Report,
         Editor,
         Back,
     };
@@ -288,6 +297,7 @@ private:
     Uint64 captureUntil_ = 0;
     bool quit_ = false;
     bool addGames_ = false;
+    bool report_ = false;
     bool titleSong_ = false; // the title song was started on this visit
 
     // Pointer input and walking to a tapped cell.

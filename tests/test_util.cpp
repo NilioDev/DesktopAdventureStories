@@ -4,6 +4,7 @@
 #include "das/pack/import.hpp"
 #include "das/util/json.hpp"
 #include "das/util/png.hpp"
+#include "das/util/report.hpp"
 #include "das/util/text.hpp"
 #include "das/util/zip.hpp"
 #include "das/util/zlib.hpp"
@@ -237,4 +238,18 @@ DAS_TEST("games are found in a zip or loose files handed over in memory") {
     DAS_CHECK(pack::gamesIn(*loose) == std::vector<std::string>{"indy"});
     DAS_CHECK(loose->read("DESKADV.EXE") == bytes("z"));
     DAS_CHECK(throws([] { (void)pack::zipSource(bytes("not a zip at all, just some text here")); }));
+}
+
+DAS_TEST("report links encode their fields and fit the log in") {
+    DAS_CHECK(report::urlEncode("a b/ü~") == "a%20b%2F%C3%BC~");
+    report::Problem p{"0.1.2", "Android", "first\nsecond\nthird"};
+    const std::string url = report::issueUrl("https://github.com/x/y", p);
+    DAS_CHECK(url == "https://github.com/x/y/issues/new?template=bug_report.yml&labels=bug&version=0.1.2"
+                     "&system=Android&log=first%0Asecond%0Athird");
+    // Too long: the oldest lines go first.
+    const std::string shorter = report::issueUrl("https://github.com/x/y", p, url.size() - 5);
+    DAS_CHECK(shorter.size() <= url.size() - 5);
+    DAS_CHECK(shorter.find("log=third") != std::string::npos || shorter.find("log=second%0Athird") != std::string::npos);
+    // No room for any log at all: the link without it.
+    DAS_CHECK(report::issueUrl("https://github.com/x/y", p, 100).find("log=") == std::string::npos);
 }

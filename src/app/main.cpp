@@ -25,9 +25,11 @@
 #include "das/constants.hpp"
 #include "das/input.hpp"
 #include "das/pack/import.hpp"
+#include "das/util/report.hpp"
 #include "das/version.hpp"
 #include "audio.hpp"
 #include "input_bindings.hpp"
+#include "problem_log.hpp"
 #include "settings.hpp"
 #include "touch_controls.hpp"
 #include "ui.hpp"
@@ -79,6 +81,7 @@ struct App {
     std::optional<das::pack::Library> library;
     std::string loadMessage;
     std::string screenshotPath; // when set: render one frame, save it, quit
+    bool crashedLastTime = false;
 };
 
 std::string gameTitle(const std::string& id) { return id == "indy" ? "Indiana Jones" : "Yoda Stories"; }
@@ -330,6 +333,30 @@ void applySettings(App& app) {
     app.bindings.configure(app.settings);
 }
 
+// Opens a new GitHub issue with the bug form filled in: the version, the
+// system and the end of the log. The player only says what went wrong.
+void reportProblem(App& app) {
+    std::string system = SDL_GetPlatform();
+    if (const char* renderer = SDL_GetRendererName(app.renderer)) {
+        system += ", renderer " + std::string(renderer);
+    }
+    system += ", " + std::to_string(app.pixelWidth) + "x" + std::to_string(app.pixelHeight) + " pixels";
+    for (SDL_Gamepad* pad : app.gamepads) {
+        if (const char* name = SDL_GetGamepadName(pad)) {
+            system += ", gamepad " + std::string(name);
+        }
+    }
+    const das::report::Problem problem{std::string(das::kVersion), system, das::app::problem_log::tail()};
+    const std::string url = das::report::issueUrl("https://github.com/NilioDev/DesktopAdventureStories", problem);
+    SDL_Log("Report a problem: opening the issue form");
+    if (SDL_OpenURL(url.c_str())) {
+        app.viewer.setNotice("Your browser shows the report form. Thank you!");
+    } else {
+        SDL_Log("Could not open %s", url.c_str());
+        app.viewer.setNotice("Could not open a browser. Report it on GitHub with log.txt.");
+    }
+}
+
 void update(App& app, Uint64 now, Uint32 elapsedMs) {
     takePicked(app);
     if (app.viewer.takeAddGames() || (app.viewer.empty() && app.actions.wasPressed(das::Action::Use))) {
@@ -341,6 +368,9 @@ void update(App& app, Uint64 now, Uint32 elapsedMs) {
                           app.viewer.inputDevice() == das::app::InputDevice::Touch);
     app.touch.setVisible(wantPad && app.viewer.playing(), app.actions);
     app.viewer.update(app.actions, app.mover.update(das::heldDirection(app.actions), elapsedMs), now);
+    if (app.viewer.takeReport()) {
+        reportProblem(app);
+    }
     app.audio.update();
     if (app.viewer.takeSettingsChanged()) {
         applySettings(app);
@@ -430,6 +460,9 @@ void render(App& app, Uint64 now) {
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_SetAppMetadata("DesktopAdventureStories", std::string(das::kVersion).c_str(),
                        "org.desktopadventurestories.app");
+
+    das::app::problem_log::begin();
+    SDL_Log("DesktopAdventureStories %s on %s", std::string(das::kVersion).c_str(), SDL_GetPlatform());
 
     // Touches are handled as fingers (several at once), not as a mouse.
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
@@ -546,6 +579,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         app->settingsFile = app->library->root().parent_path() / "settings.json";
         app->settings = das::app::loadSettings(app->settingsFile);
         app->viewer.setModsFolder(app->library->root().parent_path() / "mods");
+        if (app->screenshotPath.empty() && das::app::problem_log::attach(app->library->root().parent_path())) {
+            app->crashedLastTime = true;
+        }
     }
     if (!app->screenshotPath.empty()) {
         app->settings.fullscreen = false;
@@ -593,6 +629,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         }
     } else if (menu == "map") {
         app->viewer.openMap();
+    }
+    if (app->crashedLastTime) {
+        app->viewer.setNotice("The game stopped unexpectedly. Options, Report a problem helps fix it.");
     }
     if (device == "gamepad") {
         app->viewer.setInputDevice(das::app::InputDevice::Gamepad);
@@ -718,7 +757,10 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_GAMEPAD_ADDED: openGamepad(app, event->gdevice.which); break;
     case SDL_EVENT_GAMEPAD_REMOVED: closeGamepad(app, event->gdevice.which); break;
     case SDL_EVENT_WINDOW_FOCUS_LOST: app.bindings.reset(app.actions); break;
+    case SDL_EVENT_DID_ENTER_FOREGROUND: das::app::problem_log::resume(); break;
     case SDL_EVENT_WILL_ENTER_BACKGROUND:
+        das::app::problem_log::pause(); // a phone may stop it there: no crash
+        [[fallthrough]];
     case SDL_EVENT_TERMINATING:
     case SDL_EVENT_LOW_MEMORY:
     case SDL_EVENT_WINDOW_MINIMIZED:
@@ -800,6 +842,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult /*result*/) {
     if (app->screenshotPath.empty()) {
         app->viewer.autosave();
     }
+    das::app::problem_log::pause(); // closed properly
     for (SDL_Gamepad* pad : app->gamepads) {
         SDL_CloseGamepad(pad);
     }

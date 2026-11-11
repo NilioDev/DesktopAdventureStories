@@ -34,8 +34,8 @@ own adventures.
 > [!NOTE]
 > **Status: playable.** Both games can be played from start to finish in
 > generated worlds, and the editor makes mods. It has not been tested much on
-> real devices yet, so please
-> [report what goes wrong](https://github.com/NilioDev/DesktopAdventureStories/issues).
+> real devices yet, so please use **Options → Report a problem** when
+> something goes wrong, or go through the [device test list](docs/device-testing.md).
 
 ## Features
 
@@ -213,8 +213,13 @@ on macOS right-click the app and choose *Open*. See
 <details>
 <summary><b>Something doesn't work.</b></summary>
 
-Please [open an issue](https://github.com/NilioDev/DesktopAdventureStories/issues)
-with your system, the game and what happened.
+Choose **Options → Report a problem** in the game. It opens a bug report in
+your browser with the version, your system and the end of the log already
+filled in; you only write what happened. Without a browser, please
+[open an issue](https://github.com/NilioDev/DesktopAdventureStories/issues/new?template=bug_report.yml)
+and add `log.txt` from the app's folder (next to the `library` folder in the
+table above). Want to help test on your own computer, phone or tablet? See
+the [device test list](docs/device-testing.md).
 </details>
 
 ## For developers

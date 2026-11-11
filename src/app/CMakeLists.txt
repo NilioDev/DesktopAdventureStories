@@ -16,6 +16,7 @@ set(DAS_APP_SOURCES
     settings.cpp
     touch_controls.cpp
     audio.cpp
+    problem_log.cpp
 )
 
 if(ANDROID)

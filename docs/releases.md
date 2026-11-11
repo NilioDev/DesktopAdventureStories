@@ -15,16 +15,21 @@ No package ever holds anything of the original games.
 
 ## Making a release
 
-1. Set the new version in `CMakeLists.txt` (`project(... VERSION x.y.z)`).
-   The Android version is taken from there as well.
-2. Merge that to `main`, then tag it: `git tag vx.y.z && git push origin vx.y.z`.
-   Or, on GitHub, open Releases, *Draft a new release*, type the new tag
-   `vx.y.z` (target `main`) and publish it; that makes the tag too.
-3. The workflow checks that the tag matches the version, builds everything
-   and creates the release with notes for each system. When the release was
-   already made on GitHub, the packages are added to it.
+1. On GitHub, open Releases, *Draft a new release*, type the new tag
+   `vx.y.z` (target `main`) and publish it; that makes the tag too. Or tag
+   it yourself: `git tag vx.y.z && git push origin vx.y.z`.
+2. The workflow takes the version from the tag, builds everything and adds
+   the packages to the release (or creates the release with notes for each
+   system). A release left without a title gets the tag as title.
 
-Starting the workflow by hand (Actions, Release, Run workflow) only builds
+The version in `CMakeLists.txt` is only used for builds that are not a
+release; raise it after a release, so that development builds say so.
+
+If a release has no packages because the workflow failed, fix the cause on
+`main`, then open Actions, Release, *Run workflow* and type the release's tag:
+the tag is built again and the packages are added to its release.
+
+Starting the workflow by hand without a tag only builds
 the packages, as workflow artifacts, to try the packaging.
 
 Desktop packages can also be made locally: build, then `cpack -C Release`

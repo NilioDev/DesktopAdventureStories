@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for helping! *Report a problem* in the game's Options fills in the version, your system and the log for you.
+        Thank you for helping! Press F8 in the game (both sticks on a gamepad, or *Report a bug* in the pause menu): it fills in this form for you and saves a bug snapshot (a zip) you can drag onto *What went wrong?*.
         Please never attach the original game files.
   - type: textarea
     id: what
@@ -33,6 +33,12 @@ body:
         - Star Wars Yoda Stories
         - Both
         - Not about a game
+  - type: textarea
+    id: snapshot
+    attributes:
+      label: Game state
+      description: Where you were and what you had. The game fills this in; the snapshot zip has the full state.
+      render: text
   - type: textarea
     id: log
     attributes:

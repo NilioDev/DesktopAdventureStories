@@ -114,6 +114,13 @@ Step facingStep(data::Facing facing) {
 
 int wrapAround(int value, int count) { return ((value % count) + count) % count; }
 
+// What a bug is about, picked on the bug page.
+constexpr const char* kBugKinds[] = {"Stuck",       "Wrong picture", "Puzzle or talk", "Fight",
+                                     "Sound",       "Controls",      "Menu or screen", "Other"};
+constexpr int kBugKindCount = static_cast<int>(std::size(kBugKinds));
+constexpr std::size_t kNoteLength = 400;
+constexpr std::size_t kInputLines = 150;
+
 } // namespace
 
 // Splits text into lines of at most `width` characters, at spaces. A word
@@ -615,6 +622,47 @@ bool Viewer::loadGame(int slot) {
         if (text.empty()) {
             return false;
         }
+        return applySave(text);
+    } catch (const std::exception& e) {
+        SDL_Log("Could not load the saved game: %s", e.what());
+        notice_ = "This save could not be read";
+        return false;
+    }
+}
+
+bool Viewer::loadSaveText(const std::string& text) {
+    try {
+        const world::SaveGame save = world::readSaveGame(text);
+        for (std::size_t i = 0; i < games_.size(); ++i) {
+            if ((games_[i]->game == data::Layout::Indy ? "indy" : "yoda") == save.game) {
+                if (i != current_) {
+                    world_.reset();
+                    current_ = i;
+                }
+                if (applySave(text)) {
+                    return true;
+                }
+                if (!world_ && mode_ == ViewMode::Play) {
+                    mode_ = ViewMode::Title;
+                    page_ = Page::Main;
+                }
+                return false;
+            }
+        }
+        notice_ = save.game == "indy" ? "This needs Indiana Jones" : "This needs Yoda Stories";
+        return false;
+    } catch (const std::exception& e) {
+        SDL_Log("Could not read the save in the snapshot: %s", e.what());
+        notice_ = "This save could not be read";
+        return false;
+    }
+}
+
+bool Viewer::applySave(const std::string& text) {
+    if (games_.empty()) {
+        return false;
+    }
+    try {
         const world::SaveGame save = world::readSaveGame(text);
         if (save.game != gameId()) {
             return false;
@@ -773,6 +821,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
             }
         }
         rows.push_back({RowId::HowToPlay, "How to play", ""});
+        rows.push_back({RowId::ReportBug, "Report a bug", ""});
         rows.push_back({RowId::Options, "Options", ""});
         rows.push_back({RowId::SaveAndQuit, generated_ ? "Save and quit" : "Back to viewer", ""});
         break;
@@ -858,6 +907,22 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Back, "Back", ""});
         break;
     case Page::Help: rows.push_back({RowId::Back, helpFrom_ == Page::None ? "Let's go" : "Back", ""}); break;
+    case Page::Bug: {
+        rows.push_back({RowId::BugKind, "Kind", kBugKinds[wrapAround(bugKind_, kBugKindCount)]});
+        std::string note = note_;
+        if (noteTyping_) {
+            // The end of what is typed, with a cursor.
+            note = (note.size() > 14 ? ".." + note.substr(note.size() - 12) : note) + "_";
+        }
+        rows.push_back({RowId::BugNote, "Note", noteTyping_ ? note : note.empty() ? "Add" : note});
+        rows.push_back({RowId::BugSave, "Save snapshot", ""});
+        rows.push_back({RowId::BugSend, "Report on GitHub", ""});
+        if (mode_ == ViewMode::Play) {
+            rows.push_back({RowId::Coordinates, "Show position", showCoordinates_ ? "On" : "Off"});
+        }
+        rows.push_back({RowId::Back, "Back", ""});
+        break;
+    }
     case Page::None: break;
     }
     return rows;
@@ -1046,7 +1111,23 @@ void Viewer::menuActivate(const Row& row, int change) {
         }
         break;
     }
-    case RowId::Report: report_ = true; break;
+    case RowId::Report:
+    case RowId::ReportBug: requestBugReport(); break;
+    case RowId::BugKind: bugKind_ = wrapAround(bugKind_ + change, kBugKindCount); break;
+    case RowId::BugNote:
+        if (change == 1) {
+            noteTyping_ = !noteTyping_;
+        }
+        break;
+    case RowId::BugSave:
+        noteTyping_ = false;
+        bugAction_ = BugAction::Save;
+        break;
+    case RowId::BugSend:
+        noteTyping_ = false;
+        bugAction_ = BugAction::Report;
+        break;
+    case RowId::Coordinates: showCoordinates_ = !showCoordinates_; break;
     case RowId::HowToPlay:
         helpFrom_ = page_;
         page_ = Page::Help;
@@ -1079,6 +1160,11 @@ void Viewer::menuBack() {
         page_ = helpFrom_;
         menuItem_ = 0;
         break;
+    case Page::Bug:
+        noteTyping_ = false;
+        page_ = bugFrom_;
+        menuItem_ = 0;
+        break;
     case Page::Main:
     case Page::None: break;
     }
@@ -1091,6 +1177,7 @@ void Viewer::update(const ActionState& actions, std::optional<Step> step, Uint64
         click_.reset();
         return;
     }
+    recordInput(actions, now);
     if (capture_ && now > captureUntil_) {
         capture_.reset(); // nothing pressed: keep the old controls
     }
@@ -1171,6 +1258,15 @@ void Viewer::handleClick(Uint64 now) {
     }
     const bool inMenu = mode_ == ViewMode::Title || (mode_ == ViewMode::Play && page_ != Page::None);
     if (inMenu) {
+        const bool wasTyping = noteTyping_;
+        noteTyping_ = false;
+        if (wasTyping && hit && hit->kind == Hit::Kind::Row) {
+            const auto rows = menuRows();
+            if (hit->index >= 0 && hit->index < static_cast<int>(rows.size()) &&
+                rows[static_cast<std::size_t>(hit->index)].id == RowId::BugNote) {
+                return; // a press on the note while typing ends the typing
+            }
+        }
         if (hit && (hit->kind == Hit::Kind::Row || hit->kind == Hit::Kind::RowLeft)) {
             const auto rows = menuRows();
             if (hit->index >= 0 && hit->index < static_cast<int>(rows.size())) {
@@ -1491,6 +1587,154 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
             break;
         }
         }
+    }
+}
+
+// --- bug reports -----------------------------------------------------------
+
+void Viewer::requestBugReport() {
+    if (games_.empty() || mode_ == ViewMode::Edit || page_ == Page::Bug || capturePending_) {
+        return;
+    }
+    capturePending_ = true;
+}
+
+void Viewer::setBugScreenshot(data::Bytes png) {
+    if (!capturePending_) {
+        return;
+    }
+    capturePending_ = false;
+    bugShot_ = std::move(png);
+    if (mode_ == ViewMode::Zone || mode_ == ViewMode::Tiles) {
+        mode_ = ViewMode::Title; // the data viewer has no menus
+        page_ = Page::Main;
+    }
+    // Options' "Report a problem" comes back to the options.
+    bugFrom_ = page_ == Page::Help ? helpFrom_ : page_;
+    page_ = Page::Bug;
+    menuItem_ = 0;
+    noteTyping_ = false;
+    walkTarget_.reset();
+    notice_.clear();
+    SDL_Log("Bug page opened");
+}
+
+std::string Viewer::bugText() const {
+    std::string text;
+    if (bugInGame()) {
+        text = "Zone " + std::to_string(world_->zoneIndex()) + " at " + std::to_string(world_->player().x) +
+               "," + std::to_string(world_->player().y) + ". ";
+    }
+    if (noteTyping_) {
+        return text + "Type what went wrong, Enter when done.\n" + note_ + "_";
+    }
+    text += "A snapshot keeps your note, a screenshot, the game's state, the last controls and the log. It stays on "
+            "this device until you add it to a report.";
+    if (!note_.empty()) {
+        text += "\nNote: " + note_;
+    }
+    return text;
+}
+
+std::string Viewer::bugWhat() const {
+    std::string what = "[" + std::string(kBugKinds[wrapAround(bugKind_, kBugKindCount)]) + "] ";
+    return what + (note_.empty() ? "(no note)" : note_);
+}
+
+std::string Viewer::bugSummary() const {
+    if (games_.empty()) {
+        return "No game installed.\n";
+    }
+    if (!bugInGame()) {
+        return "Game: " + gameId() + ", not playing (title screen or menu).\n";
+    }
+    return "Game: " + gameId() + (generated_ ? "" : " (single zone from the data viewer)") + "\n" +
+           world::describeWorld(*world_, game().data, generated_ ? &options_ : nullptr);
+}
+
+data::Bytes Viewer::bugSnapshot(world::SnapshotInfo info) const {
+    info.kind = kBugKinds[wrapAround(bugKind_, kBugKindCount)];
+    info.note = note_;
+    info.screenshot = bugShot_;
+    for (const auto& line : inputs_) {
+        info.inputs += line + "\n";
+    }
+    if (games_.empty()) {
+        return world::writeSnapshot(nullptr, nullptr, info);
+    }
+    info.game = gameId();
+    info.mods = game().mods;
+    info.difficulty = difficultyValue();
+    if (!bugInGame()) {
+        return world::writeSnapshot(nullptr, nullptr, info);
+    }
+    if (generated_) {
+        info.options = options_;
+    }
+    info.difficulty = world_->difficulty();
+    return world::writeSnapshot(&*world_, &game().data, info);
+}
+
+void Viewer::noteText(const char* utf8) {
+    if (!noteTyping_ || !utf8) {
+        return;
+    }
+    for (const char* c = utf8; *c; ++c) {
+        if (note_.size() >= kNoteLength) {
+            break;
+        }
+        if (*c != '\n' && *c != '\r' && *c != '\t') {
+            note_ += *c;
+        }
+    }
+}
+
+void Viewer::noteKey(SDL_Scancode key) {
+    if (!noteTyping_) {
+        return;
+    }
+    if (key == SDL_SCANCODE_BACKSPACE) {
+        // Take away a whole UTF-8 letter.
+        while (!note_.empty()) {
+            const auto c = static_cast<unsigned char>(note_.back());
+            note_.pop_back();
+            if ((c & 0xc0) != 0x80) {
+                break;
+            }
+        }
+    } else if (key == SDL_SCANCODE_RETURN || key == SDL_SCANCODE_KP_ENTER || key == SDL_SCANCODE_ESCAPE) {
+        noteTyping_ = false;
+    }
+}
+
+void Viewer::recordInput(const ActionState& actions, Uint64 now) {
+    std::string pressed;
+    for (std::size_t i = 0; i < kActionCount; ++i) {
+        const auto a = static_cast<Action>(i);
+        if (actions.wasPressed(a)) {
+            pressed += (pressed.empty() ? "" : " ") + std::string(actionName(a));
+        }
+    }
+    if (click_) {
+        char at[48];
+        SDL_snprintf(at, sizeof at, "%sclick %.0f,%.0f", pressed.empty() ? "" : " ", static_cast<double>(click_->x),
+                     static_cast<double>(click_->y));
+        pressed += at;
+    }
+    if (pressed.empty()) {
+        return;
+    }
+    char line[64];
+    SDL_snprintf(line, sizeof line, "%llu.%03llu ", static_cast<unsigned long long>(now / 1000),
+                 static_cast<unsigned long long>(now % 1000));
+    std::string entry = line + pressed;
+    if (mode_ == ViewMode::Play && world_) {
+        entry += "  (zone " + std::to_string(world_->zoneIndex()) + " at " + std::to_string(world_->player().x) + "," +
+                 std::to_string(world_->player().y) + (page_ != Page::None ? ", in a menu" : "") + ")";
+    }
+    inputs_.push_back(std::move(entry));
+    if (inputs_.size() > kInputLines) {
+        inputs_.pop_front();
     }
 }
 

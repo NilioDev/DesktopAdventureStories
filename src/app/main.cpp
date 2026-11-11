@@ -6,9 +6,9 @@
 // Usage: DesktopAdventureStories [game folder, zip or data file]
 //          [--game yoda|indy] [--mode title|zone|tiles|play|game|continue|edit] [--zone N]
 //          [--seed N] [--size small|medium|large]
-//          [--at X,Y] [--walk UDLR...] [--library DIR] [--reimport]
+//          [--at X,Y] [--walk UDLR...] [--library DIR] [--reimport] [--snapshot bug.zip]
 //        For screenshots and tests:
-//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map|mods]
+//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map|mods|bug]
 //          [--device keyboard|gamepad|touch] [--tap X,Y]...
 //
 // The first time a game is found it is imported into our own open format in
@@ -17,6 +17,9 @@
 // Games are looked for in the given path, DAS_GAMEDATA_DIR, or else a
 // "gamedata" folder next to the program (or the AppImage) or in the current
 // folder. A folder or zip can also be dropped on the window.
+//
+// --snapshot (or dropping a bug snapshot on the window) starts the game
+// saved in a bug snapshot, to see the problem again (docs/bug-snapshots.md).
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -25,7 +28,9 @@
 #include "das/constants.hpp"
 #include "das/input.hpp"
 #include "das/pack/import.hpp"
+#include "das/util/png.hpp"
 #include "das/util/report.hpp"
+#include "das/world/snapshot.hpp"
 #include "das/version.hpp"
 #include "audio.hpp"
 #include "input_bindings.hpp"
@@ -84,6 +89,7 @@ struct App {
     SDL_FRect chooseButton{}; // on the welcome screen
     std::optional<das::pack::Library> library;
     std::string loadMessage;
+    std::filesystem::path snapshotFolder; // bug snapshots
     std::string screenshotPath; // when set: render one frame, save it, quit
     bool crashedLastTime = false;
 };
@@ -343,9 +349,8 @@ void applySettings(App& app) {
     app.bindings.configure(app.settings);
 }
 
-// Opens a new GitHub issue with the bug form filled in: the version, the
-// system and the end of the log. The player only says what went wrong.
-void reportProblem(App& app) {
+// The platform, renderer, screen and gamepads, for reports.
+std::string systemText(const App& app) {
     std::string system = SDL_GetPlatform();
     if (const char* renderer = SDL_GetRendererName(app.renderer)) {
         system += ", renderer " + std::string(renderer);
@@ -356,14 +361,156 @@ void reportProblem(App& app) {
             system += ", gamepad " + std::string(name);
         }
     }
-    const das::report::Problem problem{std::string(das::kVersion), system, das::app::problem_log::tail()};
-    const std::string url = das::report::issueUrl("https://github.com/NilioDev/DesktopAdventureStories", problem);
-    SDL_Log("Report a problem: opening the issue form");
-    if (SDL_OpenURL(url.c_str())) {
-        app.viewer.setNotice("Your browser shows the report form. Thank you!");
+    return system;
+}
+
+// The time now: "2026-11-11 01:43:55", or for a file name "2026-11-11-014355".
+std::string localTime(bool forFileName) {
+    SDL_Time now = 0;
+    SDL_DateTime t{};
+    if (!SDL_GetCurrentTime(&now) || !SDL_TimeToDateTime(now, &t, true)) {
+        return "unknown";
+    }
+    char text[40];
+    if (forFileName) {
+        SDL_snprintf(text, sizeof text, "%04d-%02d-%02d-%02d%02d%02d", t.year, t.month, t.day, t.hour, t.minute, t.second);
     } else {
+        SDL_snprintf(text, sizeof text, "%04d-%02d-%02d %02d:%02d:%02d", t.year, t.month, t.day, t.hour, t.minute, t.second);
+    }
+    return text;
+}
+
+// The frame just drawn (without a menu over the game) becomes the bug
+// report's screenshot. Large screens are made smaller, in whole steps.
+void captureBugScreenshot(App& app) {
+    das::data::Bytes file;
+    if (SDL_Surface* shot = SDL_RenderReadPixels(app.renderer, nullptr)) {
+        if (SDL_Surface* rgba = SDL_ConvertSurface(shot, SDL_PIXELFORMAT_RGBA32)) {
+            const int step = std::max(1, (std::max(rgba->w, rgba->h) + 1599) / 1600);
+            das::png::RgbaImage image;
+            image.width = rgba->w / step;
+            image.height = rgba->h / step;
+            image.pixels.reserve(static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height) * 4);
+            for (int y = 0; y < image.height; ++y) {
+                const auto* row = static_cast<const Uint8*>(rgba->pixels) + static_cast<std::ptrdiff_t>(y * step) * rgba->pitch;
+                for (int x = 0; x < image.width; ++x) {
+                    const Uint8* p = row + static_cast<std::ptrdiff_t>(x * step) * 4;
+                    image.pixels.insert(image.pixels.end(), {p[0], p[1], p[2], 255});
+                }
+            }
+            try {
+                if (image.width > 0 && image.height > 0) {
+                    file = das::png::writeRgba(image);
+                }
+            } catch (const std::exception& e) {
+                SDL_Log("No screenshot for the bug report: %s", e.what());
+            }
+            SDL_DestroySurface(rgba);
+        }
+        SDL_DestroySurface(shot);
+    } else {
+        SDL_Log("No screenshot for the bug report: %s", SDL_GetError());
+    }
+    app.viewer.setBugScreenshot(std::move(file));
+}
+
+// Keeps the newest snapshots only.
+void pruneSnapshots(const std::filesystem::path& folder, std::size_t keep) {
+    std::error_code ec;
+    std::vector<std::filesystem::path> files;
+    for (const auto& e : std::filesystem::directory_iterator(folder, ec)) {
+        const std::string name = e.path().filename().string();
+        if (name.rfind("bug-", 0) == 0 && e.path().extension() == ".zip") {
+            files.push_back(e.path());
+        }
+    }
+    std::sort(files.begin(), files.end()); // the names hold the date and time
+    for (std::size_t i = 0; i + keep < files.size(); ++i) {
+        std::filesystem::remove(files[i], ec);
+    }
+}
+
+// Writes the bug snapshot; with `report`, also opens a new GitHub issue
+// with the bug form filled in (the player's words, the game's state, the
+// version, the system and the end of the log) and the snapshots folder, so
+// the zip can be dropped on the form.
+void saveBugSnapshot(App& app, bool report) {
+    das::world::SnapshotInfo info;
+    info.version = std::string(das::kVersion);
+    info.system = systemText(app);
+    info.time = localTime(false);
+    info.log = das::app::problem_log::tail();
+    std::string name;
+    bool saved = false;
+    if (!app.snapshotFolder.empty()) {
+        try {
+            const das::data::Bytes zip = app.viewer.bugSnapshot(info);
+            std::error_code ec;
+            std::filesystem::create_directories(app.snapshotFolder, ec);
+            name = "bug-" + localTime(true) + ".zip";
+            const auto path = app.snapshotFolder / name;
+            if (FILE* f = std::fopen(path.string().c_str(), "wb")) {
+                saved = std::fwrite(zip.data(), 1, zip.size(), f) == zip.size();
+                saved = std::fclose(f) == 0 && saved;
+            }
+            SDL_Log("Bug snapshot %s: %s (%zu bytes)", saved ? "saved" : "NOT saved", path.string().c_str(), zip.size());
+            pruneSnapshots(app.snapshotFolder, 30);
+        } catch (const std::exception& e) {
+            SDL_Log("Could not make the bug snapshot: %s", e.what());
+        }
+    }
+    if (!report) {
+        app.viewer.setNotice(saved ? "Saved " + name : "Could not save the snapshot", saved);
+        return;
+    }
+    std::string what = app.viewer.bugWhat();
+    if (saved) {
+        what += "\n\nSnapshot: " + name + " (drag it from the folder that opened onto this box to add it)";
+    }
+    das::report::Problem problem{info.version, info.system, info.log, what, app.viewer.bugSummary()};
+    const std::string url = das::report::issueUrl("https://github.com/NilioDev/DesktopAdventureStories", problem);
+    SDL_Log("Report a bug: opening the issue form");
+    bool opened = SDL_OpenURL(url.c_str());
+    if (!opened) {
         SDL_Log("Could not open %s", url.c_str());
-        app.viewer.setNotice("Could not open a browser. Report it on GitHub with log.txt.");
+    }
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    if (saved) {
+        SDL_OpenURL(("file://" + app.snapshotFolder.generic_string()).c_str());
+    }
+#endif
+    if (!opened) {
+        app.viewer.setNotice("Could not open a browser. Report it on GitHub with the snapshot.");
+    } else if (saved) {
+        app.viewer.setNotice("Add " + name + " to the form. Thank you!", true);
+    } else {
+        app.viewer.setNotice("Your browser shows the report form. Thank you!", true);
+    }
+}
+
+// Starts the game saved in a bug snapshot. Returns false when the file is
+// not a snapshot with a save game in it.
+bool openSnapshot(App& app, const std::string& path) {
+    std::size_t size = 0;
+    void* bytes = SDL_LoadFile(path.c_str(), &size);
+    if (!bytes) {
+        return false;
+    }
+    const auto* begin = static_cast<const std::uint8_t*>(bytes);
+    das::data::Bytes content(begin, begin + size);
+    SDL_free(bytes);
+    try {
+        const auto save = das::world::snapshotSave(content);
+        if (!save) {
+            return false;
+        }
+        SDL_Log("Starting the game from snapshot %s", path.c_str());
+        if (!app.viewer.loadSaveText(*save)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "The snapshot's game could not be started");
+        }
+        return true;
+    } catch (const std::exception&) {
+        return false; // not a zip: something else
     }
 }
 
@@ -378,8 +525,10 @@ void update(App& app, Uint64 now, Uint32 elapsedMs) {
                           app.viewer.inputDevice() == das::app::InputDevice::Touch);
     app.touch.setVisible(wantPad && app.viewer.playing(), app.actions);
     app.viewer.update(app.actions, app.mover.update(das::heldDirection(app.actions), elapsedMs), now);
-    if (app.viewer.takeReport()) {
-        reportProblem(app);
+    switch (app.viewer.takeBugAction()) {
+    case das::app::Viewer::BugAction::Save: saveBugSnapshot(app, false); break;
+    case das::app::Viewer::BugAction::Report: saveBugSnapshot(app, true); break;
+    case das::app::Viewer::BugAction::None: break;
     }
     app.audio.update();
     if (app.viewer.takeSettingsChanged()) {
@@ -496,9 +645,11 @@ void render(App& app, Uint64 now) {
                      ? das::app::ui::plainLayout(pw, ph, app.viewer.editorScale(pw, ph))
                      : das::app::ui::layout(pw, ph, app.settings.pixelPerfect,
                                             app.touch.visible() ? das::app::TouchControls::kBottomRoom : 0);
-    // The editor's text fields want the keyboard (on phones: the on-screen one).
-    if (app.viewer.editorTyping() != SDL_TextInputActive(app.window)) {
-        if (app.viewer.editorTyping()) {
+    // The editor's text fields and the bug note want the keyboard (on
+    // phones: the on-screen one).
+    const bool typing = app.viewer.editorTyping() || app.viewer.typingNote();
+    if (typing != SDL_TextInputActive(app.window)) {
+        if (typing) {
             SDL_StartTextInput(app.window);
         } else {
             SDL_StopTextInput(app.window);
@@ -514,6 +665,9 @@ void render(App& app, Uint64 now) {
         renderWelcome(app);
     } else {
         app.viewer.render(r, app.layout, now);
+        if (app.viewer.wantsScreenshot()) {
+            captureBugScreenshot(app); // before the touch pad is drawn over it
+        }
         app.touch.render(r);
     }
 }
@@ -558,6 +712,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     std::string menu;
     std::string device;
     std::vector<SDL_FPoint> taps;
+    std::string snapshot;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         const bool hasValue = i + 1 < argc;
@@ -593,6 +748,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
             if (std::sscanf(argv[++i], "%f,%f", &p.x, &p.y) == 2) {
                 taps.push_back(p);
             }
+        } else if (arg == "--snapshot" && hasValue) {
+            snapshot = argv[++i];
         } else if (arg == "--screenshot" && hasValue) {
             app->screenshotPath = argv[++i];
         } else if (!arg.empty() && arg[0] != '-') {
@@ -642,6 +799,16 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         app->settingsFile = app->library->root().parent_path() / "settings.json";
         app->settings = das::app::loadSettings(app->settingsFile);
         app->viewer.setModsFolder(app->library->root().parent_path() / "mods");
+        app->snapshotFolder = app->library->root().parent_path() / "snapshots";
+#if defined(SDL_PLATFORM_ANDROID)
+        // Where a file manager (or a computer over USB) can reach them:
+        // Android/data/<app>/files/snapshots.
+        if ((SDL_GetAndroidExternalStorageState() & SDL_ANDROID_EXTERNAL_STORAGE_WRITE) != 0) {
+            if (const char* external = SDL_GetAndroidExternalStoragePath()) {
+                app->snapshotFolder = std::filesystem::path(external) / "snapshots";
+            }
+        }
+#endif
         if (app->screenshotPath.empty() && das::app::problem_log::attach(app->library->root().parent_path())) {
             app->crashedLastTime = true;
         }
@@ -683,6 +850,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         }
         app->viewer.walk(walkPath);
     }
+    if (!snapshot.empty() && !openSnapshot(*app, snapshot)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s is not a bug snapshot with a saved game", snapshot.c_str());
+    }
     if (menu == "mods") {
         app->viewer.openMods();
     } else if (menu == "pause" || menu == "options" || menu == "controls") {
@@ -692,6 +862,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         }
     } else if (menu == "map") {
         app->viewer.openMap();
+    } else if (menu == "bug") {
+        app->viewer.requestBugReport();
+        render(*app, SDL_GetTicks()); // takes the screenshot and opens the page
     }
     if (app->crashedLastTime) {
         app->viewer.setNotice("The game stopped unexpectedly. Options, Report a problem helps fix it.");
@@ -807,9 +980,46 @@ void forwardToEditor(App& app, const SDL_Event& event) {
     app.viewer.editorEvent(e);
 }
 
+// While the bug note takes typed text, keys type instead of playing.
+bool typeNote(App& app, const SDL_Event& event) {
+    if (!app.viewer.typingNote()) {
+        return false;
+    }
+    switch (event.type) {
+    case SDL_EVENT_TEXT_INPUT: app.viewer.noteText(event.text.text); return true;
+    case SDL_EVENT_KEY_DOWN: app.viewer.noteKey(event.key.scancode); return true;
+    // Key releases still reach the bindings: the key that started the
+    // typing must be let go.
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: app.viewer.endTyping(); return true;
+    default: return false;
+    }
+}
+
+// F8, or both sticks pressed in on a gamepad: report a bug.
+bool bugShortcut(App& app, const SDL_Event& event) {
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.scancode == SDL_SCANCODE_F8) {
+        app.viewer.requestBugReport();
+        return true;
+    }
+    if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
+        (event.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_STICK || event.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK)) {
+        const auto other = event.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_STICK ? SDL_GAMEPAD_BUTTON_RIGHT_STICK
+                                                                               : SDL_GAMEPAD_BUTTON_LEFT_STICK;
+        if (SDL_Gamepad* pad = SDL_GetGamepadFromID(event.gbutton.which); pad && SDL_GetGamepadButton(pad, other)) {
+            app.viewer.setInputDevice(das::app::InputDevice::Gamepad);
+            app.viewer.requestBugReport();
+            return true;
+        }
+    }
+    return false;
+}
+
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     auto& app = *static_cast<App*>(appstate);
-    if (captureControl(app, *event)) {
+    if (captureControl(app, *event) || typeNote(app, *event)) {
+        return SDL_APP_CONTINUE;
+    }
+    if (!app.viewer.editing() && bugShortcut(app, *event)) {
         return SDL_APP_CONTINUE;
     }
     if (app.viewer.editing()) {
@@ -837,7 +1047,11 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     case SDL_EVENT_DROP_FILE:
         if (event->drop.data) {
             app.loadMessage.clear();
-            importGames(app, event->drop.data, false);
+            const std::string dropped = event->drop.data;
+            const bool zip = dropped.size() > 4 && SDL_strcasecmp(dropped.c_str() + dropped.size() - 4, ".zip") == 0;
+            if (!(zip && !app.viewer.empty() && openSnapshot(app, dropped))) {
+                importGames(app, dropped, false);
+            }
         }
         break;
     case SDL_EVENT_KEY_DOWN: app.viewer.setInputDevice(das::app::InputDevice::Keyboard); break;

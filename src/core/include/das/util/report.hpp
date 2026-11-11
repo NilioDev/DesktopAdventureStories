@@ -18,10 +18,13 @@ struct Problem {
     std::string version;
     std::string system;
     std::string log;
+    std::string what;     // the player's own words, for "What went wrong?"
+    std::string snapshot; // the state of the game at the moment (bug snapshot)
 };
 
 // The repository's "new issue" link for the bug form. Lines are dropped from
-// the start of the log until the whole link fits in maxLength characters.
+// the start of the log (and then from the end of the snapshot) until the
+// whole link fits in maxLength characters.
 std::string issueUrl(std::string_view repository, const Problem& problem, std::size_t maxLength = 6000);
 
 } // namespace das::report

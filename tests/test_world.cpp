@@ -2,6 +2,9 @@
 #include "test.hpp"
 
 #include "das/data/tile_flags.hpp"
+#include "das/util/zip.hpp"
+#include "das/world/savegame.hpp"
+#include "das/world/snapshot.hpp"
 #include "das/world/world.hpp"
 
 using namespace das;
@@ -104,4 +107,51 @@ DAS_TEST("start puts the player on the exit door or a free cell") {
     put(data.zones[0], 2, 2, kWall); // middle blocked
     w.start(0);
     DAS_CHECK(w.walkable(w.player()));
+}
+
+DAS_TEST("a bug snapshot holds the report, the state and the files it was given") {
+    auto data = makeWorld();
+    data.tileNames.push_back({kBlock, "Blue crate"});
+    world::World w(data);
+    w.enter(0, {2, 2});
+    w.addItem(kBlock);
+    const std::string text = world::describeWorld(w, data);
+    DAS_CHECK(text.find("Zone: 0 (5x5") != std::string::npos);
+    DAS_CHECK(text.find("Hero: at 2,2") != std::string::npos);
+    DAS_CHECK(text.find("Items: Blue crate (tile 2)") != std::string::npos);
+
+    world::SnapshotInfo info;
+    info.kind = "Stuck";
+    info.note = "the block won't move";
+    info.version = "0.0.1";
+    info.game = "yoda";
+    info.options = world::GeneratorOptions{};
+    info.inputs = "1.000 Use\n";
+    info.log = "a log line\n";
+    info.screenshot = {1, 2, 3};
+    const data::Bytes snapshot = world::writeSnapshot(&w, &data, info);
+    std::vector<std::string> names;
+    std::string report;
+    for (const auto& e : zip::read(snapshot)) {
+        names.push_back(e.name);
+        if (e.name == "report.txt") {
+            report.assign(e.content.begin(), e.content.end());
+        }
+    }
+    DAS_CHECK((names == std::vector<std::string>{"report.txt", "save.json", "screenshot.png", "inputs.txt", "log.txt"}));
+    DAS_CHECK(report.find("Note: the block won't move") != std::string::npos);
+    DAS_CHECK(report.find("Hero: at 2,2") != std::string::npos);
+    const auto save = world::snapshotSave(snapshot);
+    DAS_CHECK(save.has_value());
+    DAS_CHECK(world::readSaveGame(*save).game == "yoda");
+
+    // A single zone has no save game, only its state.
+    info.options.reset();
+    const auto zoneOnly = zip::read(world::writeSnapshot(&w, &data, info));
+    DAS_CHECK(zoneOnly.size() == 5 && zoneOnly[1].name == "state.json");
+
+    // On the title screen there is no world: only the report.
+    const data::Bytes title = world::writeSnapshot(nullptr, nullptr, world::SnapshotInfo{});
+    DAS_CHECK(zip::read(title).size() == 1);
+    DAS_CHECK(!world::snapshotSave(title).has_value());
 }

@@ -41,15 +41,19 @@ smaller, for screens at least 320 units on their short side.
   the device used last (keyboard, gamepad or touch). It opens by itself at
   the very first game (`howToPlaySeen` in the settings) and from the pause
   menu.
-- **Pause menu:** Resume, Map, Save game, Load game, How to play, Options,
-  Save and quit. The game waits while it is open. *Save game* lists the three slots;
+- **Pause menu:** Resume, Map, Save game, Load game, How to play, Report a
+  bug, Options, Save and quit. The game waits while it is open. *Save game* lists the three slots;
   one in use asks *Overwrite?* first. It is also where the game waits after
   the app was in the background.
 - **Options:** Fullscreen (desktop), Scaling (Pixel / Fill), Filter (Sharp,
   Smooth, or Scanlines over the play field), Sound and Music volume, Touch
-  pad, Controls and Report a problem. *Report a problem* opens a new GitHub
-  issue in the browser with the version, the system and the end of the log
-  filled in (`src/app/problem_log.hpp`).
+  pad, Controls and Report a problem. *Report a problem* opens the bug page.
+- **Report a bug:** F8, both gamepad sticks pressed in, or the pause menu.
+  Kind, Note, Save snapshot, Report on GitHub, Show position and Back; it
+  saves a bug snapshot and can open a new GitHub issue with the note, the
+  game's state, the version, the system and the end of the log filled in.
+  See [bug-snapshots.md](bug-snapshots.md); the log is kept by
+  `src/app/problem_log.hpp`.
 - **Controls:** every action with its keys, or its gamepad buttons when a
   gamepad was used last. Choosing one waits six seconds for the new key or
   button (Esc cancels); it becomes the only one for that action and is taken
@@ -100,7 +104,7 @@ missing or damaged file gives the defaults.
 
 ## Testing options
 
-`--window WxH` sets the window size, `--menu pause|options|controls|map` opens a
+`--window WxH` sets the window size, `--menu pause|options|controls|map|bug` opens a
 menu, `--device keyboard|gamepad|touch|touch-pad` picks the hints and `--tap X,Y`
 presses at a point (in units) after the first frame. With `--screenshot` they
 make pictures of every screen for checking a change.

@@ -21,24 +21,55 @@ std::string urlEncode(std::string_view text) {
     return out;
 }
 
+namespace {
+
+// Drops the oldest line of a text (or, for one long line, its first half).
+void dropFront(std::string_view& text) {
+    const auto newline = text.find('\n');
+    text.remove_prefix(newline != std::string_view::npos && newline + 1 < text.size() ? newline + 1
+                                                                                       : (text.size() + 1) / 2);
+}
+
+// Drops the last line of a text (or, for one long line, its second half).
+void dropBack(std::string_view& text) {
+    std::string_view rest = text;
+    while (!rest.empty() && rest.back() == '\n') {
+        rest.remove_suffix(1);
+    }
+    const auto newline = rest.rfind('\n');
+    text = newline != std::string_view::npos ? text.substr(0, newline + 1) : text.substr(0, rest.size() / 2);
+}
+
+} // namespace
+
 std::string issueUrl(std::string_view repository, const Problem& problem, std::size_t maxLength) {
     std::string base(repository);
     base += "/issues/new?template=bug_report.yml&labels=bug";
     base += "&version=" + urlEncode(problem.version);
     base += "&system=" + urlEncode(problem.system);
+    if (!problem.what.empty()) {
+        base += "&what=" + urlEncode(problem.what);
+    }
+    std::string_view snapshot = problem.snapshot;
     std::string_view log = problem.log;
     for (;;) {
         std::string url = base;
+        if (!snapshot.empty()) {
+            url += "&snapshot=" + urlEncode(snapshot);
+        }
         if (!log.empty()) {
             url += "&log=" + urlEncode(log);
         }
-        if (url.size() <= maxLength || log.empty()) {
-            return url.size() <= maxLength ? url : base;
+        if (url.size() <= maxLength) {
+            return url;
         }
-        // Drop the oldest line (or, for one long line, its first half).
-        const auto newline = log.find('\n');
-        log.remove_prefix(newline != std::string_view::npos && newline + 1 < log.size() ? newline + 1
-                                                                                         : (log.size() + 1) / 2);
+        if (!log.empty()) {
+            dropFront(log);
+        } else if (!snapshot.empty()) {
+            dropBack(snapshot);
+        } else {
+            return base;
+        }
     }
 }
 

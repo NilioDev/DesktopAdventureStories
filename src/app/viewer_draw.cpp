@@ -95,18 +95,29 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
         renderPlay(renderer, field, now);
         renderScanlines(renderer, field, layout.scale);
         renderHud(renderer, layout.panel);
-        if (page_ != Page::None) {
+        if (showCoordinates_ && !capturePending_) {
+            const std::string where = "zone " + std::to_string(world_->zoneIndex()) + "  " +
+                                      std::to_string(world_->player().x) + "," + std::to_string(world_->player().y);
+            ui::fill(renderer, {field.x, field.y, ui::textWidth(where) + 8, 12}, ui::color::shade);
+            ui::text(renderer, field.x + 4, field.y + 2, where, ui::color::accent);
+        }
+        // A bug report's screenshot is taken without the menu over the game.
+        if (page_ != Page::None && !capturePending_) {
             // The game waits under a dimmed screen.
             ui::fill(renderer, {0, 0, layout.width, layout.height}, ui::color::shade);
             hits_.clear(); // only the menu takes presses now
             const bool help = page_ == Page::Help;
-            const float w = std::min(field.w - 2 * kPad, help ? 272.0f : 240.0f);
+            const bool card = help || page_ == Page::Bug; // a text above the rows
+            const float w = std::min(field.w - 2 * kPad, card ? 272.0f : 240.0f);
             const auto rows = static_cast<float>(menuRows().size());
-            const auto helpLines =
-                help ? wrapText(howToPlayText(), static_cast<std::size_t>((w - 2 * kPad) / ui::kFont))
+            auto cardLines =
+                card ? wrapText(help ? howToPlayText() : bugText(), static_cast<std::size_t>((w - 2 * kPad) / ui::kFont))
                      : std::vector<std::string>{};
-            const float textH = static_cast<float>(helpLines.size()) * 10 + (help ? 6 : 0);
-            const float h = (help ? 2 * kPad + 18 + 2 : 40) + rows * kRow + textH + (notice_.empty() ? 0 : 14);
+            if (!help && cardLines.size() > 9) {
+                cardLines.erase(cardLines.begin() + 1, cardLines.end() - 8); // the end of a long note
+            }
+            const float textH = static_cast<float>(cardLines.size()) * 10 + (card ? 6 : 0);
+            const float h = (card ? 2 * kPad + 18 + 2 : 40) + rows * kRow + textH + (notice_.empty() ? 0 : 14);
             const SDL_FRect box{std::floor(field.x + (field.w - w) / 2),
                                 std::floor(std::max(field.y, field.y + (field.h - h) / 2)), w, h};
             ui::panel(renderer, box);
@@ -114,13 +125,14 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
                                   : page_ == Page::Controls ? "Controls"
                                   : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
                                   : help                    ? "How to play"
+                                  : card                    ? "Report a bug"
                                                             : "Paused";
-            if (help) {
+            if (card) {
                 float ty = box.y + kPad;
                 ui::text(renderer, box.x + kPad, ty, heading, ui::color::accent);
                 ty += 18;
-                for (const auto& line : helpLines) {
-                    ui::text(renderer, box.x + kPad, ty, line, ui::color::text);
+                for (const auto& line : cardLines) {
+                    ui::text(renderer, box.x + kPad, ty, line, help ? ui::color::text : ui::color::dim);
                     ty += 10;
                 }
                 renderMenu(renderer, {box.x + kPad, ty + 6, box.w - 2 * kPad, rows * kRow}, nullptr);
@@ -515,6 +527,7 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
                           : page_ == Page::Controls ? "Controls"
                           : page_ == Page::Mods     ? "Mods"
                           : page_ == Page::Slots    ? "Load game"
+                          : page_ == Page::Bug      ? "Report a bug"
                                                     : nullptr;
     renderMenu(renderer, {x, y, w, rows * kRow}, heading);
     y += rows * kRow + (heading ? 18 : 0) + kPad;
@@ -531,6 +544,10 @@ void Viewer::renderTitlePanel(SDL_Renderer* renderer, const SDL_FRect& panel) co
     }
     if (!notice_.empty()) {
         paragraph(notice_, noticeGood_ ? ui::color::good : ui::color::danger, 4);
+    }
+    if (page_ == Page::Bug) {
+        paragraph(bugText(), ui::color::dim, 12);
+        return;
     }
     if (!game().modProblem.empty() && (page_ == Page::Main || page_ == Page::Mods)) {
         paragraph(game().modProblem, ui::color::danger, 6);

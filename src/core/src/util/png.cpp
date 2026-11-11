@@ -89,6 +89,32 @@ Bytes write(const IndexedImage& image) {
     return out;
 }
 
+Bytes writeRgba(const RgbaImage& image) {
+    const std::size_t stride = static_cast<std::size_t>(image.width) * 4;
+    if (image.width <= 0 || image.height <= 0 || image.pixels.size() != stride * static_cast<std::size_t>(image.height)) {
+        throw DataError("image size does not match its pixels");
+    }
+    Bytes out(kSignature.begin(), kSignature.end());
+    Bytes ihdr;
+    put32(ihdr, static_cast<std::uint32_t>(image.width));
+    put32(ihdr, static_cast<std::uint32_t>(image.height));
+    ihdr.insert(ihdr.end(), {8, 6, 0, 0, 0}); // depth 8, RGBA, deflate, filter 0, no interlace
+    chunk(out, "IHDR", ihdr);
+    // Filter "sub" on every row: flat areas of colour become runs of zeros.
+    Bytes raw;
+    raw.reserve(image.pixels.size() + static_cast<std::size_t>(image.height));
+    for (int y = 0; y < image.height; ++y) {
+        raw.push_back(1);
+        const std::uint8_t* row = image.pixels.data() + static_cast<std::size_t>(y) * stride;
+        for (std::size_t i = 0; i < stride; ++i) {
+            raw.push_back(static_cast<std::uint8_t>(row[i] - (i >= 4 ? row[i - 4] : 0)));
+        }
+    }
+    chunk(out, "IDAT", zlib::compress(raw));
+    chunk(out, "IEND", {});
+    return out;
+}
+
 namespace {
 
 // A PNG file after inflating and unfiltering: one byte per channel.

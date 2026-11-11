@@ -33,6 +33,9 @@ struct RgbaImage {
     std::vector<std::uint8_t> pixels; // width * height * 4: red, green, blue, alpha
 };
 
+// Writes an 8-bit RGBA PNG (a screenshot).
+data::Bytes writeRgba(const RgbaImage& image);
+
 // Reads any 8-bit PNG without interlacing (grey, RGB, palette, with or
 // without alpha), as drawing programs save them.
 RgbaImage readRgba(data::ByteView file);

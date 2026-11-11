@@ -12,6 +12,7 @@
 #include "das/input.hpp"
 #include "das/pack/mod.hpp"
 #include "das/pack/pack.hpp"
+#include "das/world/snapshot.hpp"
 #include "das/world/world.hpp"
 
 #include "audio.hpp"
@@ -96,19 +97,13 @@ public:
     // True once after the options menu changed a setting.
     bool takeSettingsChanged();
     bool quitRequested() const { return quit_; }
-    // True once after the player chose Add games in the menu.
-    // The player asked to report a problem (Options); the app opens the link.
-    bool takeReport() {
-        const bool asked = report_;
-        report_ = false;
-        return asked;
-    }
     // A short message under the menu (cleared by the next menu choice): a
     // problem, or with `good` news such as a game that is ready.
     void setNotice(std::string text, bool good = false) {
         notice_ = std::move(text);
         noticeGood_ = good;
     }
+    // True once after the player chose Add games in the menu.
     bool takeAddGames() {
         const bool asked = addGames_;
         addGames_ = false;
@@ -120,6 +115,37 @@ public:
     // the next key or button to the bindings and then calls endCapture().
     std::optional<Action> capturing() const { return capture_; }
     void endCapture() { capture_.reset(); }
+
+    // Bug reports (docs/bug-snapshots.md). F8, both sticks pressed in, the
+    // pause menu or Options, Report a problem ask for one: the next frame is
+    // drawn without a menu and handed back as a screenshot, then the "Report
+    // a bug" page opens.
+    void requestBugReport();
+    bool wantsScreenshot() const { return capturePending_; }
+    void setBugScreenshot(data::Bytes png);
+    enum class BugAction { None, Save, Report };
+    // What the player chose on the bug page; the app writes the snapshot.
+    BugAction takeBugAction() {
+        const BugAction a = bugAction_;
+        bugAction_ = BugAction::None;
+        return a;
+    }
+    // The snapshot as a zip file, with what the viewer knows filled in on
+    // top of `info` (version, system and log come from the app).
+    data::Bytes bugSnapshot(world::SnapshotInfo info) const;
+    // The state of the game for the report form, and the player's words.
+    std::string bugSummary() const;
+    std::string bugWhat() const;
+    bool bugInGame() const { return mode_ == ViewMode::Play && world_.has_value(); }
+    // The note on the bug page takes typed text while this is true.
+    bool typingNote() const { return noteTyping_; }
+    void noteText(const char* utf8);
+    // Backspace takes a letter away; Enter and Esc end the typing.
+    void noteKey(SDL_Scancode key);
+    void endTyping() { noteTyping_ = false; }
+    // Loads a save game given as text (a snapshot's save.json), switching to
+    // its game. Returns false (with a notice) when it cannot be used.
+    bool loadSaveText(const std::string& text);
 
     // Where games are saved; without it nothing is saved.
     void setSaveFolder(std::filesystem::path folder) { saveFolder_ = std::move(folder); }
@@ -152,7 +178,7 @@ public:
 
 private:
     // Menus: the title screen's, the pause menu and the options.
-    enum class Page { None, Main, Pause, Options, Controls, Mods, Slots, Help };
+    enum class Page { None, Main, Pause, Options, Controls, Mods, Slots, Help, Bug };
     enum class RowId {
         Continue,
         NewGame,
@@ -184,6 +210,12 @@ private:
         Report,
         HowToPlay,
         Editor,
+        ReportBug,
+        BugKind,
+        BugNote,
+        BugSave,
+        BugSend,
+        Coordinates,
         Back,
     };
     struct Row {
@@ -232,6 +264,8 @@ private:
     std::filesystem::path savePath(int slot) const;
     bool writeSave(int slot);
     bool loadGame(int slot);
+    // Loads a save game's text into the current game.
+    bool applySave(const std::string& text);
     // The newest slot with a save, or -1.
     int newestSlot() const;
     void openSlots(bool saving);
@@ -260,6 +294,9 @@ private:
     std::string controlName(Action action) const;
     // The "How to play" card: the aim of the game and the controls.
     std::string howToPlayText() const;
+    // The text above the rows of the bug page.
+    std::string bugText() const;
+    void recordInput(const ActionState& actions, Uint64 now);
     void addHit(Hit::Kind kind, const SDL_FRect& rect, int index = 0) const;
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
@@ -308,8 +345,18 @@ private:
     Uint64 captureUntil_ = 0;
     bool quit_ = false;
     bool addGames_ = false;
-    bool report_ = false;
     bool titleSong_ = false; // the title song was started on this visit
+
+    // The bug page.
+    bool capturePending_ = false; // the next frame becomes the screenshot
+    data::Bytes bugShot_;
+    Page bugFrom_ = Page::Main;
+    int bugKind_ = 0;
+    std::string note_;
+    bool noteTyping_ = false;
+    BugAction bugAction_ = BugAction::None;
+    bool showCoordinates_ = false; // zone and position over the play field
+    std::deque<std::string> inputs_; // the last controls pressed
 
     // Pointer input and walking to a tapped cell.
     InputDevice device_ = InputDevice::Keyboard;

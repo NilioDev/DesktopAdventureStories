@@ -26,9 +26,12 @@ has.
 - On a tall screen (a phone held upright) the panel sits below the field and
   takes the rest of the screen.
 - In play (`ui::layout` with `hud`) there is a column of cards on each side
-  of the field (128 units each, `layout.left` and `layout.panel`) and the
-  item bar (48 units, `layout.bar`) under it. On a tall screen the two
-  columns share the room under the field, side by side, above the bar.
+  of the field (`layout.left` and `layout.panel`, 128 units wide or wider,
+  up to 200, to fill the room beside the field) and the item bar (48 units,
+  `layout.bar`) under it. When putting the bar at the bottom of the right
+  column instead lets the field grow (a wide window that is not very high),
+  it goes there. On a tall screen the two columns share the room under the
+  field, side by side, above the bar.
 
 The interface scale is the largest one that does not make the play field
 smaller, for screens at least 320 units on their short side.

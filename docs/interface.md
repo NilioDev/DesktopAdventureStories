@@ -3,8 +3,9 @@
 The play field shows the original pixel art. Everything around it is our
 own, drawn with plain shapes (panels and buttons with round corners,
 `ui::fillRounded`) and the Fira Sans font (SIL Open Font License,
-`assets/fonts`), in one colour scheme (`src/app/ui.hpp`). The accent colour follows the game:
-amber for Indy, green for Yoda (`ui::setAccent`). Speech bubbles
+`assets/fonts`), in a colour scheme per game (`src/app/ui.hpp`, `ui::setTheme`): warm brown
+panels with amber for Indy, deep teal panels with green for Yoda. The game
+cards use neutral grey with the accent of the chosen card. Speech bubbles
 during play use the 8x8 pixel font PxPlus IBM CGA (CC BY-SA 4.0), always at
 a whole multiple of its 8 pixels and without smoothing (`ui::Font::Story`). Text is drawn with
 SDL_ttf at the screen's own resolution, so it stays sharp at every interface

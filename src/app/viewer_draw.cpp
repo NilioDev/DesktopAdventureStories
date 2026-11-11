@@ -54,7 +54,17 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
     // Each game has its own colour; on the cards it is the chosen card's.
     const bool picking = mode_ == ViewMode::Title && page_ == Page::Pick;
     const bool indy = picking ? pickCard() == 0 : game().game == data::Layout::Indy;
-    ui::setAccent(indy ? ui::kIndyAccent : ui::kYodaAccent, indy ? ui::kIndyInk : ui::kYodaInk);
+    ui::Theme theme = indy ? ui::kIndyTheme : ui::kYodaTheme;
+    if (picking) {
+        theme = ui::kNeutralTheme;
+        theme.accent = indy ? ui::kIndyAccent : ui::kYodaAccent;
+        theme.accentInk = indy ? ui::kIndyInk : ui::kYodaInk;
+    }
+    ui::setTheme(theme);
+    if (!picking) {
+        // The screen behind everything, in the game's own tint.
+        ui::fill(renderer, {0, 0, layout.width, layout.height}, ui::color::background);
+    }
     if (picking) {
         renderPicker(renderer, layout);
         return;
@@ -352,7 +362,7 @@ void Viewer::renderMapCells(SDL_Renderer* renderer, const MapHere& here, float x
 void Viewer::renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const {
     const MapHere here = mapHere();
     const world::Map& map = *here.map;
-    ui::fill(renderer, field, {12, 14, 20, 235});
+    ui::fill(renderer, field, {ui::color::background.r, ui::color::background.g, ui::color::background.b, 235});
     ui::text(renderer, field.x + kPad + 2, field.y + kPad + 2, "Map", ui::color::accent, 1.4f);
     const float legendH = 14;
     const float area = std::min(field.w, field.h - 2 * legendH) - 4 * kPad;
@@ -638,7 +648,7 @@ void Viewer::renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) c
 namespace {
 
 constexpr float kCardPad = 8;
-constexpr ui::Color kWell{14, 16, 22}; // behind an item's picture
+constexpr ui::Color kWell{0, 0, 0, 90}; // behind an item's picture
 
 // A card of the play screen, `h` high at the top of what is left of a
 // column; returns false (and draws nothing) when it does not fit.
@@ -657,7 +667,7 @@ bool card(SDL_Renderer* r, SDL_FRect& column, float h, SDL_FRect& out) {
 float keyLabel(SDL_Renderer* r, float x, float centerY, const std::string& name) {
     const float w = ui::textWidth(name) + 8;
     const SDL_FRect box{x, std::floor(centerY - 7), w, 14};
-    ui::outlineRounded(r, box, 4, {74, 79, 92});
+    ui::outlineRounded(r, box, 4, ui::color::border);
     ui::text(r, box.x + 4, box.y + 3, name, ui::color::text);
     return w;
 }

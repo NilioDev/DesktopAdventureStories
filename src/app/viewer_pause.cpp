@@ -18,7 +18,7 @@ constexpr float kMargin = 8;
 constexpr float kTabH = 22;
 constexpr float kCardPad = 12;
 constexpr float kTile = 32;
-constexpr ui::Color kWell{14, 16, 22};
+constexpr ui::Color kWell{0, 0, 0, 90};
 
 const char* tabName(int tab) { return tab == 0 ? "Menu" : tab == 1 ? "Map" : "Backpack"; }
 
@@ -124,7 +124,7 @@ void Viewer::renderPause(SDL_Renderer* renderer, const ui::Layout& layout) const
     if (keys) {
         const auto label = [&](float x, const std::string& name) {
             const SDL_FRect box{x, strip.y + (strip.h - 14) / 2, ui::textWidth(name) + 8, 14};
-            ui::outlineRounded(renderer, box, 4, {74, 79, 92});
+            ui::outlineRounded(renderer, box, 4, ui::color::border);
             ui::text(renderer, box.x + 4, box.y + 3, name, ui::color::text);
         };
         const std::string prev = controlName(Action::InventoryPrev);

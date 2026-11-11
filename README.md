@@ -46,8 +46,8 @@ own adventures.
 - 🃏 **Pick your adventure.** The game starts with a card for each game,
   Indiana Jones first and Yoda Stories next to it, showing the game's own
   title screen from your files and when you last saved. Continue right away
-  or start a new adventure. Each game has its own colour: amber for Indy,
-  green for Yoda.
+  or start a new adventure. Each game has its own colours: warm brown and
+  amber for Indy, deep teal and green for Yoda, all through the interface.
 - 🖥️ **Modern interface.** Your own game's pixel art, scaled sharply to any
   window. In the game, floating cards around the play field show your health
   as a ring, your weapon, a **minimap** with the puzzles still open and the

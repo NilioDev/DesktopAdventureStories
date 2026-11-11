@@ -280,9 +280,13 @@ void fill(SDL_Renderer* renderer, const SDL_FRect& rect, Color c) {
     SDL_RenderFillRect(renderer, &rect);
 }
 
-void setAccent(Color accent, Color ink) {
-    color::accent = accent;
-    color::accentInk = ink;
+void setTheme(const Theme& theme) {
+    color::background = theme.background;
+    color::panel = theme.panel;
+    color::panelLight = theme.panelLight;
+    color::border = theme.border;
+    color::accent = theme.accent;
+    color::accentInk = theme.accentInk;
 }
 
 namespace {

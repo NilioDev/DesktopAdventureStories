@@ -123,42 +123,9 @@ constexpr std::size_t kInputLines = 150;
 
 } // namespace
 
-// Splits text into lines of at most `width` characters, at spaces. A word
-// longer than a line (a file path) is cut.
-std::vector<std::string> wrapText(const std::string& text, std::size_t width) {
-    std::vector<std::string> lines;
-    std::size_t start = 0;
-    while (start <= text.size()) {
-        const std::size_t newline = text.find('\n', start);
-        const std::string paragraph =
-            text.substr(start, newline == std::string::npos ? std::string::npos : newline - start);
-        std::string line;
-        std::size_t i = 0;
-        while (i < paragraph.size()) {
-            std::size_t end = paragraph.find(' ', i);
-            if (end == std::string::npos) {
-                end = paragraph.size();
-            }
-            std::string word = paragraph.substr(i, end - i);
-            if (!line.empty() && line.size() + 1 + word.size() > width) {
-                lines.push_back(line);
-                line.clear();
-            }
-            while (width > 0 && word.size() > width) {
-                lines.push_back(word.substr(0, width));
-                word.erase(0, width);
-            }
-            line += (line.empty() ? "" : " ") + word;
-            i = end + 1;
-        }
-        lines.push_back(line);
-        if (newline == std::string::npos) {
-            break;
-        }
-        start = newline + 1;
-    }
-    return lines;
-}
+// Splits text into lines that fit in `width` units, at spaces. A word longer
+// than a line (a file path) is cut.
+std::vector<std::string> wrapText(const std::string& text, float width) { return ui::wrap(text, width); }
 
 LoadedGame::~LoadedGame() {
     if (atlas) {
@@ -1526,7 +1493,7 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
         effects_.push_back(std::move(e));
     }
     if (bubble_ && (actions.wasPressed(Action::Use) || actions.wasPressed(Action::Attack))) {
-        const std::size_t lines = wrapText(bubble_->text, bubbleColumns_).size();
+        const std::size_t lines = ui::wrap(bubble_->text, bubbleWidth_, 1, ui::Font::Story).size();
         if (static_cast<std::size_t>(bubblePage_ + 1) * bubbleLines_ < lines) {
             ++bubblePage_;
         } else {

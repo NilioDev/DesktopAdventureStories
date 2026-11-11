@@ -19,56 +19,9 @@ SDL_Rect pixelRect(const SDL_FRect& r) {
 
 } // namespace
 
-std::string fitText(std::string_view text, float width) {
-    const auto chars = static_cast<std::size_t>(std::max(0.0f, width / ui::kFont));
-    if (text.size() <= chars) {
-        return std::string(text);
-    }
-    std::size_t cut = chars > 2 ? chars - 2 : chars;
-    // Not in the middle of a UTF-8 letter.
-    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xc0) == 0x80) {
-        --cut;
-    }
-    return std::string(text.substr(0, cut)) + (chars > 2 ? ".." : "");
-}
+std::string fitText(std::string_view text, float width) { return ui::fit(text, width); }
 
-std::vector<std::string> wrap(std::string_view text, std::size_t columns) {
-    std::vector<std::string> lines;
-    columns = std::max<std::size_t>(columns, 4);
-    std::size_t start = 0;
-    while (start <= text.size()) {
-        const std::size_t newline = text.find('\n', start);
-        std::string_view paragraph =
-            text.substr(start, newline == std::string_view::npos ? std::string_view::npos : newline - start);
-        std::string line;
-        while (!paragraph.empty()) {
-            std::size_t cut = paragraph.find(' ');
-            std::string_view word = paragraph.substr(0, cut);
-            while (word.size() > columns) { // a very long word is broken
-                if (!line.empty()) {
-                    lines.push_back(line);
-                    line.clear();
-                }
-                lines.emplace_back(word.substr(0, columns));
-                word.remove_prefix(columns);
-            }
-            if (!line.empty() && line.size() + 1 + word.size() > columns) {
-                lines.push_back(line);
-                line.clear();
-            }
-            if (!word.empty()) {
-                line += (line.empty() ? "" : " ") + std::string(word);
-            }
-            paragraph = cut == std::string_view::npos ? std::string_view{} : paragraph.substr(cut + 1);
-        }
-        lines.push_back(line);
-        if (newline == std::string_view::npos) {
-            break;
-        }
-        start = newline + 1;
-    }
-    return lines;
-}
+std::vector<std::string> wrap(std::string_view text, float width) { return ui::wrap(text, width); }
 
 // --- input -------------------------------------------------------------------
 
@@ -368,17 +321,38 @@ bool Gui::textField(std::string_view id, const SDL_FRect& r, std::string& text, 
     ui::fill(renderer_, r, kField);
     ui::outline(renderer_, r, active ? ui::color::accent : hovered(r) ? ui::color::dim : ui::color::border);
     const float ty = std::floor(r.y + (r.h - ui::kFont) / 2);
-    const auto columns = static_cast<std::size_t>(std::max(1.0f, (r.w - 6) / ui::kFont));
+    const float room = std::max(1.0f, r.w - 6);
     if (text.empty() && !active) {
-        ui::text(renderer_, r.x + 3, ty, fitText(placeholder, r.w - 6), ui::color::faint);
+        ui::text(renderer_, r.x + 3, ty, fitText(placeholder, room), ui::color::faint);
     } else {
-        // Show the end of a long text, or the part around the caret.
-        const std::size_t caretAt = active ? caret_ : 0;
-        const std::size_t first = caretAt > columns - 1 ? caretAt - (columns - 1) : 0;
-        ui::text(renderer_, r.x + 3, ty, text.substr(first, columns), ui::color::text);
+        // Show the part up to the caret that fits, and after it what still fits.
+        const std::string_view all = text;
+        const std::size_t caretAt = std::min(active ? caret_ : 0, all.size());
+        const auto isContinuation = [&](std::size_t i) {
+            return i < all.size() && (static_cast<unsigned char>(all[i]) & 0xc0) == 0x80;
+        };
+        std::size_t first = 0;
+        while (first < caretAt && ui::textWidth(all.substr(first, caretAt - first)) > room - 2) {
+            ++first;
+            while (isContinuation(first)) {
+                ++first;
+            }
+        }
+        std::size_t last = caretAt;
+        while (last < all.size()) {
+            std::size_t next = last + 1;
+            while (isContinuation(next)) {
+                ++next;
+            }
+            if (ui::textWidth(all.substr(first, next - first)) > room) {
+                break;
+            }
+            last = next;
+        }
+        ui::text(renderer_, r.x + 3, ty, all.substr(first, last - first), ui::color::text);
         if (active && (SDL_GetTicks() / 500) % 2 == 0) {
-            ui::fill(renderer_, {r.x + 3 + static_cast<float>(caretAt - first) * ui::kFont, r.y + 2, 1, r.h - 4},
-                     ui::color::accent);
+            const float caretX = r.x + 3 + ui::textWidth(all.substr(first, caretAt - first));
+            ui::fill(renderer_, {std::round(caretX), r.y + 2, 1, r.h - 4}, ui::color::accent);
         }
     }
     focusRing(id, r);
@@ -393,7 +367,7 @@ bool Gui::area(std::string_view id, const SDL_FRect& r, std::string_view help) {
 void Gui::label(float x, float y, std::string_view text, ui::Color c) { ui::text(renderer_, x, y, text, c); }
 
 float Gui::paragraph(float x, float y, float width, std::string_view text, ui::Color c, int maxLines) {
-    const auto lines = wrap(text, static_cast<std::size_t>(std::max(1.0f, width / ui::kFont)));
+    const auto lines = wrap(text, width);
     float h = 0;
     int count = 0;
     for (const auto& line : lines) {

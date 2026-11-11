@@ -1,8 +1,14 @@
 # The interface
 
 The play field shows the original pixel art. Everything around it is our
-own, drawn with SDL's built-in 8x8 font and plain shapes, in one colour
-scheme (`src/app/ui.hpp`).
+own, drawn with plain shapes and the Fira Sans font (SIL Open Font License,
+`assets/fonts`), in one colour scheme (`src/app/ui.hpp`). Speech bubbles
+during play use the 8x8 pixel font PxPlus IBM CGA (CC BY-SA 4.0), always at
+a whole multiple of its 8 pixels and without smoothing (`ui::Font::Story`). Text is drawn with
+SDL_ttf at the screen's own resolution, so it stays sharp at every interface
+scale. Widths are measured, so wrapping and cutting long text (`ui::wrap`,
+`ui::fit`) work for any letter width. If the font cannot be loaded, the
+interface falls back to SDL's built-in 8x8 font.
 
 ## Layout
 

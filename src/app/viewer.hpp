@@ -369,7 +369,7 @@ private:
     mutable int camX_ = 0;
     mutable int camY_ = 0;
     mutable float cell_ = 32;
-    mutable std::size_t bubbleColumns_ = 33;
+    mutable float bubbleWidth_ = 264; // the text's width in a speech bubble
     mutable std::size_t bubbleLines_ = 12;
 };
 

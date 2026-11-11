@@ -23,6 +23,7 @@ add_subdirectory(src/core)
 
 if(DAS_BUILD_APP)
     include(DasSDL3)
+    include(DasSDL3ttf)
     add_subdirectory(src/app)
 endif()
 

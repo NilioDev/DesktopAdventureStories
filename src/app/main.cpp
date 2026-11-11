@@ -51,7 +51,7 @@
 #include <vector>
 
 namespace das::app {
-std::vector<std::string> wrapText(const std::string& text, std::size_t width); // viewer.cpp
+std::vector<std::string> wrapText(const std::string& text, float width); // viewer.cpp
 } // namespace das::app
 
 namespace {
@@ -549,8 +549,8 @@ void renderWelcome(App& app) {
     const auto& l = app.layout;
     const float w = std::min(l.width - 16, 420.0f);
     const float inner = w - 28;
-    const auto columns = static_cast<std::size_t>(inner / ui::kFont);
-    const auto columnsSteps = static_cast<std::size_t>((inner - 16) / ui::kFont);
+    const float columns = inner;          // the width of the text
+    const float columnsSteps = inner - 16; // and of a step, after its number
 #if defined(SDL_PLATFORM_ANDROID)
     const char* steps[] = {
         "Find your game: on its CD, or in the folder on an old computer where it was installed.",
@@ -574,7 +574,7 @@ void renderWelcome(App& app) {
         float gapAfter;
     };
     std::vector<Line> lines;
-    const auto add = [&](const std::string& text, ui::Color color, std::size_t width, float x, float gapAfter) {
+    const auto add = [&](const std::string& text, ui::Color color, float width, float x, float gapAfter) {
         const auto wrapped = das::app::wrapText(text, width);
         for (std::size_t i = 0; i < wrapped.size(); ++i) {
             lines.push_back({wrapped[i], color, x, i + 1 == wrapped.size() ? gapAfter : 0});
@@ -765,6 +765,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     SDL_SetWindowMinimumSize(app->window, 480, 360);
     setWindowIcon(app->window);
     SDL_SetRenderVSync(app->renderer, 1);
+    das::app::ui::init(app->renderer);
 
     if (dataPath.empty()) {
         if (const char* env = SDL_getenv("DAS_GAMEDATA_DIR")) {
@@ -1123,6 +1124,8 @@ void SDL_AppQuit(void* appstate, SDL_AppResult /*result*/) {
     for (SDL_Gamepad* pad : app->gamepads) {
         SDL_CloseGamepad(pad);
     }
-    // SDL destroys the window and renderer itself after this callback.
     delete app;
+    // SDL destroys the window and renderer itself after this callback; the
+    // font's textures go first.
+    das::app::ui::shutdown();
 }

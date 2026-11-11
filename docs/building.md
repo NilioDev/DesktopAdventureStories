@@ -9,7 +9,10 @@ tests or work on the code. See also [CONTRIBUTING.md](../CONTRIBUTING.md) and
 ## What you need
 
 The desktop build needs CMake 3.22+, a C++20 compiler and Git. SDL3 is
-downloaded and built automatically when it is not installed.
+downloaded and built automatically when it is not installed. SDL3_ttf (with
+its own copy of FreeType) is downloaded and built too, unless an installed
+SDL3 is used and SDL3_ttf is installed next to it. The fonts in
+`assets/fonts` are built into the program (`cmake/DasEmbed.cmake`).
 
 ## Windows
 

@@ -11,6 +11,7 @@ namespace das::audio {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+constexpr float kGain = 0.25f; // level of one voice at full volume
 
 // --- reading -----------------------------------------------------------------
 
@@ -138,6 +139,26 @@ float drumDecay(int drum) {
 
 double noteFrequency(double note) { return 440.0 * std::pow(2.0, (note - 69.0) / 12.0); }
 
+// Volume, expression and velocity work on a curve, like on General MIDI
+// synthesizers: half the value is about a quarter of the loudness.
+float curve(float value) { return value * value; }
+
+// Families that are played with a bow or breath get a slow vibrato after
+// a moment, so long notes do not sound like test tones.
+bool hasVibrato(int family) { return family == 5 || family == 6 || family == 7 || family == 8 || family == 9; }
+
+// Leaves quiet and normal levels alone and bends only the loudest peaks
+// below full scale, so chords never crackle.
+float limit(float x) {
+    constexpr float knee = 0.6f;
+    const float size = std::abs(x);
+    if (size <= knee) {
+        return x;
+    }
+    const float over = knee + (1.0f - knee) * std::tanh((size - knee) / (1.0f - knee));
+    return x < 0 ? -over : over;
+}
+
 } // namespace
 
 bool isMidi(const data::Bytes& bytes) {
@@ -221,6 +242,23 @@ MidiSong parseMidi(const data::Bytes& bytes) {
                                               static_cast<std::uint8_t>(second & 0x7fu)}});
         }
     }
+    // Songs made for Windows 3.1 and 95 hold the music twice: for a General
+    // MIDI synthesizer on channels 1 to 10, and a simpler copy for an FM card
+    // on channels 13 to 16, with its drums on 16. Windows played only one of
+    // the two, so when a file has both we keep the General MIDI part.
+    bool full = false;
+    bool simple = false;
+    for (const auto& e : events) {
+        if ((e.event.status & 0xf0u) == 0x90 && e.event.data2 > 0) {
+            const int channel = e.event.status & 0x0f;
+            full = full || channel <= 9;
+            simple = simple || channel >= 12;
+        }
+    }
+    if (full && simple) {
+        std::erase_if(events, [](const TickEvent& e) { return (e.event.status & 0x0f) >= 12; });
+    }
+
     std::sort(events.begin(), events.end(), [](const TickEvent& a, const TickEvent& b) {
         return a.tick != b.tick ? a.tick < b.tick : a.order < b.order;
     });
@@ -324,6 +362,13 @@ void Synth::apply(const MidiEvent& e) {
 }
 
 void Synth::noteOn(int channel, int note, int velocity) {
+    // The same key struck again lets go of the note it was still playing.
+    for (auto& v : voices_) {
+        if (v.active && v.channel == channel && v.note == note && v.drum < 0 && v.stage != 2) {
+            v.held = false;
+            v.stage = 2;
+        }
+    }
     // A free voice, or else the quietest one.
     Voice* voice = nullptr;
     for (auto& v : voices_) {
@@ -345,7 +390,7 @@ void Synth::noteOn(int channel, int note, int velocity) {
     voice->active = true;
     voice->channel = channel;
     voice->note = note;
-    voice->velocity = static_cast<float>(velocity) / 127.0f;
+    voice->velocity = curve(static_cast<float>(velocity) / 127.0f);
     voice->drum = channel == 9 ? drumFor(note) : -1;
     voice->frequency = noteFrequency(note + static_cast<double>(channels_[static_cast<std::size_t>(channel)].bend));
     if (voice->drum >= 0) {
@@ -409,7 +454,8 @@ float Synth::voiceSample(Voice& v) {
         }
         return s * v.env * v.velocity;
     }
-    const Patch& p = kPatches[channels_[static_cast<std::size_t>(v.channel)].program / 8 % 16];
+    const int family = channels_[static_cast<std::size_t>(v.channel)].program / 8 % 16;
+    const Patch& p = kPatches[family];
     switch (v.stage) {
     case 0:
         v.env += static_cast<float>(dt / std::max(0.001f, p.attack));
@@ -428,11 +474,18 @@ float Synth::voiceSample(Voice& v) {
         v.active = false;
         return 0;
     }
-    v.modulator += v.frequency * p.ratio * dt;
-    v.carrier += v.frequency * dt;
+    double frequency = v.frequency;
+    if (hasVibrato(family) && v.age > 0.25) {
+        const double depth = std::min(1.0, (v.age - 0.25) / 0.4) * 0.004; // about 1/14 semitone
+        frequency *= 1.0 + depth * std::sin(2 * kPi * 5.5 * v.age);
+    }
+    v.modulator += frequency * p.ratio * dt;
+    v.carrier += frequency * dt;
     v.modulator -= std::floor(v.modulator);
     v.carrier -= std::floor(v.carrier);
-    const double mod = std::sin(2 * kPi * v.modulator) * p.index * v.modEnv;
+    // Softer notes are a little darker, as on real instruments.
+    const double brightness = 0.55 + 0.45 * std::sqrt(v.velocity);
+    const double mod = std::sin(2 * kPi * v.modulator) * p.index * v.modEnv * brightness;
     return static_cast<float>(std::sin(2 * kPi * v.carrier + mod)) * v.env * v.velocity;
 }
 
@@ -454,13 +507,13 @@ void Synth::render(float* out, int frames) {
             }
             any = true;
             const Channel& c = channels_[static_cast<std::size_t>(v.channel)];
-            const float s = voiceSample(v) * c.volume * c.expression * 0.22f;
+            const float s = voiceSample(v) * curve(c.volume) * curve(c.expression) * kGain;
             left += s * std::sqrt(1.0f - c.pan);
             right += s * std::sqrt(c.pan);
         }
-        // A soft limit instead of hard clipping.
-        out[2 * f] += left / (1.0f + std::abs(left));
-        out[2 * f + 1] += right / (1.0f + std::abs(right));
+        // A soft limit on the peaks instead of hard clipping.
+        out[2 * f] += limit(left);
+        out[2 * f + 1] += limit(right);
         time_ += dt;
         if (!any && next_ >= song_.events.size()) {
             playing_ = false;

@@ -15,10 +15,13 @@ No package ever holds anything of the original games.
 
 ## Making a release
 
-1. On GitHub, open Releases, *Draft a new release*, type the new tag
+1. Make sure `README.md` matches what this version does (features,
+   packages, steps per system, controls); fix it in a PR first. See
+   [CLAUDE.md](../CLAUDE.md#keep-the-readme-up-to-date) for the checklist.
+2. On GitHub, open Releases, *Draft a new release*, type the new tag
    `vx.y.z` (target `main`) and publish it; that makes the tag too. Or tag
    it yourself: `git tag vx.y.z && git push origin vx.y.z`.
-2. The workflow takes the version from the tag, builds everything and adds
+3. The workflow takes the version from the tag, builds everything and adds
    the packages to the release (or creates the release with notes for each
    system). A release left without a title gets the tag as title.
 

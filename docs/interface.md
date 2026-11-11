@@ -3,8 +3,9 @@
 The play field shows the original pixel art. Everything around it is our
 own, drawn with plain shapes (panels and buttons with round corners,
 `ui::fillRounded`) and the Fira Sans font (SIL Open Font License,
-`assets/fonts`), in one colour scheme (`src/app/ui.hpp`). The accent colour follows the game:
-amber for Indy, green for Yoda (`ui::setAccent`). Speech bubbles
+`assets/fonts`), in a colour scheme per game (`src/app/ui.hpp`, `ui::setTheme`): warm brown
+panels with amber for Indy, deep teal panels with green for Yoda. The game
+cards use neutral grey with the accent of the chosen card. Speech bubbles
 during play use the 8x8 pixel font PxPlus IBM CGA (CC BY-SA 4.0), always at
 a whole multiple of its 8 pixels and without smoothing (`ui::Font::Story`). Text is drawn with
 SDL_ttf at the screen's own resolution, so it stays sharp at every interface
@@ -63,7 +64,14 @@ smaller, for screens at least 320 units on their short side.
   the device used last (keyboard, gamepad or touch). It opens by itself at
   the very first game (`howToPlaySeen` in the settings) and from the pause
   menu.
-- **Pause menu:** Resume, Map, Save game, Load game, How to play, Report a
+- **Pause screen** (`viewer_pause.cpp`): tabs Menu, Map and Backpack at the
+  top, switched with the item keys or buttons (Q/E, LB/RB) or a press on a
+  tab; the Map key opens the Map tab directly and closes it again. *Map*: the
+  big map with the puzzles solved, the world size, the difficulty, a progress
+  bar and what the colours mean. *Backpack*: every item in a grid, the chosen
+  one large with its name; Use (or a second press) takes it in hand. Map and
+  Backpack cover the game; Menu shows the game dimmed under it.
+- **Pause menu** (the Menu tab): Resume, Save game, Load game, How to play, Report a
   bug, Options, Save and quit. The game waits while it is open. *Save game* lists the three slots;
   one in use asks *Overwrite?* first. It is also where the game waits after
   the app was in the background.
@@ -103,10 +111,12 @@ back. In the game:
 
 ## The touch pad
 
-On a touch screen a direction pad and *Use* and *Hit* (attack) buttons show
-while the game is on screen: in the empty strips beside the field when the
-screen is held sideways, in a strip under the panel when it is held upright,
-and over the field's bottom corners otherwise. Several fingers work at once.
+On a touch screen a round stick (its knob leans the way it is held) and
+round buttons show while the game is on screen: a large *Use* in the game's
+colour, *Hit* (attack) and *Item* (the next item). They sit in the empty
+strips beside the cards when the screen is held sideways, in a strip under
+the cards when it is held upright, and over the field's bottom corners
+otherwise. Several fingers work at once.
 A finger that starts on the pad keeps steering wherever it moves; in the
 pad's middle it holds nothing. Options, *Touch pad*: Auto (shown once the
 screen was touched), On or Off. Touches are read as fingers, not as a mouse.

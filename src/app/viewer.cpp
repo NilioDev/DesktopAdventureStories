@@ -409,7 +409,7 @@ void Viewer::startPlay() {
     mode_ = ViewMode::Play;
     page_ = Page::None;
     selected_ = 0;
-    showMap_ = false;
+    pauseTab_ = PauseTab::Menu;
     walkTarget_.reset();
     nextAutosaveAt_ = 0; // set on the first frame of play
 }
@@ -465,7 +465,6 @@ void Viewer::leavePlay() {
         testing_ = false;
         mode_ = ViewMode::Edit;
         page_ = Page::None;
-        showMap_ = false;
         walkTarget_.reset();
         return;
     }
@@ -476,13 +475,13 @@ void Viewer::leavePlay() {
     page_ = Page::Main;
     menuItem_ = 0;
     generated_ = false;
-    showMap_ = false;
     walkTarget_.reset();
 }
 
 void Viewer::openMenu(bool options) {
     if (mode_ == ViewMode::Play) {
         page_ = Page::Pause;
+        pauseTab_ = PauseTab::Menu;
     }
     if (options) {
         optionsFrom_ = page_;
@@ -798,9 +797,6 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
     case Page::Pause:
         rows.push_back({RowId::Resume, "Resume", ""});
         if (generated_) {
-            rows.push_back({RowId::Map, "Map", ""});
-        }
-        if (generated_) {
             rows.push_back({RowId::SaveGame, "Save game", ""});
             if (hasSave()) {
                 rows.push_back({RowId::LoadGame, "Load game", ""});
@@ -980,10 +976,7 @@ void Viewer::menuActivate(const Row& row, int change) {
     case RowId::AddGames: addGames_ = true; break;
     case RowId::Quit: quit_ = true; break;
     case RowId::Resume: page_ = Page::None; break;
-    case RowId::Map:
-        page_ = Page::None;
-        showMap_ = true;
-        break;
+    case RowId::Map: openMap(); break;
     case RowId::SaveAndQuit: leavePlay(); break;
     case RowId::SaveGame:
         if (world_ && !world_->canSave()) {
@@ -1261,6 +1254,25 @@ void Viewer::handleClick(Uint64 now) {
                 return; // a press on the note while typing ends the typing
             }
         }
+        if (hit && hit->kind == Hit::Kind::Tab) {
+            const auto tabs = pauseTabs();
+            if (hit->index >= 0 && hit->index < static_cast<int>(tabs.size())) {
+                pauseTab_ = tabs[static_cast<std::size_t>(hit->index)];
+                backpackCursor_ = selected_;
+                menuItem_ = 0;
+            }
+            return;
+        }
+        if (hit && hit->kind == Hit::Kind::Slot && page_ == Page::Pause && pauseTab_ == PauseTab::Backpack) {
+            const auto index = static_cast<std::size_t>(hit->index);
+            if (index == backpackCursor_) {
+                selected_ = index; // a second press takes it in hand
+                page_ = Page::None;
+            } else {
+                backpackCursor_ = index;
+            }
+            return;
+        }
         if (hit && hit->kind == Hit::Kind::Pick) {
             pickActivate(hit->index / 10 - 1, hit->index % 10);
             return;
@@ -1297,17 +1309,16 @@ void Viewer::handleClick(Uint64 now) {
         return;
     }
     if (hit && hit->kind == Hit::Kind::Map) {
-        showMap_ = !showMap_;
+        if (generated_) {
+            openMap();
+            walkTarget_.reset();
+        }
         return;
     }
     if (bubble_) {
         ActionState tap; // a tap anywhere moves the speech on
         tap.press(Action::Use);
         handleEffects(tap, now);
-        return;
-    }
-    if (showMap_) {
-        showMap_ = false;
         return;
     }
     if (!hit) {
@@ -1416,7 +1427,17 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
         return;
     }
     if (page_ != Page::None) {
-        updateMenu(actions, step); // the game waits while a menu is open
+        // The game waits while a menu is open.
+        if (page_ == Page::Pause && generated_ && (actions.wasPressed(Action::InventoryNext) ||
+                                                   actions.wasPressed(Action::InventoryPrev))) {
+            switchTab(actions.wasPressed(Action::InventoryNext) ? 1 : -1);
+        } else if (page_ == Page::Pause && pauseTab_ != PauseTab::Menu) {
+            updatePauseTab(actions, step);
+        } else if (page_ == Page::Pause && actions.wasPressed(Action::Map) && generated_) {
+            openMap();
+        } else {
+            updateMenu(actions, step);
+        }
         lastUpdate_ = now;
         return;
     }
@@ -1432,9 +1453,7 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
         }
     }
     if (actions.wasPressed(Action::Menu)) {
-        if (showMap_) {
-            showMap_ = false;
-        } else if (generated_) {
+        if (generated_) {
             openMenu(false);
             walkTarget_.reset();
         } else {
@@ -1446,18 +1465,14 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
         leavePlay();
         return;
     }
-    if (actions.wasPressed(Action::Map)) {
-        showMap_ = !showMap_;
-    }
-    const bool hadBubble = bubble_.has_value();
-    handleEffects(actions, now);
-    if (showMap_) {
-        if (actions.wasPressed(Action::Attack) || actions.wasPressed(Action::Use)) {
-            showMap_ = false;
-        }
+    if (actions.wasPressed(Action::Map) && !bubble_) {
+        openMap();
+        walkTarget_.reset();
         lastUpdate_ = now;
         return;
     }
+    const bool hadBubble = bubble_.has_value();
+    handleEffects(actions, now);
     const auto& inventory = world_->inventory();
     if (!inventory.empty()) {
         const std::size_t count = inventory.size();

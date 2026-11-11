@@ -78,7 +78,15 @@ public:
     void walk(const std::string& path);
     // Opens the pause menu (or the options from it); for testing.
     void openMenu(bool options);
-    void openMap() { showMap_ = true; }
+    void openMap() {
+        page_ = Page::Pause;
+        pauseTab_ = PauseTab::Map;
+    }
+    void openBackpack() {
+        page_ = Page::Pause;
+        pauseTab_ = PauseTab::Backpack;
+        backpackCursor_ = selected_;
+    }
     void openControls() {
         page_ = Page::Controls;
         menuItem_ = 0;
@@ -165,7 +173,7 @@ public:
     // ending in the way): the time for the touch pad.
     // In a game, menu or not: the screen has the cards around the field.
     bool inPlay() const { return mode_ == ViewMode::Play && world_.has_value(); }
-    bool playing() const { return mode_ == ViewMode::Play && page_ == Page::None && !showMap_ && banner_.empty(); }
+    bool playing() const { return mode_ == ViewMode::Play && page_ == Page::None && banner_.empty(); }
     // A mouse click or a tap, in interface units.
     void pointerPressed(float x, float y);
     // Events for the editor while it is open (mouse positions in units).
@@ -229,7 +237,7 @@ private:
     };
     // A place on screen the pointer can press, found while drawing.
     struct Hit {
-        enum class Kind { Row, RowLeft, Field, Slot, Menu, Map, Pick } kind;
+        enum class Kind { Row, RowLeft, Field, Slot, Menu, Map, Pick, Tab } kind;
         SDL_FRect rect;
         int index = 0;
     };
@@ -252,6 +260,16 @@ private:
 
     LoadedGame& game() { return *games_[current_]; }
     const LoadedGame& game() const { return *games_[current_]; }
+
+    // The pause screen has tabs: the menu, the map and the backpack.
+    enum class PauseTab { Menu, Map, Backpack };
+    std::vector<PauseTab> pauseTabs() const;
+    void switchTab(int change);
+    void updatePauseTab(const ActionState& actions, std::optional<Step> step);
+    void renderPause(SDL_Renderer* renderer, const ui::Layout& layout) const;
+    void renderMenuCard(SDL_Renderer* renderer, const SDL_FRect& field) const;
+    void renderMapTab(SDL_Renderer* renderer, const SDL_FRect& area) const;
+    void renderBackpack(SDL_Renderer* renderer, const SDL_FRect& area) const;
 
     // viewer.cpp: state and input.
     // Makes the game's data from its base pack and the mods switched on.
@@ -357,7 +375,9 @@ private:
     std::string banner_; // "You won" / "You lost"
     bool generated_ = false; // playing a generated world, not a single zone
     std::size_t selected_ = 0; // inventory slot
-    bool showMap_ = false;
+    PauseTab pauseTab_ = PauseTab::Menu;
+    std::size_t backpackCursor_ = 0;
+    mutable int backpackColumns_ = 6; // found while drawing
 
     // Menus and options.
     Page page_ = Page::Pick;

@@ -54,7 +54,17 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
     // Each game has its own colour; on the cards it is the chosen card's.
     const bool picking = mode_ == ViewMode::Title && page_ == Page::Pick;
     const bool indy = picking ? pickCard() == 0 : game().game == data::Layout::Indy;
-    ui::setAccent(indy ? ui::kIndyAccent : ui::kYodaAccent, indy ? ui::kIndyInk : ui::kYodaInk);
+    ui::Theme theme = indy ? ui::kIndyTheme : ui::kYodaTheme;
+    if (picking) {
+        theme = ui::kNeutralTheme;
+        theme.accent = indy ? ui::kIndyAccent : ui::kYodaAccent;
+        theme.accentInk = indy ? ui::kIndyInk : ui::kYodaInk;
+    }
+    ui::setTheme(theme);
+    if (!picking) {
+        // The screen behind everything, in the game's own tint.
+        ui::fill(renderer, {0, 0, layout.width, layout.height}, ui::color::background);
+    }
     if (picking) {
         renderPicker(renderer, layout);
         return;
@@ -100,45 +110,53 @@ void Viewer::render(SDL_Renderer* renderer, const ui::Layout& layout, Uint64 now
             // The game waits under a dimmed screen.
             ui::fill(renderer, {0, 0, layout.width, layout.height}, ui::color::shade);
             hits_.clear(); // only the menu takes presses now
-            const bool help = page_ == Page::Help;
-            const bool card = help || page_ == Page::Bug; // a text above the rows
-            const float w = std::min(field.w - 2 * kPad, card ? 272.0f : 240.0f);
-            const auto rows = static_cast<float>(menuRows().size());
-            auto cardLines =
-                card ? wrapText(help ? howToPlayText() : bugText(), w - 2 * kPad)
-                     : std::vector<std::string>{};
-            if (!help && cardLines.size() > 9) {
-                cardLines.erase(cardLines.begin() + 1, cardLines.end() - 8); // the end of a long note
-            }
-            const float textH = static_cast<float>(cardLines.size()) * 10 + (card ? 6 : 0);
-            const float h = (card ? 2 * kPad + 18 + 2 : 40) + rows * kRow + textH + (notice_.empty() ? 0 : 14);
-            const SDL_FRect box{std::floor(field.x + (field.w - w) / 2),
-                                std::floor(std::max(field.y, field.y + (field.h - h) / 2)), w, h};
-            ui::panel(renderer, box);
-            const char* heading = page_ == Page::Options    ? "Options"
-                                  : page_ == Page::Controls ? "Controls"
-                                  : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
-                                  : help                    ? "How to play"
-                                  : card                    ? "Report a bug"
-                                                            : "Paused";
-            if (card) {
-                float ty = box.y + kPad;
-                ui::text(renderer, box.x + kPad, ty, heading, ui::color::accent);
-                ty += 18;
-                for (const auto& line : cardLines) {
-                    ui::text(renderer, box.x + kPad, ty, line, help ? ui::color::text : ui::color::dim);
-                    ty += 10;
-                }
-                renderMenu(renderer, {box.x + kPad, ty + 6, box.w - 2 * kPad, rows * kRow}, nullptr);
+            if (page_ == Page::Pause && generated_) {
+                renderPause(renderer, layout);
             } else {
-                renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad}, heading);
-            }
-            if (!notice_.empty()) {
-                ui::text(renderer, box.x + kPad + 8, box.y + box.h - kPad - 14,
-                         fit(notice_, box.w - 2 * kPad - 8), noticeGood_ ? ui::color::good : ui::color::accent);
+                renderMenuCard(renderer, field);
             }
         }
         break;
+    }
+}
+
+void Viewer::renderMenuCard(SDL_Renderer* renderer, const SDL_FRect& field) const {
+    const bool help = page_ == Page::Help;
+    const bool card = help || page_ == Page::Bug; // a text above the rows
+    const float w = std::min(field.w - 2 * kPad, card ? 272.0f : 240.0f);
+    const auto rows = static_cast<float>(menuRows().size());
+    auto cardLines =
+        card ? wrapText(help ? howToPlayText() : bugText(), w - 2 * kPad)
+             : std::vector<std::string>{};
+    if (!help && cardLines.size() > 9) {
+        cardLines.erase(cardLines.begin() + 1, cardLines.end() - 8); // the end of a long note
+    }
+    const float textH = static_cast<float>(cardLines.size()) * 10 + (card ? 6 : 0);
+    const float h = (card ? 2 * kPad + 18 + 2 : 40) + rows * kRow + textH + (notice_.empty() ? 0 : 14);
+    const SDL_FRect box{std::floor(field.x + (field.w - w) / 2),
+                        std::floor(std::max(field.y, field.y + (field.h - h) / 2)), w, h};
+    ui::panel(renderer, box);
+    const char* heading = page_ == Page::Options    ? "Options"
+                          : page_ == Page::Controls ? "Controls"
+                          : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
+                          : help                    ? "How to play"
+                          : card                    ? "Report a bug"
+                                                    : "Paused";
+    if (card) {
+        float ty = box.y + kPad;
+        ui::text(renderer, box.x + kPad, ty, heading, ui::color::accent);
+        ty += 18;
+        for (const auto& line : cardLines) {
+            ui::text(renderer, box.x + kPad, ty, line, help ? ui::color::text : ui::color::dim);
+            ty += 10;
+        }
+        renderMenu(renderer, {box.x + kPad, ty + 6, box.w - 2 * kPad, rows * kRow}, nullptr);
+    } else {
+        renderMenu(renderer, {box.x + kPad, box.y + kPad, box.w - 2 * kPad, box.h - 2 * kPad}, heading);
+    }
+    if (!notice_.empty()) {
+        ui::text(renderer, box.x + kPad + 8, box.y + box.h - kPad - 14,
+                 fit(notice_, box.w - 2 * kPad - 8), noticeGood_ ? ui::color::good : ui::color::accent);
     }
 }
 
@@ -248,9 +266,6 @@ void Viewer::renderPlay(SDL_Renderer* renderer, const SDL_FRect& field, Uint64 n
     if (bubble_) {
         renderBubble(renderer, field, cell, camX, camY);
     }
-    if (showMap_) {
-        renderMap(renderer, field);
-    }
     renderBanner(renderer, field);
 }
 
@@ -347,7 +362,7 @@ void Viewer::renderMapCells(SDL_Renderer* renderer, const MapHere& here, float x
 void Viewer::renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const {
     const MapHere here = mapHere();
     const world::Map& map = *here.map;
-    ui::fill(renderer, field, {12, 14, 20, 235});
+    ui::fill(renderer, field, {ui::color::background.r, ui::color::background.g, ui::color::background.b, 235});
     ui::text(renderer, field.x + kPad + 2, field.y + kPad + 2, "Map", ui::color::accent, 1.4f);
     const float legendH = 14;
     const float area = std::min(field.w, field.h - 2 * legendH) - 4 * kPad;
@@ -633,7 +648,7 @@ void Viewer::renderViewerPanel(SDL_Renderer* renderer, const SDL_FRect& panel) c
 namespace {
 
 constexpr float kCardPad = 8;
-constexpr ui::Color kWell{14, 16, 22}; // behind an item's picture
+constexpr ui::Color kWell{0, 0, 0, 90}; // behind an item's picture
 
 // A card of the play screen, `h` high at the top of what is left of a
 // column; returns false (and draws nothing) when it does not fit.
@@ -652,7 +667,7 @@ bool card(SDL_Renderer* r, SDL_FRect& column, float h, SDL_FRect& out) {
 float keyLabel(SDL_Renderer* r, float x, float centerY, const std::string& name) {
     const float w = ui::textWidth(name) + 8;
     const SDL_FRect box{x, std::floor(centerY - 7), w, 14};
-    ui::outlineRounded(r, box, 4, {74, 79, 92});
+    ui::outlineRounded(r, box, 4, ui::color::border);
     ui::text(r, box.x + 4, box.y + 3, name, ui::color::text);
     return w;
 }

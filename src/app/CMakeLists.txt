@@ -4,6 +4,7 @@ set(DAS_APP_SOURCES
     viewer.cpp
     viewer_draw.cpp
     viewer_picker.cpp
+    viewer_pause.cpp
     gui.cpp
     editor.cpp
     editor_zones.cpp

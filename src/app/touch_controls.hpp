@@ -20,7 +20,9 @@ namespace das::app {
 class TouchControls {
 public:
     // Places the controls beside the play field when the screen has room
-    // there (a phone held sideways), otherwise over its bottom corners.
+    // there (a phone held sideways), otherwise over its bottom corners: a
+    // round stick on the left, and on the right a large Use button, Hit and
+    // a button for the next item.
     void place(const ui::Layout& layout);
     // Room the pad wants under the panel on a tall screen.
     static constexpr float kBottomRoom = 112;
@@ -44,6 +46,7 @@ private:
     float padRadius_ = 40;
     SDL_FRect use_{};
     SDL_FRect attack_{};
+    SDL_FRect item_{}; // the next item
     // What each finger on a control holds; nullopt while it rests in the
     // pad's middle.
     std::unordered_map<SDL_FingerID, std::optional<Action>> fingers_;

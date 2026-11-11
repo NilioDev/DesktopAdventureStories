@@ -25,13 +25,15 @@ struct Color {
     Uint8 a = 255;
 };
 
+// The background, panel and accent colours follow the game being played
+// (setTheme): warm browns with amber for Indy, deep teal with green for
+// Yoda, neutral grey on the game cards. The editor and the data viewer keep
+// the last one set.
 namespace color {
-inline constexpr Color background{18, 20, 26};
-inline constexpr Color panel{28, 31, 40};
-inline constexpr Color panelLight{38, 42, 54};
-inline constexpr Color border{56, 61, 76};
-// The accent follows the game being played: amber for Indy, green for Yoda
-// (setAccent). The editor and the data viewer keep the last one set.
+inline Color background{18, 20, 26};
+inline Color panel{28, 31, 40};
+inline Color panelLight{38, 42, 54};
+inline Color border{56, 61, 76};
 inline Color accent{244, 176, 76};
 inline Color accentInk{26, 17, 8}; // text on the accent
 inline constexpr Color text{226, 229, 236};
@@ -86,12 +88,24 @@ void shutdown();
 // Starts drawing a frame in units.
 void begin(SDL_Renderer* renderer, const Layout& layout);
 
-// The accent colour (and the dark text drawn on it) of a game.
-void setAccent(Color accent, Color ink);
+// A game's colours.
+struct Theme {
+    Color background;
+    Color panel;
+    Color panelLight;
+    Color border;
+    Color accent;
+    Color accentInk; // text on the accent
+};
 inline constexpr Color kIndyAccent{244, 176, 76};
 inline constexpr Color kIndyInk{26, 17, 8};
 inline constexpr Color kYodaAccent{127, 217, 154};
 inline constexpr Color kYodaInk{8, 19, 15};
+inline constexpr Theme kIndyTheme{{18, 13, 8}, {34, 25, 17}, {52, 39, 27}, {78, 61, 42}, kIndyAccent, kIndyInk};
+inline constexpr Theme kYodaTheme{{8, 17, 19}, {15, 30, 34}, {25, 46, 51}, {42, 70, 74}, kYodaAccent, kYodaInk};
+// The game cards: neutral, with the chosen card's accent.
+inline constexpr Theme kNeutralTheme{{18, 20, 26}, {28, 31, 40}, {38, 42, 54}, {56, 61, 76}, kIndyAccent, kIndyInk};
+void setTheme(const Theme& theme);
 
 void fill(SDL_Renderer* renderer, const SDL_FRect& rect, Color c);
 // A rectangle with round corners of `radius` units.

@@ -8,7 +8,7 @@
 //          [--seed N] [--size small|medium|large]
 //          [--at X,Y] [--walk UDLR...] [--library DIR] [--reimport] [--snapshot bug.zip]
 //        For screenshots and tests:
-//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map|mods|bug]
+//          [--screenshot out.bmp] [--window WxH] [--menu pause|options|controls|map|backpack|mods|bug]
 //          [--device keyboard|gamepad|touch] [--tap X,Y]...
 //
 // The first time a game is found it is imported into our own open format in
@@ -864,6 +864,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         }
     } else if (menu == "map") {
         app->viewer.openMap();
+    } else if (menu == "backpack") {
+        app->viewer.openBackpack();
     } else if (menu == "bug") {
         app->viewer.requestBugReport();
         render(*app, SDL_GetTicks()); // takes the screenshot and opens the page

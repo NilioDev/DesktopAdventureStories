@@ -10,9 +10,14 @@ namespace das::app {
 namespace {
 
 constexpr float kDeadZone = 8; // units from the pad's middle that hold nothing
-constexpr ui::Color kFace{230, 232, 240, 70};
-constexpr ui::Color kPressed{236, 196, 92, 150};
-constexpr ui::Color kEdge{255, 255, 255, 90};
+constexpr ui::Color kFace{230, 232, 240, 45};
+constexpr ui::Color kEdge{255, 255, 255, 80};
+
+// A round button or stick part: a circle in `rect`'s square.
+void circle(SDL_Renderer* r, const SDL_FRect& rect, ui::Color fill, ui::Color edge) {
+    ui::fillRounded(r, rect, rect.w / 2, fill);
+    ui::outlineRounded(r, rect, rect.w / 2, edge);
+}
 
 } // namespace
 
@@ -29,8 +34,10 @@ void TouchControls::place(const ui::Layout& layout) {
         // In the empty strips left and right.
         padCenter_ = {std::floor(leftRoom / 2), field.y + field.h - padRadius_ - 6};
         const float rx = panel.x + panel.w + std::floor((rightRoom - 2 * button - 8) / 2);
+        const float big = std::floor(button * 1.2f);
         attack_ = {rx, field.y + field.h - 6 - button, button, button};
-        use_ = {rx + button + 8, attack_.y - std::floor(button * 0.6f), button, button};
+        use_ = {rx + button + 8, attack_.y - std::floor(button * 0.6f) - (big - button), big, big};
+        item_ = {use_.x + (big - button) / 2, use_.y - button - 10, button, button};
         return;
     }
     const float below = layout.height - (panel.y + panel.h);
@@ -41,11 +48,14 @@ void TouchControls::place(const ui::Layout& layout) {
         padCenter_ = {panel.x + padRadius_ + 4, layout.height - 6 - padRadius_};
         use_ = {panel.x + panel.w - b - 4, layout.height - 6 - 2 * padRadius_, b, b};
         attack_ = {use_.x - b - 10, layout.height - 6 - b, b, b};
+        const float small = std::floor(b * 0.8f);
+        item_ = {attack_.x - small - 10, use_.y, small, small};
         return;
     }
     padCenter_ = {field.x + 6 + padRadius_, field.y + field.h - 6 - padRadius_};
     use_ = {field.x + field.w - 6 - button, field.y + field.h - 6 - button - std::floor(button * 0.6f), button, button};
     attack_ = {use_.x - button - 8, use_.y + std::floor(button * 0.6f), button, button};
+    item_ = {use_.x, use_.y - button - 8, button, button};
 }
 
 void TouchControls::setVisible(bool visible, ActionState& state) {
@@ -82,6 +92,9 @@ std::optional<Action> TouchControls::actionAt(float x, float y, bool fromPad) co
     }
     if (ui::contains(grown(attack_), x, y)) {
         return Action::Attack;
+    }
+    if (ui::contains(grown(item_), x, y)) {
+        return Action::InventoryNext;
     }
     return std::nullopt;
 }
@@ -147,31 +160,37 @@ void TouchControls::render(SDL_Renderer* renderer) const {
     const auto held = [&](Action a) {
         return std::any_of(fingers_.begin(), fingers_.end(), [&](const auto& f) { return f.second == a; });
     };
-    // The pad: a cross of four arms around a middle.
+    // The stick: a round base, and a knob that leans the way it is held.
     const float r = padRadius_;
-    const float arm = std::floor(r * 0.62f);
-    const float half = std::floor(arm / 2);
     const float cx = padCenter_.x;
     const float cy = padCenter_.y;
-    const struct {
-        Action action;
-        SDL_FRect rect;
-    } arms[] = {
-        {Action::MoveUp, {cx - half, cy - r, arm, r - half}},
-        {Action::MoveDown, {cx - half, cy + half, arm, r - half}},
-        {Action::MoveLeft, {cx - r, cy - half, r - half, arm}},
-        {Action::MoveRight, {cx + half, cy - half, r - half, arm}},
-    };
-    for (const auto& a : arms) {
-        ui::fill(renderer, a.rect, held(a.action) ? kPressed : kFace);
-        ui::outline(renderer, a.rect, kEdge);
+    circle(renderer, {cx - r, cy - r, 2 * r, 2 * r}, kFace, kEdge);
+    float kx = 0;
+    float ky = 0;
+    if (held(Action::MoveUp)) {
+        ky = -1;
+    } else if (held(Action::MoveDown)) {
+        ky = 1;
+    } else if (held(Action::MoveLeft)) {
+        kx = -1;
+    } else if (held(Action::MoveRight)) {
+        kx = 1;
     }
-    ui::fill(renderer, {cx - half, cy - half, arm, arm}, kFace);
+    const float knob = std::floor(r * 0.42f);
+    const float lean = std::floor(r * 0.45f);
+    const ui::Color knobColor = kx != 0 || ky != 0 ? ui::Color{ui::color::accent.r, ui::color::accent.g, ui::color::accent.b, 170}
+                                                   : ui::Color{255, 255, 255, 90};
+    circle(renderer, {cx + kx * lean - knob, cy + ky * lean - knob, 2 * knob, 2 * knob}, knobColor,
+           {255, 255, 255, 130});
+
+    // The buttons: Use in the game's colour, Hit and the next item lighter.
+    const auto accent = [](Uint8 a) { return ui::Color{ui::color::accent.r, ui::color::accent.g, ui::color::accent.b, a}; };
+    circle(renderer, use_, accent(held(Action::Use) ? 240 : 190), kEdge);
+    ui::textCentered(renderer, use_.x + use_.w / 2, use_.y + (use_.h - ui::kFont) / 2, "Use", ui::color::accentInk);
     for (const auto& [rect, action, label] :
-         {std::tuple{use_, Action::Use, "Use"}, std::tuple{attack_, Action::Attack, "Hit"}}) {
-        ui::fill(renderer, rect, held(action) ? kPressed : kFace);
-        ui::outline(renderer, rect, kEdge);
-        ui::textCentered(renderer, rect.x + rect.w / 2, rect.y + (rect.h - ui::kFont) / 2, label, {255, 255, 255, 220});
+         {std::tuple{attack_, Action::Attack, "Hit"}, std::tuple{item_, Action::InventoryNext, "Item"}}) {
+        circle(renderer, rect, held(action) ? accent(150) : kFace, kEdge);
+        ui::textCentered(renderer, rect.x + rect.w / 2, rect.y + (rect.h - ui::kFont) / 2, label, {255, 255, 255, 230});
     }
 }
 

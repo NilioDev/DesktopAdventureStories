@@ -361,3 +361,34 @@ DAS_TEST("Yoda on Dagobah hands over the first item of the second chain") {
         DAS_CHECK(handed == helpers);
     }
 }
+
+DAS_TEST("after the landing on Dagobah the hero can walk away from the ship") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        for (std::uint32_t seed = 1; seed <= 5; ++seed) {
+            world::GeneratorOptions options;
+            options.seed = seed;
+            world::World w(game);
+            w.setMap(world::generateWorld(game, options));
+            w.begin();
+            // Play the landing and what is said after it.
+            for (int guard = 0; guard < 256 && w.paused(); ++guard) {
+                (void)w.takeEffects();
+                w.resume();
+            }
+            const world::Position start = w.player();
+            bool moved = false;
+            for (const das::Step step : {das::Step{0, -1}, das::Step{0, 1}, das::Step{1, 0}, das::Step{-1, 0}}) {
+                if (w.move(step) == world::MoveResult::Moved) {
+                    moved = true;
+                    break;
+                }
+            }
+            DAS_CHECK(moved);
+            DAS_CHECK(!(w.player() == start));
+        }
+    }
+}

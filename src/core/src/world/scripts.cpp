@@ -155,10 +155,19 @@ void World::runScripts() {
         }
         const bool spoke = pass.spoke;
         const bool wasUpdate = pass.event == Event::Update;
+        // A script that put the hero on another cell counts as a step onto
+        // where he ended up. Yoda Stories needs this: after the landing on
+        // Dagobah a script fences the hero in, and the one that takes the
+        // fence away again waits for him to stand next to the ship. Not
+        // after a step itself, or two teleporters would send him to and fro.
+        const bool placed = pass.placedHero && pass.event != Event::Walk;
         passes_.pop_front();
         if (stopped) {
             passes_.clear();
             break;
+        }
+        if (placed) {
+            trigger(Event::Walk, {player_.x, player_.y, 0, 0, -1});
         }
         // After speech, the original runs the zone's scripts once more so
         // that conversations can go on.
@@ -345,6 +354,7 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
     case Instruction::ShowHero: heroVisible_ = true; return true;
     case Instruction::SetHeroPosition:
         if (inside(at(0, 1))) {
+            pass.placedHero = pass.placedHero || !(player_ == at(0, 1));
             player_ = at(0, 1);
         }
         return true;
@@ -364,6 +374,7 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
         next.x += to.x > from.x ? 1 : to.x < from.x ? -1 : 0;
         next.y += to.y > from.y ? 1 : to.y < from.y ? -1 : 0;
         player_ = next;
+        pass.placedHero = true;
         Effect effect;
         effect.kind = Effect::Kind::Wait;
         effect.value = std::max(0, arg(line, 4)) * 100;

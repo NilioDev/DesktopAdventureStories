@@ -151,6 +151,7 @@ struct Pass {
     bool disableAction = false;
     bool spoke = false;
     bool moving = false; // in the middle of MoveHeroTo
+    bool placedHero = false; // a script put the hero on another cell
 };
 
 } // namespace detail

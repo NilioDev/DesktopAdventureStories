@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <iterator>
 #include <limits>
 
 namespace das::world {
@@ -17,6 +18,8 @@ constexpr int kFloorLayer = 0;
 constexpr int kObjectLayer = 1;
 // Indy: Marcus at his desk in the town, who gives the mission.
 constexpr std::uint16_t kIndyMissionGiver = 794;
+// Indy: the ladder floor tiles drawn down a cliff face.
+constexpr std::uint16_t kIndyLadders[] = {44, 45};
 
 data::Facing facingFor(Step step) {
     if (step.dy < 0) {
@@ -242,13 +245,38 @@ bool World::walkableIn(int zoneIndex, Position at) const {
     if (at.x < 0 || at.y < 0 || at.x >= z.width || at.y >= z.height) {
         return false;
     }
-    for (int layer : {kFloorLayer, kObjectLayer}) {
-        const std::uint16_t t = tileIn(zoneIndex, at, layer);
-        if (t != data::kNoTile && (flags(t) & flags_::kBlocking) != 0) {
-            return false;
+    const std::uint16_t floor = tileIn(zoneIndex, at, kFloorLayer);
+    if (floor != data::kNoTile && (flags(floor) & flags_::kBlocking) != 0) {
+        return false;
+    }
+    const std::uint16_t object = tileIn(zoneIndex, at, kObjectLayer);
+    if (object == data::kNoTile || (flags(object) & flags_::kBlocking) == 0) {
+        return true;
+    }
+    return ladderEnd(zoneIndex, at);
+}
+
+bool World::ladderEnd(int zoneIndex, Position at) const {
+    // Indy: the cell at the top or bottom of a ladder often has the lip of
+    // the cliff on it. That lip is scenery: the ladder leads over it, so it
+    // does not stop the hero (or the only way into a cliff maze is cut off).
+    if (data_.layout() != data::Layout::Indy) {
+        return false;
+    }
+    const std::uint32_t lip = flags(tileIn(zoneIndex, at, kObjectLayer));
+    constexpr std::uint32_t kNotScenery = flags_::kCharacter | flags_::kItem | flags_::kWeapon | flags_::kDraggable;
+    if ((lip & kNotScenery) != 0) {
+        return false;
+    }
+    for (int dy : {-1, 1}) {
+        const Position next{at.x, at.y + dy};
+        const std::uint16_t floor = tileIn(zoneIndex, next, kFloorLayer);
+        if (tileIn(zoneIndex, next, kObjectLayer) == data::kNoTile &&
+            std::find(std::begin(kIndyLadders), std::end(kIndyLadders), floor) != std::end(kIndyLadders)) {
+            return true;
         }
     }
-    return true;
+    return false;
 }
 
 bool World::walkable(Position at) const { return walkableIn(zone_, at); }

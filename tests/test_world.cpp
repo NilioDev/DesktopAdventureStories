@@ -155,3 +155,42 @@ DAS_TEST("a bug snapshot holds the report, the state and the files it was given"
     DAS_CHECK(zip::read(title).size() == 1);
     DAS_CHECK(!world::snapshotSave(title).has_value());
 }
+
+DAS_TEST("indy: the cliff lip at either end of a ladder does not block") {
+    namespace f = data::tile_flags;
+    constexpr std::uint16_t kLadder = 44;
+    constexpr std::uint16_t kLip = 36;
+    data::GameData data;
+    data.container.layout = data::Layout::Indy;
+    data.tiles.resize(46);
+    data.tiles[kFloor].flags = f::kFloor;
+    data.tiles[kWall].flags = f::kObject;
+    data.tiles[kLip].flags = f::kObject | f::kTransparent;
+    data.tiles[kLadder].flags = f::kFloor;
+    // A 5x5 zone: a cliff along row 2 with a ladder at (2,2) and lips on
+    // (2,1) and (2,3), the cells at both ends of it.
+    data::Zone zone = makeZone(5);
+    for (int x = 0; x < 5; ++x) {
+        put(zone, x, 2, kWall);
+    }
+    zone.cells[2 * 5 + 2].layers = {kLadder, data::kNoTile, data::kNoTile};
+    put(zone, 2, 1, kLip);
+    put(zone, 2, 3, kLip);
+    put(zone, 3, 3, kLip); // not at a ladder: still blocks
+    data.zones = {zone};
+
+    world::World w(data);
+    w.enter(0, {2, 4});
+    DAS_CHECK(w.move({0, -1}) == MoveResult::Moved);
+    DAS_CHECK(w.move({0, -1}) == MoveResult::Moved);
+    DAS_CHECK(w.move({0, -1}) == MoveResult::Moved);
+    DAS_CHECK(w.player() == (Position{2, 1}));
+    w.enter(0, {3, 4});
+    DAS_CHECK(w.move({0, -1}) == MoveResult::Blocked);
+
+    // Yoda Stories has no such ladders.
+    data.container.layout = data::Layout::Yoda;
+    world::World yoda(data);
+    yoda.enter(0, {2, 4});
+    DAS_CHECK(yoda.move({0, -1}) == MoveResult::Blocked);
+}

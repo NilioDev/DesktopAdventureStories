@@ -85,7 +85,14 @@ data::GameData makeGame() {
     data::Zone room = makeZone(3);
     room.hotspots->push_back({10, 1, 2, 1, 0xffff});
 
-    data.zones = {outside, room};
+    // Zone 2: 3x3 with a cabinet in the wall at (1,0); standing in front of
+    // it drops the key into it.
+    data::Zone cabinet = makeZone(3);
+    cabinet.cells[1].layers[1] = kWall;
+    cabinet.actions->push_back({{line(c(Condition::StandingOn), {1, 1, kFloor})},
+                                {line(i(Instruction::DropItem), {kKey, 1, 0}), line(i(Instruction::DisableAction))}});
+
+    data.zones = {outside, room, cabinet};
     return data;
 }
 
@@ -203,4 +210,20 @@ DAS_TEST("indy opcodes translate both ways") {
     DAS_CHECK(script::condition(data::Layout::Yoda, 36) == Condition::Unknown);
     DAS_CHECK(script::name(Instruction::ChangeZone) == "ChangeZone");
     DAS_CHECK(script::name(Condition::PlaceItemIsNot) == "PlaceItemIsNot");
+}
+
+DAS_TEST("an item dropped into a cabinet is found by bumping it, and the cabinet stays") {
+    const auto data = makeGame();
+    world::World w(data);
+    w.start(2);
+    w.enter(2, {1, 2});
+    drain(w);
+    DAS_CHECK(w.move({0, -1}) == world::MoveResult::Moved); // onto (1,1): the key drops
+    drain(w);
+    DAS_CHECK(w.tile({1, 0}, 1) == kWall);
+    DAS_CHECK(!w.hasItem(kKey));
+    w.move({0, -1}); // bump the cabinet
+    drain(w);
+    DAS_CHECK(w.hasItem(kKey));
+    DAS_CHECK(w.tile({1, 0}, 1) == kWall);
 }

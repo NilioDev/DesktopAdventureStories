@@ -269,6 +269,7 @@ private:
     bool execute(const data::ScriptLine& line, Pass& pass);
     void changeZone(int zone, Position at);
     bool walkableIn(int zone, Position at) const;
+    bool ladderEnd(int zone, Position at) const;
     std::uint16_t tileIn(int zone, Position at, int layer) const;
     const Site* site(int zone) const;
     void setSolved(int zone);

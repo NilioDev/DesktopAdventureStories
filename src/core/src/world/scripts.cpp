@@ -408,7 +408,15 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
         // The item appears on the cell; the hero picks it up there.
         const int item = arg(line, 0) == -1 ? (g.findItem == data::kNoTile ? -1 : g.findItem) : arg(line, 0);
         if (item >= 0) {
-            setTile(at(1, 2), 1, static_cast<std::uint16_t>(item));
+            const Position cell = at(1, 2);
+            if (inside(cell) && tile(cell, 1) != data::kNoTile) {
+                // Something stands there already (a cabinet in a wall): the
+                // item goes inside it, and bumping it finds the item. Putting
+                // the item on top would wipe out what was there.
+                s.hidden[{cell.x, cell.y}] = static_cast<std::uint16_t>(item);
+            } else {
+                setTile(cell, 1, static_cast<std::uint16_t>(item));
+            }
         }
         return true;
     }

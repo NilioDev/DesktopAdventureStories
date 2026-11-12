@@ -383,13 +383,21 @@ float Viewer::editorScale(int pixelWidth, int pixelHeight) const {
     return editor_ ? editor_->scaleFor(pixelWidth, pixelHeight) : 1.0f;
 }
 
+Viewer::~Viewer() {
+    if (fieldTexture_) {
+        SDL_DestroyTexture(fieldTexture_);
+    }
+}
+
 void Viewer::applyFilter() {
+    // The tile atlas always stays sharp: the smooth filter scales the whole
+    // play field as one picture instead (beginField), so that tiles do not
+    // blend with their neighbours in the atlas. The title screen is one
+    // picture already.
     const bool smooth = settings_ && settings_->filter == Filter::Smooth;
     for (const auto& g : games_) {
-        for (SDL_Texture* t : {g->atlas, g->setup}) {
-            if (t) {
-                SDL_SetTextureScaleMode(t, smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
-            }
+        if (g->setup) {
+            SDL_SetTextureScaleMode(g->setup, smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
         }
     }
 }

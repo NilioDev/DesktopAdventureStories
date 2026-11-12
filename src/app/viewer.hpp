@@ -58,6 +58,11 @@ struct LoadedGame {
 
 class Viewer {
 public:
+    Viewer() = default;
+    ~Viewer();
+    Viewer(const Viewer&) = delete;
+    Viewer& operator=(const Viewer&) = delete;
+
     // Shows a game from one of our packs, replacing an earlier copy of the
     // same game. Throws when the pack cannot be used.
     void add(SDL_Renderer* renderer, pack::Pack pack);
@@ -325,6 +330,11 @@ private:
     void renderBubble(SDL_Renderer* renderer, const SDL_FRect& field, float cell, int camX, int camY) const;
     void renderBanner(SDL_Renderer* renderer, const SDL_FRect& field) const;
     void renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const;
+    // With the smooth filter, tiles are first drawn at their own size into
+    // one picture, which is then scaled up as a whole (see viewer_draw.cpp).
+    // beginField returns false when the tiles go straight to the screen.
+    bool beginField(SDL_Renderer* renderer, int width, int height) const;
+    void endField(SDL_Renderer* renderer, const SDL_FRect& dst) const;
     // The map the player is on now (the world or the Dagobah map) and the
     // cell of the current zone on it, -1 when it is not on it.
     struct MapHere {
@@ -352,6 +362,7 @@ private:
 
     std::vector<std::unique_ptr<LoadedGame>> games_;
     SDL_Renderer* renderer_ = nullptr; // for remaking textures after a mod change
+    mutable SDL_Texture* fieldTexture_ = nullptr; // the smooth filter's picture
     std::filesystem::path modsFolder_;
     std::vector<pack::Mod> mods_; // every mod found, of both games
     std::vector<std::string> modScanProblems_;

@@ -162,12 +162,57 @@ void Viewer::renderMenuCard(SDL_Renderer* renderer, const SDL_FRect& field) cons
 
 // --- the play field ---------------------------------------------------------
 
+bool Viewer::beginField(SDL_Renderer* renderer, int width, int height) const {
+    // Scaling every tile on its own with a smooth filter blends its edges
+    // with the tiles next to it in the atlas and with what is under it, which
+    // shows as thin stripes between the tiles. So with the smooth filter the
+    // tiles are drawn at their own size into one picture first, and only that
+    // picture is scaled up, smoothly, by endField.
+    if (!settings_ || settings_->filter != Filter::Smooth) {
+        return false;
+    }
+    if (fieldTexture_) {
+        float w = 0;
+        float h = 0;
+        SDL_GetTextureSize(fieldTexture_, &w, &h);
+        if (static_cast<int>(w) != width || static_cast<int>(h) != height) {
+            SDL_DestroyTexture(fieldTexture_);
+            fieldTexture_ = nullptr;
+        }
+    }
+    if (!fieldTexture_) {
+        fieldTexture_ =
+            SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET, width, height);
+        if (!fieldTexture_) {
+            return false; // no render targets: draw the tiles directly
+        }
+        SDL_SetTextureScaleMode(fieldTexture_, SDL_SCALEMODE_LINEAR);
+        SDL_SetTextureBlendMode(fieldTexture_, SDL_BLENDMODE_BLEND);
+    }
+    if (!SDL_SetRenderTarget(renderer, fieldTexture_)) {
+        return false;
+    }
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+    SDL_RenderClear(renderer);
+    return true;
+}
+
+void Viewer::endField(SDL_Renderer* renderer, const SDL_FRect& dst) const {
+    SDL_SetRenderTarget(renderer, nullptr);
+    SDL_RenderTexture(renderer, fieldTexture_, nullptr, &dst);
+}
+
 void Viewer::renderZone(SDL_Renderer* renderer, const SDL_FRect& field) const {
     const auto& zone = game().data.zones[static_cast<std::size_t>(zone_)];
     const int span = std::max<int>(zone.width, zone.height);
-    const float cell = field.w / static_cast<float>(span);
-    const float ox = field.x + (field.w - cell * zone.width) / 2;
-    const float oy = field.y + (field.h - cell * zone.height) / 2;
+    const float fieldCell = field.w / static_cast<float>(span);
+    const SDL_FRect area{field.x + (field.w - fieldCell * zone.width) / 2,
+                         field.y + (field.h - fieldCell * zone.height) / 2, fieldCell * zone.width,
+                         fieldCell * zone.height};
+    const bool picture = beginField(renderer, zone.width * static_cast<int>(kTile), zone.height * static_cast<int>(kTile));
+    const float cell = picture ? kTile : fieldCell;
+    const float ox = picture ? 0 : area.x;
+    const float oy = picture ? 0 : area.y;
     for (int layer = 0; layer < 3; ++layer) {
         for (int cy = 0; cy < zone.height; ++cy) {
             for (int cx = 0; cx < zone.width; ++cx) {
@@ -176,19 +221,27 @@ void Viewer::renderZone(SDL_Renderer* renderer, const SDL_FRect& field) const {
             }
         }
     }
+    if (picture) {
+        endField(renderer, area);
+    }
 }
 
 void Viewer::renderTiles(SDL_Renderer* renderer, const SDL_FRect& field) const {
-    const float cell = field.w / 9;
+    const bool picture = beginField(renderer, 9 * static_cast<int>(kTile), 9 * static_cast<int>(kTile));
+    const float cell = picture ? kTile : field.w / 9;
+    const float ox = picture ? 0 : field.x;
+    const float oy = picture ? 0 : field.y;
     const int first = tilePage_ * kTilesPerPage;
     for (int i = 0; i < kTilesPerPage; ++i) {
         const int tile = first + i;
         if (tile >= static_cast<int>(game().data.tiles.size())) {
             break;
         }
-        const SDL_FRect dst{field.x + static_cast<float>(i % 9) * cell, field.y + static_cast<float>(i / 9) * cell,
-                            cell, cell};
+        const SDL_FRect dst{ox + static_cast<float>(i % 9) * cell, oy + static_cast<float>(i / 9) * cell, cell, cell};
         renderTile(renderer, static_cast<std::uint16_t>(tile), dst);
+    }
+    if (picture) {
+        endField(renderer, field);
     }
 }
 
@@ -203,9 +256,15 @@ void Viewer::renderPlay(SDL_Renderer* renderer, const SDL_FRect& field, Uint64 n
     camY_ = camY;
     cell_ = cell;
     addHit(Hit::Kind::Field, field);
+    // The tiles go to the screen, or with the smooth filter first into one
+    // picture at the games' own size (beginField).
+    const bool picture = beginField(renderer, kView * static_cast<int>(kTile), kView * static_cast<int>(kTile));
+    const float tileCell = picture ? kTile : cell;
+    const float ox = picture ? 0 : field.x;
+    const float oy = picture ? 0 : field.y;
     const auto dst = [&](int cx, int cy) {
-        return SDL_FRect{field.x + static_cast<float>(cx - camX) * cell, field.y + static_cast<float>(cy - camY) * cell,
-                         cell, cell};
+        return SDL_FRect{ox + static_cast<float>(cx - camX) * tileCell, oy + static_cast<float>(cy - camY) * tileCell,
+                         tileCell, tileCell};
     };
     const auto visible = [&](world::Position p) {
         return p.x >= camX && p.x < camX + kView && p.y >= camY && p.y < camY + kView;
@@ -232,7 +291,7 @@ void Viewer::renderPlay(SDL_Renderer* renderer, const SDL_FRect& field, Uint64 n
     if (walkTarget_ && visible(*walkTarget_)) {
         // Where a tap sends the hero.
         const SDL_FRect d = dst(walkTarget_->x, walkTarget_->y);
-        const float inset = cell / 4;
+        const float inset = tileCell / 4;
         ui::outline(renderer, {d.x + inset, d.y + inset, d.w - 2 * inset, d.h - 2 * inset}, ui::color::accent);
     }
     if (game().hero && w.heroVisible()) {
@@ -262,6 +321,9 @@ void Viewer::renderPlay(SDL_Renderer* renderer, const SDL_FRect& field, Uint64 n
         for (int cx = camX; cx < endX; ++cx) {
             renderTile(renderer, w.tile({cx, cy}, 2), dst(cx, cy));
         }
+    }
+    if (picture) {
+        endField(renderer, field);
     }
     if (bubble_) {
         renderBubble(renderer, field, cell, camX, camY);

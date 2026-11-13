@@ -15,6 +15,7 @@ std::string_view actionName(Action action) {
     case Action::InventoryNext: return "inventory_next";
     case Action::Map: return "map";
     case Action::Menu: return "menu";
+    case Action::Push: return "push";
     case Action::Count: break;
     }
     return "unknown";

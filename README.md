@@ -189,6 +189,7 @@ or touch screen; it is in the pause menu too.
 | Move | Arrow keys / WASD | D-pad / left stick | Click or tap where to go |
 | Use the selected item, talk, take an item someone hands you | Space / Enter | A (south) | Click the selected item again (tap anywhere to take a handed item) |
 | Attack | Ctrl / X | B (east) | |
+| Push a block (hold while walking into it, like Shift in the originals) | Shift | X (west) | Click or tap the block |
 | Previous / next item (tabs in the pause screen) | Q / E | LB / RB | Click an item |
 | Map | M / Tab | Back / Select | Map button |
 | Menu, back | Esc | Start (B goes back in menus) | Menu button |

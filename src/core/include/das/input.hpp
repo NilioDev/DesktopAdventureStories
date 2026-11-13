@@ -26,6 +26,7 @@ enum class Action : std::uint8_t {
     InventoryNext,
     Map,           // open the world map / locator
     Menu,          // pause menu
+    Push,          // held while walking into a block to push it (Shift in the originals)
     Count,
 };
 

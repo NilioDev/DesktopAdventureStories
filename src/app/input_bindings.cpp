@@ -25,6 +25,7 @@ std::vector<SDL_Scancode> defaultKeys(Action action) {
     case Action::InventoryNext: return {SDL_SCANCODE_E};
     case Action::Map: return {SDL_SCANCODE_M, SDL_SCANCODE_TAB};
     case Action::Menu: return {SDL_SCANCODE_ESCAPE};
+    case Action::Push: return {SDL_SCANCODE_LSHIFT, SDL_SCANCODE_RSHIFT};
     case Action::Count: break;
     }
     return {};
@@ -42,6 +43,7 @@ std::vector<SDL_GamepadButton> defaultButtons(Action action) {
     case Action::InventoryNext: return {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER};
     case Action::Map: return {SDL_GAMEPAD_BUTTON_BACK};
     case Action::Menu: return {SDL_GAMEPAD_BUTTON_START};
+    case Action::Push: return {SDL_GAMEPAD_BUTTON_WEST}; // Xbox X, PlayStation square
     case Action::Count: break;
     }
     return {};

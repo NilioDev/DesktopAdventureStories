@@ -194,7 +194,9 @@ public:
     const WorldMap& map() const { return map_; }
     void enter(int zone, Position at);
 
-    MoveResult move(Step step);
+    // Like the originals, a block is only pushed while the player holds the
+    // push control (Shift there), and never on a diagonal step.
+    MoveResult move(Step step, bool push = false);
     // Uses an inventory item on a cell (next to the hero). Returns whether a
     // script reacted.
     bool useItem(std::uint16_t item, Position at);

@@ -589,7 +589,7 @@ bool World::useBuiltIn(std::uint16_t item, Position at) {
     return true;
 }
 
-MoveResult World::move(Step step) {
+MoveResult World::move(Step step, bool push) {
     if (paused_ || drop_ || outcome_ != Outcome::Playing) {
         return MoveResult::Blocked;
     }
@@ -636,9 +636,11 @@ MoveResult World::move(Step step) {
     // Searching an object with something hidden in it comes before pushing it.
     const bool hides = state().hidden.contains({target.x, target.y});
 
-    // A draggable block moves one cell ahead when that cell is free.
+    // While the push control is held, a draggable block moves one cell
+    // ahead when that cell is free.
     const std::uint16_t block = tile(target, kObjectLayer);
-    if (!hides && block != data::kNoTile && (flags(block) & flags_::kDraggable) != 0) {
+    const bool pushing = push && (step.dx == 0 || step.dy == 0);
+    if (pushing && !hides && block != data::kNoTile && (flags(block) & flags_::kDraggable) != 0) {
         const Position beyond{target.x + step.dx, target.y + step.dy};
         if (inside(beyond) && walkable(beyond) && tile(beyond, kObjectLayer) == data::kNoTile) {
             auto& grid = cells();
@@ -667,7 +669,7 @@ MoveResult World::move(Step step) {
     // obstacle when a cell beside it (or one part of a diagonal step) is
     // free. A bump script that changed tiles, spoke, dropped an item or
     // moved the hero stops that.
-    if (!sliding_ && !scriptActed_) {
+    if (!sliding_ && !scriptActed_ && !pushing) {
         Step around = step;
         switch (slide(player_, step.dx, step.dy)) {
         case 2: ++around.dx; break;

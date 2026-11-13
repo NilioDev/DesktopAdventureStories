@@ -383,6 +383,8 @@ private:
     int scriptTickMs_ = 0;
     std::optional<Drop> drop_;
     std::mt19937 rng_{0x5eed};
+    bool sliding_ = false;
+    bool scriptActed_ = false; // a script changed the zone, spoke or moved the hero
 
     std::vector<Fighter> fighters_; // by character index
     std::uint16_t weapon_ = data::kNoTile;

@@ -639,6 +639,7 @@ MoveResult World::move(Step step) {
     }
 
     zoneChanged_ = false;
+    scriptActed_ = false;
     const std::size_t effectsBefore = effects_.size();
     trigger(script::Event::Bump, {player_.x, player_.y, step.dx, step.dy, -1});
     runScripts();
@@ -647,8 +648,27 @@ MoveResult World::move(Step step) {
     }
     const bool scriptSpoke = std::any_of(effects_.begin() + static_cast<std::ptrdiff_t>(effectsBefore), effects_.end(),
                                          [](const Effect& e) { return e.kind == Effect::Kind::Speech; });
-    if (!paused_ && !scriptSpoke && outcome_ == Outcome::Playing) {
-        bumpBuiltIn(target);
+    if (paused_ || scriptSpoke || outcome_ != Outcome::Playing || bumpBuiltIn(target)) {
+        return MoveResult::Blocked;
+    }
+    // Nothing happened: like the originals, the hero steps around the
+    // obstacle when a cell beside it (or one part of a diagonal step) is
+    // free. A bump script that changed tiles, spoke, dropped an item or
+    // moved the hero stops that.
+    if (!sliding_ && !scriptActed_) {
+        Step around = step;
+        switch (slide(player_, step.dx, step.dy)) {
+        case 2: ++around.dx; break;
+        case 3: --around.dx; break;
+        case 4: ++around.dy; break;
+        case 5: --around.dy; break;
+        default: return MoveResult::Blocked;
+        }
+        sliding_ = true;
+        const MoveResult result = move(around);
+        sliding_ = false;
+        facing_ = facingFor(step);
+        return result;
     }
     return MoveResult::Blocked;
 }

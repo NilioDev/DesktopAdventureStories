@@ -44,6 +44,8 @@ data::GameData makeWorld() {
     // Zone 0: 5x5 outdoors, a wall at (3,2), a block at (2,3), a door at (2,0) to zone 1.
     data::Zone outside = makeZone(5);
     put(outside, 3, 2, kWall);
+    put(outside, 3, 1, kWall); // walls beside it: no way around
+    put(outside, 3, 3, kWall);
     put(outside, 2, 3, kBlock);
     put(outside, 2, 0, kWall); // the door itself is drawn as an object
     outside.hotspots->push_back({9, 2, 0, 1, 1});
@@ -71,6 +73,25 @@ DAS_TEST("player walks, is stopped by walls and the zone edge") {
     DAS_CHECK(w.move({-1, 0}) == MoveResult::Blocked); // edge
 }
 
+DAS_TEST("player steps around an obstacle when a cell beside it is free, like the originals") {
+    const auto data = makeWorld();
+    world::World w(data);
+    // Up from (3,4) the wall at (3,3) is in the way; (2,3) holds the block,
+    // so the hero goes up-right to (4,3).
+    w.enter(0, {3, 4});
+    DAS_CHECK(w.move({0, -1}) == MoveResult::Moved);
+    DAS_CHECK(w.player() == (Position{4, 3}));
+    DAS_CHECK(w.facing() == data::Facing::Up);
+    // Left from (4,2): the wall at (3,2) with walls above and below it.
+    w.enter(0, {4, 2});
+    DAS_CHECK(w.move({-1, 0}) == MoveResult::Blocked);
+    DAS_CHECK(w.player() == (Position{4, 2}));
+    // A diagonal step into the wall keeps the part that is free.
+    w.enter(0, {4, 1});
+    DAS_CHECK(w.move({-1, 1}) == MoveResult::Moved);
+    DAS_CHECK(w.player() == (Position{4, 2}));
+}
+
 DAS_TEST("player pushes a draggable block onto free floor only") {
     const auto data = makeWorld();
     world::World w(data);
@@ -79,7 +100,8 @@ DAS_TEST("player pushes a draggable block onto free floor only") {
     DAS_CHECK(w.player() == (Position{2, 3}));
     DAS_CHECK(w.tile({2, 4}, 1) == kBlock);
     DAS_CHECK(w.tile({2, 3}, 1) == data::kNoTile);
-    DAS_CHECK(w.move({0, 1}) == MoveResult::Blocked); // block is against the edge now
+    DAS_CHECK(w.move({0, 1}) != MoveResult::Pushed); // block is against the edge now
+    DAS_CHECK(w.tile({2, 4}, 1) == kBlock);
     // The original zone data is untouched.
     DAS_CHECK(data.zones[0].cells[3 * 5 + 2].layers[1] == kBlock);
 }
@@ -186,11 +208,13 @@ DAS_TEST("indy: the cliff lip at either end of a ladder does not block") {
     DAS_CHECK(w.move({0, -1}) == MoveResult::Moved);
     DAS_CHECK(w.player() == (Position{2, 1}));
     w.enter(0, {3, 4});
-    DAS_CHECK(w.move({0, -1}) == MoveResult::Blocked);
+    w.move({0, -1});
+    DAS_CHECK(w.player() != (Position{3, 3}));
 
     // Yoda Stories has no such ladders.
     data.container.layout = data::Layout::Yoda;
     world::World yoda(data);
     yoda.enter(0, {2, 4});
-    DAS_CHECK(yoda.move({0, -1}) == MoveResult::Blocked);
+    yoda.move({0, -1});
+    DAS_CHECK(yoda.player() != (Position{2, 3}));
 }

@@ -303,6 +303,21 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
     const auto at = [&](int xi, int yi) { return Position{arg(line, xi), arg(line, yi)}; };
 
     switch (script::instruction(data_.layout(), line.opcode)) {
+    // These keep the hero from stepping around what he bumped into (move()).
+    case Instruction::PlaceTile:
+    case Instruction::SetVariable:
+    case Instruction::RemoveTile:
+    case Instruction::MoveTile:
+    case Instruction::DrawTile:
+    case Instruction::SpeakHero:
+    case Instruction::SpeakNpc:
+    case Instruction::SetHeroPosition:
+    case Instruction::MoveHeroTo:
+    case Instruction::DropItem: scriptActed_ = true; break;
+    default: break;
+    }
+
+    switch (script::instruction(data_.layout(), line.opcode)) {
     case Instruction::PlaceTile:
     case Instruction::SetVariable:
         setTile(at(0, 1), arg(line, 2), static_cast<std::uint16_t>(arg(line, 3)));

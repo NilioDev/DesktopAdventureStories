@@ -432,13 +432,31 @@ void Viewer::play() {
     generated_ = false;
 }
 
-void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
+void Viewer::newGame(std::uint32_t seed, world::WorldSize size, bool history) {
     if (games_.empty()) {
         return;
     }
     world::GeneratorOptions options;
     options.seed = seed;
     options.size = size;
+    // Like the originals, a new game depends on the games before it: the
+    // planet changes, recent goals are left out and some goals wait for
+    // won games. A world asked for by its seed leaves that out.
+    GameHistory* past = history && settings_ ? &settings_->history[gameId()] : nullptr;
+    if (past != nullptr) {
+        const bool indy = game().game == data::Layout::Indy;
+        options.gamesWon = past->gamesWon;
+        options.planet = indy ? -1 : world::nextPlanet(past->planet, past->gamesWon, ((seed >> 16) & 1) != 0);
+        auto& goals = past->goals[indy ? 1 : options.planet];
+        // Yoda Stories trims its list once more before the generator does.
+        if (!indy && goals.size() > 3) {
+            goals.erase(goals.begin());
+        }
+        options.recentGoals = goals;
+        if (indy) {
+            options.recentZones = past->zones;
+        }
+    }
     world::WorldMap map;
     try {
         map = world::generateWorld(game().data, options);
@@ -446,11 +464,28 @@ void Viewer::newGame(std::uint32_t seed, world::WorldSize size) {
         SDL_Log("Could not make a world: %s", e.what());
         return;
     }
-    SDL_Log("New world: seed %u, goal puzzle %d, %d puzzles", static_cast<unsigned>(seed), map.goalPuzzle,
-            map.puzzleCount);
+    SDL_Log("New world: seed %u, planet %d, goal puzzle %d, %d puzzles", static_cast<unsigned>(seed), map.planet,
+            map.goalPuzzle, map.puzzleCount);
+    if (past != nullptr) {
+        const bool indy = game().game == data::Layout::Indy;
+        auto goals = map.recentGoals;
+        // Yoda Stories trims the list once more when it saves it.
+        if (!indy && goals.size() > 3) {
+            goals.erase(goals.begin());
+        }
+        if (indy) {
+            past->goals[1] = std::move(goals);
+            past->zones = map.recentZones;
+        } else {
+            past->planet = map.planet;
+            past->goals[map.planet] = std::move(goals);
+        }
+        settingsChanged_ = true;
+    }
     options_ = options;
     world_.emplace(game().data);
     world_->setRandomSeed(seed);
+    world_->setGamesWon(options.gamesWon);
     world_->setDifficulty(difficultyValue());
     world_->setMap(std::move(map));
     world_->begin();
@@ -1597,6 +1632,10 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
             }
             break;
         case world::Effect::Kind::Won:
+            if (settings_ && generated_) {
+                ++settings_->history[gameId()].gamesWon;
+                settingsChanged_ = true;
+            }
             banner_ = "You won!";
             playSong("victory");
             break;

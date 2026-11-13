@@ -14,6 +14,19 @@ enum class Filter { Sharp, Smooth, Scanlines };
 // The on-screen pad: Auto shows it once the screen was touched.
 enum class TouchPad { Auto, On, Off };
 
+// What the originals keep between games to vary the next world.
+struct GameHistory {
+    int gamesWon = 0;
+    // Yoda Stories: the planet of the last game (the original starts from 1).
+    int planet = 1;
+    // The goals of the last games, oldest first, per planet (Indy: planet 1).
+    std::map<int, std::vector<int>> goals;
+    // Indy: the zones the last game used.
+    std::vector<int> zones;
+
+    friend bool operator==(const GameHistory&, const GameHistory&) = default;
+};
+
 struct Settings {
     bool fullscreen = false;
     // Pixel perfect scales the play field in whole steps only; otherwise it
@@ -32,6 +45,8 @@ struct Settings {
     std::map<std::string, std::vector<std::string>> buttons;
     // The mods switched on, by game id ("yoda", "indy"), as mod ids.
     std::map<std::string, std::vector<std::string>> mods;
+    // By game id.
+    std::map<std::string, GameHistory> history;
 
     friend bool operator==(const Settings&, const Settings&) = default;
 };

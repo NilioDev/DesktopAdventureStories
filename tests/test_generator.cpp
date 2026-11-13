@@ -448,3 +448,27 @@ DAS_TEST("standing on a ship or vehicle spot travels, like the originals") {
         }
     }
 }
+
+DAS_TEST("yoda: the next planet follows the original's rule") {
+    using world::nextPlanet;
+    for (const bool coin : {false, true}) {
+        for (int last = 1; last <= 3; ++last) {
+            DAS_CHECK(nextPlanet(last, 0, coin) != last);
+        }
+    }
+    DAS_CHECK(nextPlanet(1, 0, false) == 3);
+    DAS_CHECK(nextPlanet(1, 0, true) == 2);
+    DAS_CHECK(nextPlanet(2, 3, false) == 3);
+    DAS_CHECK(nextPlanet(2, 3, true) == 1);
+    DAS_CHECK(nextPlanet(3, 1, false) == 1);
+    DAS_CHECK(nextPlanet(3, 1, true) == 2);
+    // After 5, 10 and 15 won games the snow planet is left out.
+    for (const int won : {5, 10, 15}) {
+        for (const bool coin : {false, true}) {
+            DAS_CHECK(nextPlanet(1, won, coin) == 3);
+            DAS_CHECK(nextPlanet(3, won, coin) == 1);
+        }
+        DAS_CHECK(nextPlanet(2, won, false) == 3);
+        DAS_CHECK(nextPlanet(2, won, true) == 1);
+    }
+}

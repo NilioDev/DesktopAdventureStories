@@ -76,7 +76,8 @@ public:
     // Starts walking around in the selected zone.
     void play();
     // Starts a new game in a generated world.
-    void newGame(std::uint32_t seed, world::WorldSize size);
+    // history: use and update the games before it, like a new game from the menu.
+    void newGame(std::uint32_t seed, world::WorldSize size, bool history = true);
     // Puts the player on a cell of the current zone; for testing.
     void placePlayer(int x, int y);
     // Walks a scripted path ("UDLR" letters) in play mode; for testing.

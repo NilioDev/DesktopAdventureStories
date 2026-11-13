@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 namespace das::app {
@@ -32,6 +33,61 @@ json::Value writeControls(const std::map<std::string, std::vector<std::string>>&
             list.emplace_back(name);
         }
         out.emplace_back(action, std::move(list));
+    }
+    return out;
+}
+
+std::vector<int> readInts(const json::Value& v) {
+    std::vector<int> out;
+    for (const auto& x : v.asArray()) {
+        out.push_back(x.as<int>());
+    }
+    return out;
+}
+
+json::Value writeInts(const std::vector<int>& values) {
+    json::Array out;
+    for (const int x : values) {
+        out.emplace_back(x);
+    }
+    return out;
+}
+
+std::map<std::string, GameHistory> readHistory(const json::Value& v) {
+    std::map<std::string, GameHistory> out;
+    for (const auto& [game, h] : v.asObject()) {
+        GameHistory& g = out[game];
+        if (const auto* x = h.find("gamesWon")) {
+            g.gamesWon = std::max(0, x->as<int>());
+        }
+        if (const auto* x = h.find("planet")) {
+            g.planet = std::clamp(x->as<int>(), 1, 3);
+        }
+        if (const auto* x = h.find("goals")) {
+            for (const auto& [planet, list] : x->asObject()) {
+                g.goals[std::atoi(planet.c_str())] = readInts(list);
+            }
+        }
+        if (const auto* x = h.find("zones")) {
+            g.zones = readInts(*x);
+        }
+    }
+    return out;
+}
+
+json::Value writeHistory(const std::map<std::string, GameHistory>& history) {
+    json::Object out;
+    for (const auto& [game, g] : history) {
+        json::Object goals;
+        for (const auto& [planet, list] : g.goals) {
+            goals.emplace_back(std::to_string(planet), writeInts(list));
+        }
+        out.emplace_back(game, json::Object{
+                                   {"gamesWon", g.gamesWon},
+                                   {"planet", g.planet},
+                                   {"goals", std::move(goals)},
+                                   {"zones", writeInts(g.zones)},
+                               });
     }
     return out;
 }
@@ -86,6 +142,9 @@ Settings loadSettings(const std::filesystem::path& file) {
         if (const auto* x = v.find("mods")) {
             s.mods = readControls(*x);
         }
+        if (const auto* x = v.find("history")) {
+            s.history = readHistory(*x);
+        }
     } catch (const std::exception& e) {
         SDL_Log("Settings not read, using the defaults: %s", e.what());
         return Settings{};
@@ -106,6 +165,7 @@ void saveSettings(const Settings& s, const std::filesystem::path& file) {
         {"keys", writeControls(s.keys)},
         {"buttons", writeControls(s.buttons)},
         {"mods", writeControls(s.mods)},
+        {"history", writeHistory(s.history)},
     });
     std::error_code ec;
     std::filesystem::create_directories(file.parent_path(), ec);

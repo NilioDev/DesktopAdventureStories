@@ -428,7 +428,11 @@ WorldMap Generator::run(std::uint32_t seed) {
     const int townX = 4 + rng_.next() % 2;
     const int townY = 4 + rng_.next() % 2;
 
+    // As in Yoda Stories, the four middle cells start out plain.
     Layout layout(rng_);
+    for (const auto& [x, y] : {std::pair{4, 4}, std::pair{5, 4}, std::pair{4, 5}, std::pair{5, 5}}) {
+        layout.at(x, y) = Cell::Plain;
+    }
     layout.at(townX, townY) = Cell::Town;
 
     // Ring sizes: {low, high} for the inner ring, the middle ring, the

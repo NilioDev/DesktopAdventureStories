@@ -162,12 +162,11 @@ DAS_TEST("an Indiana Jones seed always gives the same world") {
         }
         // Pinned so that a change to the port shows up; see
         // docs/world-generator.md.
-        DAS_CHECK(a.goalPuzzle == 15);
-        DAS_CHECK(a.puzzleCount == 4);
+        DAS_CHECK(a.goalPuzzle == 125);
         DAS_CHECK(a.world.at(4, 5).zone == 120); // the town
-        DAS_CHECK(a.world.at(5, 9).zone == 259); // the goal zone
-        DAS_CHECK(a.world.at(1, 0).zone == 141);
-        DAS_CHECK(a.world.at(0, 9).zone == 106);
+        DAS_CHECK(a.world.at(7, 1).zone == 290); // the goal zone
+        DAS_CHECK(a.world.at(0, 0).zone == 195);
+        DAS_CHECK(a.world.at(9, 8).zone == 201);
     }
 }
 
@@ -247,6 +246,54 @@ DAS_TEST("a generated world trades with its characters and walks from zone to zo
                     std::string(data::layoutName(game.layout())).c_str(), trades, edges);
         DAS_CHECK(trades > 10);
         DAS_CHECK(edges > 100);
+    }
+}
+
+DAS_TEST("Indy worlds match the original program seed for seed") {
+    // Zone of every map cell, row by row, as DESKADV.EXE made them for this
+    // seed, size and history (read back from its save and settings files).
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Indy) {
+            continue;
+        }
+        struct Case {
+            std::uint32_t seed;
+            world::WorldSize size;
+            std::vector<int> goals, zones, expected;
+        };
+        const std::vector<Case> cases = {
+            {0x2fac76f7u,
+             world::WorldSize::Medium,
+             {134, 105, 56, 15},
+             {13, 17, 259, 196, 195, 204, 96, 212, 153, 60, 344, 345, 105, 150, 119},
+             {10, 43, 32, 201, -1, -1, 329, 171, 38, 167, -1, -1, -1, -1, -1, -1, 71, 31, 21, 125,
+              -1, -1, -1, -1, -1, 143, 44, -1, 6, -1, 146, 327, 185, 42, 346, 47, 106, -1, -1, -1,
+              350, 89, -1, 24, 67, 16, 139, -1, -1, 74, -1, -1, -1, 20, 120, 334, 1, 200, -1, 41,
+              -1, -1, -1, 137, 260, 54, 98, 73, -1, 356, -1, -1, -1, 75, 116, -1, -1, -1, -1, 102,
+              14, 152, 50, 77, 68, -1, -1, -1, -1, -1, -1, 164, -1, 357, 252, -1, -1, -1, -1, -1}},
+            {0x73cee779u,
+             world::WorldSize::Small,
+             {134, 105, 56, 15, 106, 49, 16, 133},
+             {299, 300, 13, 17, 256, 157, 84, 195, 48, 83, 344, 322, 69, 105, 106, 174},
+             {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+              -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 31, 91, -1, -1, -1, -1,
+              49, 352, 73, 320, 361, 356, 77, 176, -1, -1, -1, -1, -1, -1, 33, 120, 35, -1, -1, -1,
+              -1, -1, -1, -1, 145, -1, 23, 169, -1, -1, -1, -1, -1, -1, -1, -1, 290, -1, -1, -1,
+              -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 74, 53, 36, 126, -1, -1, -1, -1, -1, -1}},
+        };
+        for (const auto& c : cases) {
+            world::GeneratorOptions options;
+            options.seed = c.seed;
+            options.size = c.size;
+            options.recentGoals = c.goals;
+            options.recentZones = c.zones;
+            const auto map = world::generateWorld(game, options);
+            DAS_CHECK(map.seed == c.seed);
+            for (int i = 0; i < 100; ++i) {
+                DAS_CHECK(map.world.sites[static_cast<std::size_t>(i)].zone == c.expected[static_cast<std::size_t>(i)]);
+            }
+        }
     }
 }
 

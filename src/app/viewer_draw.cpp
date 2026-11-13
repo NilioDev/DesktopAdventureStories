@@ -283,6 +283,10 @@ void Viewer::renderPlay(SDL_Renderer* renderer, const SDL_FRect& field, Uint64 n
             renderTile(renderer, t, dst(at.x, at.y));
         }
     }
+    if (const auto& drop = w.drop(); drop && visible(drop->at) && (now / 250) % 2 == 0) {
+        // An item a script holds out blinks until the player takes it.
+        renderTile(renderer, drop->item, dst(drop->at.x, drop->at.y));
+    }
     for (const auto& m : w.monsters()) {
         if (visible(m.at)) {
             renderTile(renderer, m.tile, dst(m.at.x, m.at.y));

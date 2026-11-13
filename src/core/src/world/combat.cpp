@@ -7,6 +7,7 @@
 
 #include "das/data/tile_flags.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 
 namespace das::world {
@@ -45,6 +46,8 @@ constexpr int kShotRange = 8;
 constexpr int kNearby = 4;           // how close Lurk and Stalk notice the hero
 constexpr int kHeroAttackMs = 300;   // between the hero's attacks
 constexpr int kAttackShowMs = 200;
+constexpr std::uint16_t kSpiritHeart = 1432; // Yoda Stories' extra life
+constexpr int kSpiritHeartSound = 58;
 constexpr int kScriptTickMs = 100;   // a Walk pass on the hero's cell
 
 int distance(Position a, Position b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
@@ -235,18 +238,83 @@ bool World::lineClear(Position from, Position to) const {
 }
 
 void World::hurtHero(int damage) {
-    if (damage <= 0 || outcome_ != Outcome::Playing) {
+    if (damage > 0) {
+        changeHealth(-damage);
+    }
+}
+
+// Health as the originals keep it: a bar (1..3, the one being used up) and
+// the points lost in it (1..100); health = 301 - points - 100 * (bar - 1),
+// so 300 is full. The odd steps for big changes are the originals' own.
+void World::changeHealth(int amount) {
+    if (amount == 0 || outcome_ != Outcome::Playing) {
         return;
     }
-    // As in the originals: damage is divided by 100 / difficulty (whole
-    // numbers), so half at the normal 50 and all of it at 100; at least 1.
-    const int divisor = std::max(1, 100 / std::max(1, difficulty_));
-    const int scaled = std::max(1, damage / divisor);
-    health_ = std::max(0, health_ - scaled);
-    if (health_ == 0) {
-        outcome_ = Outcome::Lost;
-        effects_.push_back({Effect::Kind::Lost, {}, {}, 0});
+    const int lost = kMaxHealth - std::clamp(health_, 1, kMaxHealth);
+    int bar = 1 + lost / 100;
+    int points = 1 + lost % 100;
+    const bool yoda = data_.layout() == data::Layout::Yoda;
+    if (amount < 0) {
+        // Damage is divided by 100 / difficulty (whole numbers): half at
+        // the normal 50, all of it at 100, and at least 1.
+        const int divisor = std::max(1, 100 / std::max(1, difficulty_));
+        const int d = std::min(-1, amount / divisor);
+        const int bars = !yoda ? 0 : d <= -300 ? 3 : d <= -200 ? 2 : d <= -100 ? 1 : 0;
+        if (bars > 0) {
+            // Yoda Stories: whole bars, and a third of the damage on top.
+            bar += bars;
+            points += d / -3 - 1;
+        } else {
+            points -= d;
+            if (points > 100) {
+                points -= 100;
+                ++bar;
+            }
+        }
+        if (bar > 3) {
+            bar = 3;
+            points = 100;
+        }
+    } else {
+        const int a = std::max(1, amount);
+        if (yoda && a >= 300) {
+            bar = 1;
+            points = 1;
+        } else if (yoda && a >= 200) {
+            bar -= 2;
+            points += a / -3 + 1;
+        } else if (yoda && a >= 100) {
+            bar -= 1;
+        } else {
+            points -= a;
+            if (points < 1) {
+                points += 100;
+                --bar;
+            }
+        }
+        if (bar < 1) {
+            bar = 1;
+            points = 1;
+        }
     }
+    health_ = std::clamp(kMaxHealth + 1 - points - 100 * (bar - 1), 1, kMaxHealth);
+    if (points <= 99 || bar < 3) {
+        return;
+    }
+    // Yoda Stories: a Spirit Heart in the backpack brings the hero back.
+    if (yoda) {
+        const auto heart = std::find(inventory_.begin(), inventory_.end(), kSpiritHeart);
+        if (heart != inventory_.end()) {
+            inventory_.erase(heart);
+            health_ = kMaxHealth;
+            effects_.push_back({Effect::Kind::Sound, {}, {}, kSpiritHeartSound});
+            return;
+        }
+    }
+    health_ = 0;
+    outcome_ = Outcome::Lost;
+    mission_ = -1;
+    effects_.push_back({Effect::Kind::Lost, {}, {}, 0});
 }
 
 void World::hurtMonster(std::size_t index, int damage) {
@@ -318,7 +386,7 @@ void World::moveShots() {
 }
 
 bool World::attack() {
-    if (paused_ || outcome_ != Outcome::Playing || attackCooldownMs_ > 0) {
+    if (paused_ || drop_ || outcome_ != Outcome::Playing || attackCooldownMs_ > 0) {
         return false;
     }
     const Fighter* w = weaponFighter(weapon_);
@@ -452,7 +520,7 @@ void World::update(int ms) {
     }
     attackCooldownMs_ = std::max(0, attackCooldownMs_ - ms);
     attackShowMs_ = std::max(0, attackShowMs_ - ms);
-    if (paused_) {
+    if (paused_ || drop_) {
         return;
     }
     {

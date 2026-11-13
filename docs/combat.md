@@ -63,5 +63,12 @@ Shots fly one cell every 70 ms, up to 8 cells, and stop at walls.
 The difficulty (0 to 100, normally 50) scales the damage the hero takes, as
 in both originals: the damage is divided by 100 / difficulty (whole numbers),
 so the hero takes half at 50 and all of it at 100, and at least 1. This also
-holds for health that a script takes away. When health reaches 0, the game is
-lost.
+holds for health that a script takes away (AddHealth).
+
+Health works as in the originals: three bars of 100 points. A change of less
+than 100 is counted point by point. In Yoda Stories a bigger change goes by
+whole bars plus a third of the rest: 150 damage takes one bar and 49 points,
+and healing 250 gives back two bars and 82 points (300 or more heals fully).
+When the last bar is empty the game is lost, unless the hero carries a
+Spirit Heart (Yoda Stories): then it is used up, a sound plays, and he is
+back at full health.

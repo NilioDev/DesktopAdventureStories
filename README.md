@@ -45,7 +45,8 @@ own adventures.
   difficulty.
 - 🎯 **True to the original.** The zone scripts run the way the original
   programs run them, and the difficulty scales the damage you take just like
-  there (on Normal you take half).
+  there (on Normal you take half). An item someone gives you blinks until
+  you take it, and in Yoda Stories a Spirit Heart saves you once.
 - 🃏 **Pick your adventure.** The game starts with a card for each game,
   Indiana Jones first and Yoda Stories next to it, showing the game's own
   title screen from your files and when you last saved. Continue right away
@@ -181,7 +182,7 @@ or touch screen; it is in the pause menu too.
 | Action | Keyboard | Gamepad | Mouse / touch |
 | --- | --- | --- | --- |
 | Move | Arrow keys / WASD | D-pad / left stick | Click or tap where to go |
-| Use the selected item, talk | Space / Enter | A (south) | Click the selected item again |
+| Use the selected item, talk, take an item someone hands you | Space / Enter | A (south) | Click the selected item again (tap anywhere to take a handed item) |
 | Attack | Ctrl / X | B (east) | |
 | Previous / next item (tabs in the pause screen) | Q / E | LB / RB | Click an item |
 | Map | M / Tab | Back / Select | Map button |

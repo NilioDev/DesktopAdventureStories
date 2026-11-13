@@ -367,6 +367,46 @@ DAS_TEST("Indy's mission giver briefs the hero and hands over the first item onc
     }
 }
 
+DAS_TEST("a trading character only stands on a free cell, like the originals") {
+    // Rooms that draw their trader themselves keep the spawn spot in a wall
+    // or under a table (Yoda zones 150, 247, 368, ...). The original puts
+    // the character only on a cell with an empty object layer.
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        int occupied = 0;
+        for (std::uint32_t seed = 1; seed <= 40; ++seed) {
+            world::GeneratorOptions options;
+            options.seed = seed;
+            const auto map = world::generateWorld(game, options);
+            for (const auto& s : map.world.sites) {
+                if (s.npc == data::kNoTile || s.npcZone < 0) {
+                    continue;
+                }
+                const auto& z = game.zones[static_cast<std::size_t>(s.npcZone)];
+                const auto& spot = (*z.hotspots)[static_cast<std::size_t>(s.npcSpot)];
+                const auto drawn = z.cells[static_cast<std::size_t>(spot.y * z.width + spot.x)].layers[1];
+                if (drawn == data::kNoTile || drawn == s.npc) {
+                    continue;
+                }
+                ++occupied;
+                world::World w(game);
+                w.setMap(map);
+                w.begin();
+                w.enter(s.npcZone, {0, 0});
+                while (w.paused()) {
+                    (void)w.takeEffects();
+                    w.resume();
+                }
+                DAS_CHECK(w.tile({spot.x, spot.y}, 1) != s.npc);
+            }
+        }
+        DAS_CHECK(occupied > 0);
+    }
+}
+
 DAS_TEST("Yoda on Dagobah hands over the first item of the second chain") {
     const auto games = loadGames();
     for (const auto& game : games) {

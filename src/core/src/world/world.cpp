@@ -211,8 +211,14 @@ void World::prepareZone(int zoneIndex, ZoneState& fresh) {
                    : nullptr;
     };
     if (s->npcZone == zoneIndex && s->npc != data::kNoTile) {
+        // Like the originals, the character only goes on a free cell. Some
+        // rooms draw their trader themselves and keep the spawn spot inside
+        // a wall or under a table; the scripts there do the trading.
         if (const auto* h = spot(s->npcSpot); h && h->x < z.width && h->y < z.height) {
-            fresh.cells[static_cast<std::size_t>(h->y * z.width + h->x)].layers[kObjectLayer] = s->npc;
+            auto& layer = fresh.cells[static_cast<std::size_t>(h->y * z.width + h->x)].layers[kObjectLayer];
+            if (layer == data::kNoTile) {
+                layer = s->npc;
+            }
         }
     }
     if (s->itemZone == zoneIndex && s->findItem != data::kNoTile) {

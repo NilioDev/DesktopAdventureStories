@@ -273,6 +273,8 @@ private:
     std::uint16_t tileIn(int zone, Position at, int layer) const;
     const Site* site(int zone) const;
     void setSolved(int zone);
+    // Yoda Stories: the shared counter goes along through doors and ChangeZone.
+    void carrySharedCounter(int toZone);
     void prepareZone(int zone, ZoneState& state);
     bool leaveEdge(Step step);
     bool fly(Position target);
@@ -334,6 +336,10 @@ private:
     bool zoneChanged_ = false;
     bool reacted_ = false;
     int chainedUpdates_ = 0;
+    // Yoda Stories: a ChangeZone waits until the pass has run to its end.
+    std::optional<std::pair<int, Position>> pendingZone_;
+    // Yoda Stories runs a Walk pass on the hero's cell on every game tick.
+    int scriptTickMs_ = 0;
     std::mt19937 rng_{0x5eed};
 
     std::vector<Fighter> fighters_; // by character index

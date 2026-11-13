@@ -25,6 +25,12 @@ constexpr int kMaxChainedUpdates = 32;
 constexpr char kRequiredItemMark = '\xa2';
 constexpr char kFindItemMark = '\xa5';
 
+// Yoda Stories: items that a PlaceItemIsNot script never answers to (the
+// locator and the like keep their own use).
+bool ignoredByPlaceItemIsNot(int item) {
+    return item == 18 || (item >= 510 && item <= 514) || item == 516 || item == 517 || item == 794;
+}
+
 int arg(const data::ScriptLine& line, int index) { return line.args[static_cast<std::size_t>(index)]; }
 
 bool validLayer(int layer) { return layer >= 0 && layer < kLayers; }
@@ -166,12 +172,25 @@ void World::runScripts() {
             passes_.clear();
             break;
         }
-        if (placed) {
+        if (pendingZone_) {
+            // Yoda Stories: a ChangeZone takes effect once the pass is over.
+            const auto [to, at] = *pendingZone_;
+            pendingZone_.reset();
+            state().initialized = true;
+            carrySharedCounter(to);
+            changeZone(to, at);
+            return;
+        }
+        const bool yoda = data_.layout() == data::Layout::Yoda;
+        // Yoda Stories looks at the hero's cell on every game tick (see
+        // update()), which covers a hero that a script moved.
+        if (placed && !yoda) {
             trigger(Event::Walk, {player_.x, player_.y, 0, 0, -1});
         }
-        // After speech, the original runs the zone's scripts once more so
-        // that conversations can go on.
-        if (spoke && chainedUpdates_ < kMaxChainedUpdates) {
+        // Indy: after speech we run the zone's scripts once more so that
+        // conversations can go on. Yoda Stories does not do that; it runs
+        // Update only when a zone is entered.
+        if (spoke && !yoda && chainedUpdates_ < kMaxChainedUpdates) {
             ++chainedUpdates_;
             trigger(Event::Update);
         } else if (wasUpdate && passes_.empty()) {
@@ -214,7 +233,16 @@ bool World::conditionHolds(const data::ScriptLine& line, const Pass& pass) {
         return pass.event == Event::Walk && e.x == arg(line, 0) && e.y == arg(line, 1) &&
                tileAt(arg(line, 0), arg(line, 1), 0) == arg(line, 2);
     case Condition::PlaceItem: {
-        if (pass.event != Event::PlaceItem || !itemTarget()) {
+        if (pass.event != Event::PlaceItem) {
+            return false;
+        }
+        if (data_.layout() == data::Layout::Yoda) {
+            // The cell must hold exactly that tile; -1 takes any.
+            if (arg(line, 0) != e.x || arg(line, 1) != e.y ||
+                (arg(line, 3) != -1 && tileAt(e.x, e.y, arg(line, 2)) != arg(line, 3))) {
+                return false;
+            }
+        } else if (!itemTarget()) {
             return false;
         }
         const int wanted = arg(line, 4) == -1 ? (g.requiredItem == data::kNoTile ? -1 : g.requiredItem) : arg(line, 4);
@@ -225,6 +253,9 @@ bool World::conditionHolds(const data::ScriptLine& line, const Pass& pass) {
             return false;
         }
         const int wanted = arg(line, 4) == -1 ? (g.requiredItem == data::kNoTile ? -1 : g.requiredItem) : arg(line, 4);
+        if (data_.layout() == data::Layout::Yoda && ignoredByPlaceItemIsNot(e.item)) {
+            return false;
+        }
         return wanted >= 0 && e.item != wanted;
     }
     case Condition::CounterIs: return s.counter == arg(line, 0);
@@ -445,8 +476,25 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
         outcome_ = Outcome::Lost;
         effects_.push_back({Effect::Kind::Lost, {}, {}, 0});
         return true;
-    case Instruction::AddHealth: health_ = std::clamp(health_ + arg(line, 0), 0, kMaxHealth); return true;
-    case Instruction::ChangeZone: changeZone(arg(line, 0), at(1, 2)); return true;
+    case Instruction::AddHealth:
+        if (data_.layout() == data::Layout::Yoda && arg(line, 0) < 0) {
+            // Yoda Stories treats it like a hit: scaled by the difficulty.
+            hurtHero(-arg(line, 0));
+            return true;
+        }
+        health_ = std::clamp(health_ + arg(line, 0), 0, kMaxHealth);
+        return true;
+    case Instruction::ChangeZone:
+        if (data_.layout() == data::Layout::Yoda) {
+            // The rest of the pass still runs here first; in the data, a
+            // DisableAction or tile changes often follow the ChangeZone.
+            if (arg(line, 0) >= 0 && static_cast<std::size_t>(arg(line, 0)) < data_.zones.size()) {
+                pendingZone_ = std::make_pair(static_cast<int>(arg(line, 0)), at(1, 2));
+            }
+            return true;
+        }
+        changeZone(arg(line, 0), at(1, 2));
+        return true;
     case Instruction::RedrawTile:
     case Instruction::RedrawTiles:
     case Instruction::RedrawZone:

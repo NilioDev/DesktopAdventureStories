@@ -91,11 +91,13 @@ struct ZoneGoal {
 // Something the app has to show or play. Speech and Wait pause the scripts
 // until resume().
 struct Effect {
-    enum class Kind { Speech, Wait, Sound, StopSound, Won, Lost, ItemFound };
+    enum class Kind { Speech, Wait, Sound, StopSound, Won, Lost, ItemFound, ItemDrop };
     Kind kind = Kind::Speech;
     std::string text;          // Speech: UTF-8, lines separated by '\n'
     std::optional<Position> at; // Speech: the speaker's cell; none: the hero
-    int value = 0;             // Wait: milliseconds; Sound: sound index; ItemFound: the tile
+    int value = 0;             // Wait: milliseconds; Sound: sound index; ItemFound, ItemDrop: the tile
+    // ItemDrop: a script holds out an item; it blinks on `at` and the game
+    // waits until the player takes it with World::pickUp().
 };
 
 enum class Outcome { Playing, Won, Lost };
@@ -218,6 +220,15 @@ public:
     // scripts (Speech, Wait), call resume() once it is done.
     std::vector<Effect> takeEffects();
     bool paused() const { return paused_; }
+    // As in the originals, an item that a script hands out (DropItem)
+    // blinks on its cell and the game stands still until the player takes
+    // it (Use or Attack), which puts it straight into the inventory.
+    struct Drop {
+        Position at;
+        std::uint16_t item = 0;
+    };
+    const std::optional<Drop>& drop() const { return drop_; }
+    void pickUp();
     void resume();
 
     int zoneIndex() const { return zone_; }
@@ -324,6 +335,8 @@ private:
     void faceMonster(MonsterState& m, int character, int dx, int dy);
     void dropItem(std::size_t index, Position at);
     void hurtHero(int damage);
+    // AddHealth as the originals do it; negative is damage.
+    void changeHealth(int amount);
     void hurtMonster(std::size_t index, int damage);
     void fire(Position from, int dx, int dy, const Fighter& weapon, int damage, bool fromHero);
     void moveShots();
@@ -366,6 +379,7 @@ private:
     std::optional<std::pair<int, Position>> pendingZone_;
     // Yoda Stories runs a Walk pass on the hero's cell on every game tick.
     int scriptTickMs_ = 0;
+    std::optional<Drop> drop_;
     std::mt19937 rng_{0x5eed};
 
     std::vector<Fighter> fighters_; // by character index

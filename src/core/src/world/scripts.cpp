@@ -89,6 +89,15 @@ std::vector<Effect> World::takeEffects() {
     return out;
 }
 
+void World::pickUp() {
+    if (!drop_) {
+        return;
+    }
+    const std::uint16_t item = drop_->item;
+    drop_.reset();
+    found(item);
+}
+
 void World::resume() {
     if (!paused_) {
         return;
@@ -403,18 +412,12 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
     case Instruction::EnableAllMonsters: std::fill(s.monsterEnabled.begin(), s.monsterEnabled.end(), true); return true;
     case Instruction::DisableAllMonsters: std::fill(s.monsterEnabled.begin(), s.monsterEnabled.end(), false); return true;
     case Instruction::DropItem: {
-        // The item appears on the cell; the hero picks it up there.
+        // The item blinks on the cell until the player takes it (pickUp());
+        // the rest of the pass runs on first.
         const int item = arg(line, 0) == -1 ? (g.findItem == data::kNoTile ? -1 : g.findItem) : arg(line, 0);
         if (item >= 0) {
-            const Position cell = at(1, 2);
-            if (inside(cell) && tile(cell, 1) != data::kNoTile) {
-                // Something stands there already (a cabinet in a wall): the
-                // item goes inside it, and bumping it finds the item. Putting
-                // the item on top would wipe out what was there.
-                s.hidden[{cell.x, cell.y}] = static_cast<std::uint16_t>(item);
-            } else {
-                setTile(cell, 1, static_cast<std::uint16_t>(item));
-            }
+            drop_ = Drop{at(1, 2), static_cast<std::uint16_t>(item)};
+            effects_.push_back({Effect::Kind::ItemDrop, {}, at(1, 2), item});
         }
         return true;
     }
@@ -436,20 +439,17 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
     case Instruction::MarkAsSolved: setSolved(zone_); return true;
     case Instruction::WinGame:
         outcome_ = Outcome::Won;
+        mission_ = 1;
         effects_.push_back({Effect::Kind::Won, {}, {}, 0});
         return true;
     case Instruction::LoseGame:
         health_ = 0;
         outcome_ = Outcome::Lost;
+        mission_ = -1;
         effects_.push_back({Effect::Kind::Lost, {}, {}, 0});
         return true;
     case Instruction::AddHealth:
-        if (arg(line, 0) < 0) {
-            // Treated like a hit: scaled by the difficulty.
-            hurtHero(-arg(line, 0));
-            return true;
-        }
-        health_ = std::clamp(health_ + arg(line, 0), 0, kMaxHealth);
+        changeHealth(arg(line, 0));
         return true;
     case Instruction::ChangeZone:
         // The rest of the pass still runs here first; in the data, a

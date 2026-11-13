@@ -123,12 +123,19 @@ json::Value World::saveState() const {
         {"rng", rng.str()},
         {"monsterTicks", static_cast<int>(monsterTicks_)},
         {"monsterMs", monsterMs_},
+        {"drop", drop_ ? json::Value(json::Array{drop_->at.x, drop_->at.y, static_cast<int>(drop_->item)})
+                       : json::Value()},
     };
 }
 
 void World::loadState(const json::Value& v) {
     states_.clear();
     passes_.clear();
+    drop_.reset();
+    if (const auto& d = v["drop"]; d.isArray() && d.asArray().size() == 3) {
+        const auto& a = d.asArray();
+        drop_ = Drop{{a[0].as<int>(), a[1].as<int>()}, a[2].as<std::uint16_t>()};
+    }
     effects_.clear();
     shots_.clear();
     overlays_.clear();

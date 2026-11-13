@@ -573,7 +573,7 @@ bool World::useBuiltIn(std::uint16_t item, Position at) {
 }
 
 MoveResult World::move(Step step) {
-    if (paused_ || outcome_ != Outcome::Playing) {
+    if (paused_ || drop_ || outcome_ != Outcome::Playing) {
         return MoveResult::Blocked;
     }
     facing_ = facingFor(step);
@@ -650,7 +650,7 @@ MoveResult World::move(Step step) {
 }
 
 bool World::useItem(std::uint16_t item, Position at) {
-    if (paused_ || outcome_ != Outcome::Playing || !inside(at) || !hasItem(item)) {
+    if (paused_ || drop_ || outcome_ != Outcome::Playing || !inside(at) || !hasItem(item)) {
         return false;
     }
     reacted_ = false;

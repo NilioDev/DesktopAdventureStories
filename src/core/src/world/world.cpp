@@ -604,7 +604,8 @@ MoveResult World::move(Step step) {
         return MoveResult::ChangedZone;
     }
 
-    if (monsterAt(target)) {
+    // Monsters and their shots stand in the object layer in the originals.
+    if (monsterAt(target) || monsterShotAt(target)) {
         return MoveResult::Blocked;
     }
     if (walkable(target)) {

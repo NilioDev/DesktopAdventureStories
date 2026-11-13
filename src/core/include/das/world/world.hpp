@@ -52,8 +52,10 @@ inline constexpr int kMaxHealth = 300;
 // A character from the data as the combat rules see it (see docs/combat.md).
 struct Fighter {
     data::Character character;
-    int health = 0;            // CHWP value; 0: cannot be hurt
-    int damage = 0;            // CAUX value; 0: does no harm
+    int health = 0;            // CHWP value
+    int damage = 0;            // CAUX value
+    bool invulnerable = false; // health 0xFFFF: Yoda Stories cannot hurt it
+    bool harmless = false;     // damage 0xFFFF: does no harm
     int weapon = -1;           // enemies: the weapon character they use (CHWP reference)
     int sound = -1;            // weapons: the sound they make (CHWP reference)
     std::uint16_t item = 0xffff; // weapons: the inventory tile
@@ -107,14 +109,32 @@ enum class MoveResult {
 
 namespace detail {
 
+// A placed monster during play. The fields follow what the original programs
+// keep for each monster (docs/combat.md).
 struct MonsterState {
     Position at;
-    int health = 0;
+    int health = 0; // the character's health minus the damage taken
     data::Facing facing = data::Facing::Down;
-    int waypoint = 0;
-    int moveMs = 0;   // until the next step
-    int attackMs = 0; // until the next attack
-    int frame = 0;
+    int waypoint = 0; // Yoda Stories patrols: the next waypoint (-1 to 2); scenery: the frame
+    std::uint16_t tile = 0xffff; // what it shows
+    int wait = 0;      // Yoda Stories: ticks it stands still
+    int count = 0;     // steps counted towards a change of mind
+    bool retreat = false;
+    int approach = 0;  // movement 6: 0 keeps away, 1 to 4 comes closer
+    int heading = 1;   // Yoda Stories: the way it walks, -1 up, 0 down, 1 right, 2 left
+    bool faceNext = true;
+    // Its shot: where it flies, the way it goes and how many cells it went.
+    Position shotAt;
+    int shotDx = 0;
+    int shotDy = 0;
+    int shotStep = 0;
+    bool shotShown = false;
+    // Indy's rolling rock: where it starts and how far its roll got.
+    Position home;
+    bool homeSet = false;
+    bool placed = false;
+    int roll = 0;
+    bool hidden = false;
 };
 
 struct ZoneState {
@@ -185,7 +205,8 @@ public:
     std::uint16_t weapon() const { return weapon_; }
     bool isWeapon(std::uint16_t item) const;
     std::vector<MonsterView> monsters() const;
-    const std::vector<Shot>& shots() const { return shots_; }
+    // The hero's shots and the monsters' shots in flight.
+    std::vector<Shot> shots() const;
     // Frames of an attack still showing, for the hero's attack pose.
     bool attacking() const { return attackShowMs_ > 0; }
     const std::vector<Fighter>& fighters() const { return fighters_; }
@@ -291,11 +312,19 @@ private:
     const Fighter* fighter(int character) const;
     const Fighter* weaponFighter(std::uint16_t item) const;
     bool monsterAt(Position at, std::size_t* index = nullptr) const;
-    bool freeForMonster(Position at) const;
-    void stepMonster(std::size_t index, MonsterState& m, const Fighter& f);
+    bool monsterShotAt(Position at) const;
+    // One game tick of every monster in the zone, as in the originals.
+    void tickMonsters();
+    void tickMonster(std::size_t index, MonsterState& m, const Fighter& f, int (&dir)[2], bool& attackMode);
+    // The original's move test: -1 outside, 0 blocked, 1 free, 2 to 5: free
+    // after one step aside (2 dx+1, 3 dx-1, 4 dy+1, 5 dy-1).
+    int slide(Position from, int dx, int dy);
+    std::uint16_t objectAt(Position at) const; // the object layer with monsters and shots
+    void meleeHit(const Fighter& f);
+    void faceMonster(MonsterState& m, int character, int dx, int dy);
+    void dropItem(std::size_t index, Position at);
     void hurtHero(int damage);
     void hurtMonster(std::size_t index, int damage);
-    bool lineClear(Position from, Position to) const;
     void fire(Position from, int dx, int dy, const Fighter& weapon, int damage, bool fromHero);
     void moveShots();
 
@@ -343,6 +372,11 @@ private:
     std::uint16_t weapon_ = data::kNoTile;
     std::vector<Shot> shots_;
     int shotMs_ = 0;
+    int monsterMs_ = 0;
+    std::int16_t monsterTicks_ = 0;
+    // The tile each character shows last; the originals keep one per
+    // character, so standing monsters of one kind share it.
+    std::vector<std::uint16_t> characterTile_;
     int attackShowMs_ = 0;
     int attackCooldownMs_ = 0;
     int difficulty_ = 50;

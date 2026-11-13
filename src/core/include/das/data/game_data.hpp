@@ -52,9 +52,9 @@ struct ZoneMonster {
     std::uint16_t x = 0;
     std::uint16_t y = 0;
     // Yoda Stories only.
-    std::uint16_t item = kNoTile;
-    std::uint32_t unknown = 0;
-    std::array<std::uint16_t, 16> waypoints{};
+    std::uint16_t item = kNoTile;       // one more than the tile it drops; 0: the zone's item
+    std::uint32_t unknown = 0;          // 1: it drops its item when it dies
+    std::array<std::uint16_t, 16> waypoints{}; // four 32-bit x, y pairs, as 16-bit halves
 };
 
 // One script line: a condition or an instruction (IACT).

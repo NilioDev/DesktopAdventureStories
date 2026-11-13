@@ -72,7 +72,11 @@ json::Value World::saveState() const {
         }
         json::Array monsters;
         for (const auto& m : s.monsters) {
-            monsters.emplace_back(json::Array{m.at.x, m.at.y, m.health, static_cast<int>(m.facing), m.waypoint});
+            monsters.emplace_back(json::Array{m.at.x, m.at.y, m.health, static_cast<int>(m.facing), m.waypoint,
+                                              m.wait, m.count, m.retreat, m.approach, m.heading, m.faceNext,
+                                              static_cast<int>(m.tile), m.shotAt.x, m.shotAt.y, m.shotDx, m.shotDy,
+                                              m.shotStep, m.shotShown, m.home.x, m.home.y, m.homeSet, m.placed,
+                                              m.roll, m.hidden});
         }
         zones.emplace_back(std::to_string(index),
                            json::Object{{"cells", std::move(cells)},
@@ -117,6 +121,8 @@ json::Value World::saveState() const {
         {"goals", std::move(goals)},
         {"zones", std::move(zones)},
         {"rng", rng.str()},
+        {"monsterTicks", static_cast<int>(monsterTicks_)},
+        {"monsterMs", monsterMs_},
     };
 }
 
@@ -160,6 +166,27 @@ void World::loadState(const json::Value& v) {
             m.health = a.at(2).as<int>();
             m.facing = static_cast<data::Facing>(a.at(3).as<int>() & 7);
             m.waypoint = a.at(4).as<int>();
+            if (a.size() >= 24) { // saves before the original monster rules have only the above
+                m.wait = a.at(5).as<int>();
+                m.count = a.at(6).as<int>();
+                m.retreat = a.at(7).asBool();
+                m.approach = a.at(8).as<int>();
+                m.heading = a.at(9).as<int>();
+                m.faceNext = a.at(10).asBool();
+                m.tile = a.at(11).as<std::uint16_t>();
+                m.shotAt = {a.at(12).as<int>(), a.at(13).as<int>()};
+                m.shotDx = a.at(14).as<int>();
+                m.shotDy = a.at(15).as<int>();
+                m.shotStep = a.at(16).as<int>();
+                m.shotShown = a.at(17).asBool();
+                m.home = {a.at(18).as<int>(), a.at(19).as<int>()};
+                m.homeSet = a.at(20).asBool();
+                m.placed = a.at(21).asBool();
+                m.roll = a.at(22).as<int>();
+                m.hidden = a.at(23).asBool();
+            } else {
+                m.shotAt = m.at;
+            }
         }
         s.initialized = z["entered"].asBool();
         s.counter = z["counter"].as<int>();
@@ -202,6 +229,11 @@ void World::loadState(const json::Value& v) {
     difficulty_ = std::clamp(v["difficulty"].as<int>(), 0, 100);
     std::istringstream rng(v["rng"].asString());
     rng >> rng_;
+    // Older saves have no monster clock.
+    const json::Value* ticks = v.find("monsterTicks");
+    const json::Value* tickMs = v.find("monsterMs");
+    monsterTicks_ = ticks != nullptr ? ticks->as<std::int16_t>() : std::int16_t{0};
+    monsterMs_ = tickMs != nullptr ? tickMs->as<int>() : 0;
 
     const int zone = v["zone"].as<int>();
     if (zone < 0 || static_cast<std::size_t>(zone) >= data_.zones.size()) {

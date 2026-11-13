@@ -10,6 +10,7 @@
 #include "das/world/world.hpp"
 
 #include <cstdlib>
+#include <optional>
 
 using namespace das;
 
@@ -222,4 +223,262 @@ DAS_TEST("a damaged save game is refused") {
         refused = true;
     }
     DAS_CHECK(refused);
+}
+
+namespace {
+
+// Lets time pass in game ticks, answering speech and keeping the hero alive.
+void play(world::World& w, int ticks) {
+    for (int t = 0; t < ticks && w.outcome() == world::Outcome::Playing; ++t) {
+        while (w.paused()) {
+            (void)w.takeEffects();
+            w.resume();
+        }
+        w.update(140);
+        (void)w.takeEffects();
+        w.setHealth(world::kMaxHealth);
+    }
+}
+
+std::optional<world::Position> monsterPosition(const world::World& w, std::size_t index) {
+    for (const auto& m : w.monsters()) {
+        if (m.index == index) {
+            return m.at;
+        }
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+DAS_TEST("monsters take at most one step per game tick and sitting ones never move") {
+    const auto games = loadGames();
+    if (games.empty()) {
+        DAS_SKIP("set DAS_GAMEDATA_DIR to run");
+    }
+    for (const auto& game : games) {
+        world::World w(game);
+        int zonesSeen = 0;
+        int moves = 0;
+        for (std::size_t z = 0; z < game.zones.size() && zonesSeen < 40; ++z) {
+            const auto& zone = game.zones[z];
+            if (zone.monsters.empty() || (zone.actions && !zone.actions->empty())) {
+                continue;
+            }
+            ++zonesSeen;
+            w.enter(static_cast<int>(z), {0, 0});
+            for (int t = 0; t < 60; ++t) {
+                std::vector<world::MonsterView> before = w.monsters();
+                play(w, 1);
+                for (const auto& b : before) {
+                    const auto now = monsterPosition(w, b.index);
+                    if (!now) {
+                        continue;
+                    }
+                    const int movement = w.fighters().at(zone.monsters[b.index].character).character.movement;
+                    const int dx = std::abs(now->x - b.at.x);
+                    const int dy = std::abs(now->y - b.at.y);
+                    if (movement == 5) {
+                        continue; // Indy's rock jumps back to its start
+                    }
+                    DAS_CHECK(dx <= 1 && dy <= 1);
+                    if (movement == 4 || movement == 12) {
+                        DAS_CHECK(dx == 0 && dy == 0);
+                    }
+                    moves += dx + dy > 0 ? 1 : 0;
+                }
+            }
+        }
+        DAS_CHECK(zonesSeen > 0);
+        DAS_CHECK(moves > 0);
+    }
+}
+
+DAS_TEST("Yoda Stories patrols walk between their four waypoints") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        world::World w(game);
+        bool tested = false;
+        for (std::size_t z = 0; z < game.zones.size() && !tested; ++z) {
+            const auto& zone = game.zones[z];
+            for (std::size_t i = 0; i < zone.monsters.size() && !tested; ++i) {
+                const auto& m = zone.monsters[i];
+                if (w.fighters().at(m.character).character.movement != 10 || m.waypoints[4] == m.waypoints[0]) {
+                    continue;
+                }
+                // The waypoints are four pairs of 32-bit x and y.
+                int lowX = 99, highX = -1, lowY = 99, highY = -1;
+                for (int k = 0; k < 4; ++k) {
+                    lowX = std::min<int>(lowX, m.waypoints[static_cast<std::size_t>(k * 4)]);
+                    highX = std::max<int>(highX, m.waypoints[static_cast<std::size_t>(k * 4)]);
+                    lowY = std::min<int>(lowY, m.waypoints[static_cast<std::size_t>(k * 4 + 2)]);
+                    highY = std::max<int>(highY, m.waypoints[static_cast<std::size_t>(k * 4 + 2)]);
+                }
+                if (m.x < lowX || m.x > highX || m.y < lowY || m.y > highY) {
+                    continue;
+                }
+                // Keep the hero out of its way, in a corner.
+                w.enter(static_cast<int>(z), {zone.width - 1, zone.height - 1});
+                if (!w.monsterEnabled(i)) {
+                    continue;
+                }
+                tested = true;
+                bool left = false;
+                bool reachedSecond = false;
+                for (int t = 0; t < 200; ++t) {
+                    play(w, 1);
+                    const auto at = monsterPosition(w, i);
+                    if (!at) {
+                        break;
+                    }
+                    left = left || at->x < lowX || at->x > highX || at->y < lowY || at->y > highY;
+                    reachedSecond = reachedSecond || (at->x == m.waypoints[4] && at->y == m.waypoints[6]);
+                }
+                DAS_CHECK(!left);
+                DAS_CHECK(reachedSecond);
+            }
+        }
+        DAS_CHECK(tested);
+    }
+}
+
+DAS_TEST("Indy's rock rolls down and starts again at the top") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Indy) {
+            continue;
+        }
+        world::World w(game);
+        bool tested = false;
+        for (std::size_t z = 0; z < game.zones.size() && !tested; ++z) {
+            const auto& zone = game.zones[z];
+            for (std::size_t i = 0; i < zone.monsters.size() && !tested; ++i) {
+                const auto& m = zone.monsters[i];
+                if (w.fighters().at(m.character).character.movement != 5) {
+                    continue;
+                }
+                tested = true;
+                w.enter(static_cast<int>(z), {0, 0});
+                int lowest = m.y;
+                bool back = false;
+                for (int t = 0; t < 400; ++t) {
+                    play(w, 1);
+                    if (const auto at = monsterPosition(w, i)) {
+                        DAS_CHECK(at->x == m.x);
+                        DAS_CHECK(at->y >= m.y);
+                        back = back || (lowest > m.y && at->y == m.y);
+                        lowest = std::max(lowest, at->y);
+                    }
+                }
+                DAS_CHECK(lowest > m.y);
+                DAS_CHECK(back);
+            }
+        }
+        DAS_CHECK(tested);
+    }
+}
+
+DAS_TEST("a shooting monster's shot flies three cells at most and hurts the hero") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        world::World w(game);
+        bool tested = false;
+        for (std::size_t z = 0; z < game.zones.size() && !tested; ++z) {
+            const auto& zone = game.zones[z];
+            for (std::size_t i = 0; i < zone.monsters.size() && !tested; ++i) {
+                const auto& m = zone.monsters[i];
+                const auto& f = w.fighters().at(m.character);
+                if (f.weapon < 0 || f.character.movement != 4 || f.damage <= 0) {
+                    continue;
+                }
+                // A free cell three below or above it, with nothing in between.
+                for (const int dir : {1, -1}) {
+                    const world::Position hero{m.x, m.y + 3 * dir};
+                    bool clear = w.inside(hero);
+                    w.enter(static_cast<int>(z), hero);
+                    for (int k = 1; k <= 3 && clear; ++k) {
+                        clear = w.tile({m.x, m.y + k * dir}, 1) == 0xffff;
+                    }
+                    if (!clear || !w.walkable(hero) || !w.monsterEnabled(i) || w.zoneIndex() != static_cast<int>(z)) {
+                        continue;
+                    }
+                    tested = true;
+                    const int before = w.health();
+                    bool shotSeen = false;
+                    for (int t = 0; t < 400 && w.health() == before; ++t) {
+                        while (w.paused()) {
+                            (void)w.takeEffects();
+                            w.resume();
+                        }
+                        w.update(140);
+                        (void)w.takeEffects();
+                        for (const auto& s : w.shots()) {
+                            shotSeen = true;
+                            DAS_CHECK(s.at.x == m.x);
+                            DAS_CHECK(std::abs(s.at.y - m.y) <= 3);
+                        }
+                    }
+                    DAS_CHECK(shotSeen);
+                    DAS_CHECK(w.health() < before);
+                    break;
+                }
+            }
+        }
+        DAS_CHECK(tested);
+    }
+}
+
+DAS_TEST("Yoda Stories monsters drop the tile before their item number") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        world::World w(game);
+        w.setDifficulty(0); // ten times the damage: one blow is enough
+        std::uint16_t best = data::kNoTile;
+        int damage = 0;
+        for (const auto& f : w.fighters()) {
+            if (f.character.type == 4 && f.item != 0xffff && f.damage > damage &&
+                f.character.frame(0, data::Facing::Up) == 0xffff) {
+                best = f.item;
+                damage = f.damage;
+            }
+        }
+        w.addItem(best);
+        DAS_CHECK(w.equip(best));
+        bool tested = false;
+        for (std::size_t z = 0; z < game.zones.size() && !tested; ++z) {
+            const auto& zone = game.zones[z];
+            if (zone.actions && !zone.actions->empty()) {
+                continue;
+            }
+            for (std::size_t i = 0; i < zone.monsters.size() && !tested; ++i) {
+                const auto& m = zone.monsters[i];
+                const auto& f = w.fighters().at(m.character);
+                if (m.unknown == 0 || m.item < 2 || m.item == 0xffff || f.invulnerable ||
+                    f.health > damage * 10 || f.character.movement != 4) {
+                    continue;
+                }
+                for (const das::Step s : {das::Step{0, 1}, das::Step{0, -1}, das::Step{1, 0}, das::Step{-1, 0}}) {
+                    const world::Position hero{m.x - s.dx, m.y - s.dy};
+                    w.enter(static_cast<int>(z), hero);
+                    if (!w.inside(hero) || !w.walkable(hero) || !w.monsterEnabled(i)) {
+                        continue;
+                    }
+                    tested = true;
+                    (void)w.move(s); // turns to it
+                    DAS_CHECK(w.attack());
+                    DAS_CHECK(!monsterPosition(w, i));
+                    const std::uint16_t dropped = w.tile({m.x, m.y}, 1);
+                    DAS_CHECK(dropped == m.item - 1);
+                    break;
+                }
+            }
+        }
+        DAS_CHECK(tested);
+    }
 }

@@ -880,7 +880,7 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
             {Action::MoveUp, "Up"},          {Action::MoveDown, "Down"},     {Action::MoveLeft, "Left"},
             {Action::MoveRight, "Right"},    {Action::Use, "Use"},           {Action::Attack, "Attack"},
             {Action::InventoryPrev, "Prev item"}, {Action::InventoryNext, "Next item"}, {Action::Map, "Map"},
-            {Action::Menu, "Menu"},
+            {Action::Menu, "Menu"},          {Action::Push, "Push (hold)"},
         };
         const bool pad = device_ == InputDevice::Gamepad;
         for (const auto& a : kActions) {
@@ -1555,7 +1555,7 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
     }
     if (step) {
         walkTarget_.reset();
-        if (world_->move(*step) != world::MoveResult::Blocked) {
+        if (world_->move(*step, actions.isDown(Action::Push)) != world::MoveResult::Blocked) {
             lastStepAt_ = now;
         }
         return;
@@ -1567,7 +1567,9 @@ void Viewer::updatePlay(const ActionState& actions, std::optional<Step> step, Ui
             walkTarget_.reset();
             return;
         }
-        const auto result = world_->move(*next);
+        // Tapping or clicking a block on purpose pushes it, like Shift-click in the originals.
+        const world::Position into{world_->player().x + next->dx, world_->player().y + next->dy};
+        const auto result = world_->move(*next, into == *walkTarget_);
         if (result != world::MoveResult::Blocked) {
             lastStepAt_ = now;
         }

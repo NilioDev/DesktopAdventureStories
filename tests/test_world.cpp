@@ -95,11 +95,15 @@ DAS_TEST("player pushes a draggable block onto free floor only") {
     const auto data = makeWorld();
     world::World w(data);
     w.enter(0, {2, 2});
-    DAS_CHECK(w.move({0, 1}) == MoveResult::Pushed);
+    // Like the originals, walking into it without the push control does not move it.
+    DAS_CHECK(w.move({0, 1}) != MoveResult::Pushed);
+    DAS_CHECK(w.tile({2, 3}, 1) == kBlock);
+    w.enter(0, {2, 2});
+    DAS_CHECK(w.move({0, 1}, true) == MoveResult::Pushed);
     DAS_CHECK(w.player() == (Position{2, 3}));
     DAS_CHECK(w.tile({2, 4}, 1) == kBlock);
     DAS_CHECK(w.tile({2, 3}, 1) == data::kNoTile);
-    DAS_CHECK(w.move({0, 1}) != MoveResult::Pushed); // block is against the edge now
+    DAS_CHECK(w.move({0, 1}, true) != MoveResult::Pushed); // block is against the edge now
     DAS_CHECK(w.tile({2, 4}, 1) == kBlock);
     // The original zone data is untouched.
     DAS_CHECK(data.zones[0].cells[3 * 5 + 2].layers[1] == kBlock);

@@ -539,16 +539,17 @@ std::string Viewer::howToPlayText() const {
     const auto key = [&](Action a) { return controlName(a); };
     switch (device_) {
     case InputDevice::Touch:
-        text += "Tap a place to walk there, or a person to talk. Tap an item to pick it, and again to use it. "
-                "The pad and Hit button walk and attack.";
+        text += "Tap a place to walk there, or a person to talk. Tap a block next to you to push it. Tap an item to "
+                "pick it, and again to use it. The pad and Hit button walk and attack.";
         break;
     case InputDevice::Gamepad:
-        text += "Stick or D-pad: walk and push.\n" + key(Action::Use) + ": talk and use the item.\n" +
+        text += "Stick or D-pad: walk. Hold " + key(Action::Push) + " while walking into a block to push it.\n" + key(Action::Use) + ": talk and use the item.\n" +
                 key(Action::Attack) + ": attack.\n" + key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) +
                 ": choose an item.\n" + key(Action::Map) + ": map.  " + key(Action::Menu) + ": menu and save.";
         break;
     case InputDevice::Keyboard:
-        text += "Arrows: walk and push, or click where to go.\n" + key(Action::Use) + ": talk and use the item.\n" +
+        text += "Arrows: walk, or click where to go. Hold " + key(Action::Push) +
+                " while walking into a block to push it.\n" + key(Action::Use) + ": talk and use the item.\n" +
                 key(Action::Attack) + ": attack.\n" + key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) +
                 ": choose an item.\n" + key(Action::Map) + ": map.  " + key(Action::Menu) + ": menu and save.";
         break;

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "test.hpp"
 
+#include <algorithm>
+
 #include "das/data/tile_flags.hpp"
 #include "das/script/opcodes.hpp"
 #include "das/world/world.hpp"
@@ -212,20 +214,26 @@ DAS_TEST("indy opcodes translate both ways") {
     DAS_CHECK(script::name(Condition::PlaceItemIsNot) == "PlaceItemIsNot");
 }
 
-DAS_TEST("an item dropped into a cabinet is found by bumping it, and the cabinet stays") {
+DAS_TEST("a dropped item blinks on its cell until the player takes it") {
     const auto data = makeGame();
     world::World w(data);
     w.start(2);
     w.enter(2, {1, 2});
     drain(w);
-    DAS_CHECK(w.move({0, -1}) == world::MoveResult::Moved); // onto (1,1): the key drops
-    drain(w);
-    DAS_CHECK(w.tile({1, 0}, 1) == kWall);
+    DAS_CHECK(w.move({0, -1}) == world::MoveResult::Moved); // onto (1,1): the key is held out
+    const auto effects = drain(w);
+    DAS_CHECK(std::any_of(effects.begin(), effects.end(), [](const Effect& e) {
+        return e.kind == Effect::Kind::ItemDrop && e.value == kKey && e.at && *e.at == Position{1, 0};
+    }));
+    DAS_CHECK(w.drop().has_value());
+    DAS_CHECK(w.tile({1, 0}, 1) == kWall); // the cabinet stays
     DAS_CHECK(!w.hasItem(kKey));
-    w.move({0, -1}); // bump the cabinet
-    drain(w);
+    // The game waits for the player.
+    DAS_CHECK(w.move({0, 1}) == world::MoveResult::Blocked);
+    w.pickUp();
     DAS_CHECK(w.hasItem(kKey));
-    DAS_CHECK(w.tile({1, 0}, 1) == kWall);
+    DAS_CHECK(!w.drop().has_value());
+    DAS_CHECK(w.move({0, 1}) == world::MoveResult::Moved);
 }
 
 namespace {
@@ -303,4 +311,43 @@ DAS_TEST("a game tick notices the hero standing on a cell") {
     w.update(150);
     drain(w);
     DAS_CHECK(w.counter() == 50);
+}
+
+namespace {
+
+// Zone 0 of a small game takes `amount` health on entering.
+data::GameData makeHealthGame(std::int16_t amount) {
+    data::GameData data = makeGame();
+    data::Zone z = makeZone(3);
+    z.actions->push_back({{line(c(Condition::Enter))}, {line(i(Instruction::AddHealth), {amount})}});
+    data.zones = {z};
+    return data;
+}
+
+} // namespace
+
+DAS_TEST("big health changes step like the original") {
+    const auto data = makeHealthGame(-150);
+    world::World w(data);
+    w.setDifficulty(100);
+    w.start(0);
+    drain(w);
+    // A whole bar and a third of the damage on top, less one.
+    DAS_CHECK(w.health() == 151);
+    DAS_CHECK(w.outcome() == world::Outcome::Playing);
+}
+
+DAS_TEST("a Spirit Heart brings the hero back once") {
+    const auto data = makeHealthGame(-300);
+    world::World w(data);
+    w.setDifficulty(100);
+    w.addItem(1432);
+    w.start(0);
+    drain(w);
+    DAS_CHECK(w.outcome() == world::Outcome::Playing);
+    DAS_CHECK(w.health() == world::kMaxHealth);
+    DAS_CHECK(!w.hasItem(1432));
+    w.start(0);
+    drain(w);
+    DAS_CHECK(w.outcome() == world::Outcome::Lost);
 }

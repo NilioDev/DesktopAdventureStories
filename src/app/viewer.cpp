@@ -741,8 +741,11 @@ void Viewer::walk(const std::string& path) {
     }
     for (const char c : path) {
         // Skip through what earlier steps said or waited for.
-        for (int guard = 0; guard < 256 && world_->paused(); ++guard) {
+        for (int guard = 0; guard < 256 && (world_->paused() || world_->drop()); ++guard) {
             world_->takeEffects();
+            if (world_->drop()) {
+                world_->pickUp();
+            }
             world_->resume();
         }
         world_->takeEffects();
@@ -1323,8 +1326,8 @@ void Viewer::handleClick(Uint64 now) {
         }
         return;
     }
-    if (bubble_) {
-        ActionState tap; // a tap anywhere moves the speech on
+    if (bubble_ || world_->drop()) {
+        ActionState tap; // a tap anywhere moves the speech on or takes the item
         tap.press(Action::Use);
         handleEffects(tap, now);
         return;
@@ -1560,6 +1563,11 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
         waitUntil_ = 0;
         world_->resume();
     }
+    // Taking an item that a script holds out (it blinks on its cell).
+    if (!bubble_ && waitUntil_ == 0 && world_->drop() && effects_.empty() &&
+        (actions.wasPressed(Action::Use) || actions.wasPressed(Action::Attack))) {
+        world_->pickUp();
+    }
     // Pick up what the scripts did, up to the next thing that takes time.
     for (int guard = 0; guard < 64 && !bubble_ && waitUntil_ == 0; ++guard) {
         if (effects_.empty()) {
@@ -1596,6 +1604,7 @@ void Viewer::handleEffects(const ActionState& actions, Uint64 now) {
             banner_ = "You lost.";
             playSong("defeat");
             break;
+        case world::Effect::Kind::ItemDrop: break; // drawn from World::drop()
         case world::Effect::Kind::ItemFound: {
             const auto& inventory = world_->inventory();
             const auto it = std::find(inventory.begin(), inventory.end(), static_cast<std::uint16_t>(e.value));

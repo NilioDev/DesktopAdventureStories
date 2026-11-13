@@ -151,7 +151,7 @@ as Yoda Stories does; the Indy column gives Indiana Jones' own number.
 | 24 | 23 | DisableMonster | index | |
 | 25 | 24 | EnableAllMonsters | | |
 | 26 | 25 | DisableAllMonsters | | |
-| 27 | 30 | DropItem | item, x, y | the item appears on the cell (-1: the zone's find item) |
+| 27 | 30 | DropItem | item, x, y | the item (-1: the zone's find item) blinks on the cell and the game stands still until the player takes it (Use, Attack or a tap); it then goes straight into the inventory. The rest of the pass runs on first |
 | 28 | 29 | AddItem | item | into the inventory |
 | 29 | 32 | RemoveItem | item | out of the inventory (-1: the zone's required item) |
 | 30 | 33 | MarkAsSolved | | the zone's goal is solved |
@@ -173,5 +173,5 @@ as Yoda Stories does; the Indy column gives Indiana Jones' own number.
 - In the Indy program we checked the flow of passes, PlaceItem, ChangeZone
   and the counters; the other Indy opcodes still follow the Yoda Stories
   behaviour.
-- How DropItem hands the item over: Yoda Stories shows the item blinking on
-  the cell; we put it on the object layer.
+- MarkAsSolved also sets three more flags on the map cell; the originals only
+  use them for their locator map. Our map shows solved puzzles its own way.

@@ -44,9 +44,12 @@ own adventures.
   originals: the same seed gives the same world. Pick the world size and the
   difficulty.
 - 🎯 **True to the original.** The zone scripts run the way the original
-  programs run them, and the difficulty scales the damage you take just like
-  there (on Normal you take half). An item someone gives you blinks until
-  you take it, and in Yoda Stories a Spirit Heart saves you once.
+  programs run them, and every kind of enemy moves, chases, backs off, hits
+  and shoots by the rules of the original programs, at their speed. The
+  difficulty works just like there too: on Normal you take half the damage,
+  and on the easy side your own blows hit harder. An item someone gives you
+  blinks until you take it, and in Yoda Stories a Spirit Heart saves you
+  once.
 - 🃏 **Pick your adventure.** The game starts with a card for each game,
   Indiana Jones first and Yoda Stories next to it, showing the game's own
   title screen from your files and when you last saved. Continue right away

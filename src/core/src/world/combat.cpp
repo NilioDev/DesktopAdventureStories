@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Combat: monsters that move and attack, the hero's weapons, shots and
-// health. Our own rules, built on what the data says about each character;
-// see docs/combat.md.
+// health. The monsters follow the rules of the original programs, worked out
+// from Yodesk.exe and DESKADV.EXE; see docs/combat.md.
 #include "das/world/world.hpp"
 
 #include "das/data/tile_flags.hpp"
@@ -14,6 +14,7 @@ namespace das::world {
 
 namespace {
 
+constexpr int kFloorLayer = 0;
 constexpr int kObjectLayer = 1;
 constexpr std::uint16_t kNone16 = 0xffff;
 
@@ -21,45 +22,39 @@ constexpr std::uint16_t kNone16 = 0xffff;
 constexpr std::uint16_t kTypeEnemy = 2;
 constexpr std::uint16_t kTypeWeapon = 4;
 
-// Movement kinds (Character::movement), as we read them.
-enum Movement : std::uint16_t {
-    Still = 0,
-    Chase = 1,     // goes for the hero
-    Lurk = 2,      // goes for the hero when close, else wanders
-    Wander = 3,
-    Sit = 4,       // stays put, attacks what comes close or into its line
-    Rolling = 5,   // a rolling object: chases
-    Stalk = 6,     // goes for the hero when close, else stays
-    Droid = 7,
-    Hover = 8,
-    Roam = 9,      // wanders and shoots
-    Patrol = 10,
-    Scared = 11,   // keeps away from the hero
-    Scenery = 12,  // part of the zone: never moves or attacks
-};
+// Floor tiles with this flag keep monsters out (doorways, edges).
+constexpr std::uint32_t kNoMonsters = 1u << 16;
+// Object tiles with this flag are enemies (Indy's rock rolls over them).
+constexpr std::uint32_t kEnemyTile = 1u << 17;
 
-constexpr int kStepMs = 450;         // a monster's step
-constexpr int kAttackMs = 1000;      // between a monster's attacks
-constexpr int kShootMs = 1600;       // between a monster's shots
-constexpr int kShotStepMs = 70;      // a shot flies one cell per step
+// Sounds both games have at these places in their sound lists.
+constexpr int kHurtSound = 4;      // the hero is hit
+constexpr int kYodaDeathSound = 5; // Yoda Stories: a monster dies
+
+// Both originals run a game tick every 140 ms (their default game speed).
+constexpr int kTickMs = 140;
+constexpr int kShotStepMs = 70; // the hero's shots fly one cell per step
 constexpr int kShotRange = 8;
-constexpr int kNearby = 4;           // how close Lurk and Stalk notice the hero
-constexpr int kHeroAttackMs = 300;   // between the hero's attacks
+constexpr int kHeroAttackMs = 300; // between the hero's attacks
 constexpr int kAttackShowMs = 200;
 constexpr std::uint16_t kSpiritHeart = 1432; // Yoda Stories' extra life
 constexpr int kSpiritHeartSound = 58;
-constexpr int kScriptTickMs = 100;   // a Walk pass on the hero's cell
-
-int distance(Position a, Position b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
+constexpr int kScriptTickMs = 100; // a Walk pass on the hero's cell
 
 data::Facing facingOf(int dx, int dy) {
-    if (dy < 0) {
+    if (dy < 0 && dx == 0) {
         return data::Facing::Up;
     }
-    if (dy > 0) {
+    if (dy > 0 && dx == 0) {
         return data::Facing::Down;
     }
-    return dx < 0 ? data::Facing::Left : data::Facing::Right;
+    if (dx < 0) {
+        return dy < 0 ? data::Facing::UpLeft : (dy > 0 ? data::Facing::DownLeft : data::Facing::Left);
+    }
+    if (dx > 0) {
+        return dy < 0 ? data::Facing::UpRight : (dy > 0 ? data::Facing::DownRight : data::Facing::Right);
+    }
+    return data::Facing::Down;
 }
 
 void stepOf(data::Facing f, int& dx, int& dy) {
@@ -74,6 +69,7 @@ void stepOf(data::Facing f, int& dx, int& dy) {
 }
 
 int value(std::uint16_t v) { return v == kNone16 ? 0 : v; }
+int sign(int v) { return v > 0 ? 1 : (v < 0 ? -1 : 0); }
 
 } // namespace
 
@@ -97,12 +93,14 @@ void World::loadFighters() {
             f.sound = v.reference == kNone16 ? -1 : v.reference;
         } else {
             f.health = value(v.value);
+            f.invulnerable = v.value == kNone16;
             f.weapon = v.reference == kNone16 ? -1 : v.reference;
         }
     }
     for (const auto& v : data_.characterAux) {
         if (v.character < fighters_.size()) {
             fighters_[v.character].damage = value(v.value);
+            fighters_[v.character].harmless = v.value == kNone16;
         }
     }
     for (Fighter& f : fighters_) {
@@ -110,6 +108,7 @@ void World::loadFighters() {
             f.item = f.character.frame(0, data::Facing::DownRight);
         }
     }
+    characterTile_.assign(fighters_.size(), kNone16);
 }
 
 const Fighter* World::fighter(int character) const {
@@ -165,10 +164,12 @@ void World::initMonsters(int zoneIndex, ZoneState& s) {
     for (const auto& m : z.monsters) {
         MonsterState st;
         st.at = {m.x, m.y};
+        st.shotAt = st.at;
         const Fighter* f = fighter(m.character);
         st.health = f != nullptr ? f->health : 0;
-        st.moveMs = kStepMs;
-        st.attackMs = kAttackMs;
+        if (f != nullptr) {
+            st.tile = f->character.frame(0, data::Facing::Down);
+        }
         s.monsters.push_back(st);
     }
 }
@@ -184,19 +185,44 @@ std::vector<MonsterView> World::monsters() const {
         if (!s->monsterEnabled[i] || s->monsterDead[i]) {
             continue;
         }
-        const Fighter* f = fighter(list[i].character);
-        if (f == nullptr) {
+        const auto& m = s->monsters[i];
+        if (m.hidden) {
             continue;
         }
-        const auto& m = s->monsters[i];
-        std::uint16_t tile = f->character.frame(m.frame % data::kFrameSets, m.facing);
+        std::uint16_t tile = m.tile;
         if (tile == kNone16) {
-            tile = f->character.frame(0, m.facing);
-        }
-        if (tile == kNone16) {
-            tile = f->character.frame(0, data::Facing::Down);
+            if (const Fighter* f = fighter(list[i].character)) {
+                tile = f->character.frame(0, data::Facing::Down);
+            }
         }
         out.push_back({i, m.at, tile});
+    }
+    return out;
+}
+
+std::vector<Shot> World::shots() const {
+    std::vector<Shot> out = shots_;
+    const auto* s = findState(zone_);
+    if (s == nullptr) {
+        return out;
+    }
+    const auto& list = zone().monsters;
+    for (std::size_t i = 0; i < s->monsters.size() && i < list.size(); ++i) {
+        const auto& m = s->monsters[i];
+        if (!m.shotShown || !s->monsterEnabled[i] || s->monsterDead[i]) {
+            continue;
+        }
+        const Fighter* f = fighter(list[i].character);
+        const Fighter* gun = f != nullptr ? fighter(f->weapon) : nullptr;
+        if (gun == nullptr) {
+            continue;
+        }
+        Shot shot;
+        shot.at = m.shotAt;
+        shot.dx = m.shotDx;
+        shot.dy = m.shotDy;
+        shot.tile = gun->character.frame(0, facingOf(m.shotDx, m.shotDy));
+        out.push_back(shot);
     }
     return out;
 }
@@ -217,24 +243,18 @@ bool World::monsterAt(Position at, std::size_t* index) const {
     return false;
 }
 
-bool World::freeForMonster(Position at) const {
-    return inside(at) && walkable(at) && !(at == player_) && !monsterAt(at);
-}
-
-bool World::lineClear(Position from, Position to) const {
-    if (from.x != to.x && from.y != to.y) {
+bool World::monsterShotAt(Position at) const {
+    const auto* s = findState(zone_);
+    if (s == nullptr) {
         return false;
     }
-    const int dx = to.x > from.x ? 1 : (to.x < from.x ? -1 : 0);
-    const int dy = to.y > from.y ? 1 : (to.y < from.y ? -1 : 0);
-    Position p{from.x + dx, from.y + dy};
-    while (!(p == to)) {
-        if (!walkable(p) || monsterAt(p)) {
-            return false;
+    for (std::size_t i = 0; i < s->monsters.size(); ++i) {
+        const auto& m = s->monsters[i];
+        if (m.shotShown && s->monsterEnabled[i] && !s->monsterDead[i] && m.shotAt == at) {
+            return true;
         }
-        p = {p.x + dx, p.y + dy};
     }
-    return true;
+    return false;
 }
 
 void World::hurtHero(int damage) {
@@ -322,29 +342,78 @@ void World::hurtMonster(std::size_t index, int damage) {
     if (index >= s.monsters.size() || s.monsterDead[index]) {
         return;
     }
-    auto& m = s.monsters[index];
-    if (m.health <= 0) {
-        return; // cannot be hurt
+    const auto& z = zone();
+    const Fighter* f = fighter(z.monsters[index].character);
+    const bool yoda = data_.layout() == data::Layout::Yoda;
+    if (f == nullptr || (yoda && f->invulnerable)) {
+        return; // Yoda Stories: health 0xFFFF cannot be hurt
     }
-    m.health -= std::max(1, damage);
+    auto& m = s.monsters[index];
+    // The originals add up the damage taken and compare it with the
+    // character's health, so a health of 0 dies at the first hit.
+    m.health -= damage;
     if (m.health > 0) {
         return;
     }
     s.monsterDead[index] = true;
-    // What it carried drops where it fell.
-    const auto& z = zone();
-    const std::uint16_t item = z.monsters[index].item;
-    if (item != data::kNoTile && item < data_.tiles.size()) {
-        auto& layer = s.cells[static_cast<std::size_t>(m.at.y * z.width + m.at.x)].layers[kObjectLayer];
-        if (layer == data::kNoTile) {
-            layer = item;
-        } else {
-            s.hidden[{m.at.x, m.at.y}] = item;
-        }
+    m.shotShown = false;
+    if (yoda) {
+        effects_.push_back({Effect::Kind::Sound, {}, {}, kYodaDeathSound});
+        dropItem(index, m.at);
     }
     // Scripts may wait for a monster to die.
     trigger(script::Event::Update);
     runScripts();
+}
+
+void World::dropItem(std::size_t index, Position at) {
+    // Yoda Stories: only monsters marked to drop something do. Their item
+    // number is one more than the tile; 0 means the zone's own item: the
+    // first item spot with an item.
+    const auto& z = zone();
+    const auto& placed = z.monsters[index];
+    if (placed.unknown == 0) {
+        return;
+    }
+    std::uint16_t item = data::kNoTile;
+    if (placed.item != 0) {
+        item = static_cast<std::uint16_t>(placed.item - 1);
+    } else if (z.hotspots) {
+        const Site* s = site(zone_);
+        const auto& list = *z.hotspots;
+        for (std::size_t i = 0; i < list.size() && item == data::kNoTile; ++i) {
+            const auto& h = list[i];
+            if (h.type != static_cast<std::uint32_t>(HotspotType::ItemSpot)) {
+                continue;
+            }
+            std::uint16_t arg = h.argument;
+            if (s != nullptr && s->itemZone == zone_ && s->itemSpot == static_cast<int>(i)) {
+                arg = s->findItem;
+            }
+            if (arg != 0 && arg < 0x8000) {
+                item = arg;
+            }
+        }
+        // Our worlds already put the zone's item on its spot: no second one.
+        if (item != data::kNoTile && hasItem(item)) {
+            item = data::kNoTile;
+        }
+        for (const auto& c : cells()) {
+            if (item != data::kNoTile && c.layers[kObjectLayer] == item) {
+                item = data::kNoTile;
+            }
+        }
+    }
+    if (item == data::kNoTile || item >= data_.tiles.size()) {
+        return;
+    }
+    auto& s = state();
+    auto& layer = s.cells[static_cast<std::size_t>(at.y * z.width + at.x)].layers[kObjectLayer];
+    if (layer == data::kNoTile) {
+        layer = item;
+    } else {
+        s.hidden[{at.x, at.y}] = item;
+    }
 }
 
 void World::fire(Position from, int dx, int dy, const Fighter& weapon, int damage, bool fromHero) {
@@ -398,119 +467,738 @@ bool World::attack() {
     if (w->sound >= 0) {
         effects_.push_back({Effect::Kind::Sound, {}, {}, w->sound});
     }
+    // Both originals: below the normal difficulty the hero hits harder, up
+    // to ten times at 0.
+    int damage = w->damage;
+    if (difficulty_ < 50) {
+        damage *= 10 + difficulty_ / -5;
+    }
+    damage = std::max(1, damage);
     int dx = 0;
     int dy = 0;
     stepOf(facing_, dx, dy);
     // A weapon with shot tiles shoots; others hit the cell ahead.
     const bool ranged = w->character.frame(0, facingOf(dx, dy)) != kNone16;
     if (ranged) {
-        fire(player_, dx, dy, *w, w->damage, true);
+        fire(player_, dx, dy, *w, damage, true);
         return true;
     }
     const Position ahead{player_.x + dx, player_.y + dy};
     std::size_t index = 0;
     if (monsterAt(ahead, &index)) {
-        hurtMonster(index, w->damage);
+        hurtMonster(index, damage);
     }
     return true;
 }
 
-void World::stepMonster(std::size_t index, MonsterState& m, const Fighter& f) {
-    const auto kind = static_cast<Movement>(f.character.movement);
-    const int near = distance(m.at, player_);
-    int dx = 0;
-    int dy = 0;
-    const auto toward = [&](bool away) {
-        const int sx = player_.x > m.at.x ? 1 : (player_.x < m.at.x ? -1 : 0);
-        const int sy = player_.y > m.at.y ? 1 : (player_.y < m.at.y ? -1 : 0);
-        // Try the longer axis first, then the other.
-        const bool horizontal = std::abs(player_.x - m.at.x) >= std::abs(player_.y - m.at.y);
-        const std::array<std::pair<int, int>, 2> tries =
-            horizontal ? std::array<std::pair<int, int>, 2>{{{sx, 0}, {0, sy}}}
-                       : std::array<std::pair<int, int>, 2>{{{0, sy}, {sx, 0}}};
-        for (auto [tx, ty] : tries) {
-            if (away) {
-                tx = -tx;
-                ty = -ty;
+// --- Monsters, as the originals move them --------------------------------
+//
+// Once per game tick each monster of the zone decides one step. What it does
+// depends on its character's movement number; docs/combat.md describes every
+// kind. The originals keep monsters and their shots in the zone's object
+// layer, so they block each other like walls do.
+
+std::uint16_t World::objectAt(Position at) const {
+    if (!inside(at)) {
+        return kNone16;
+    }
+    const auto* s = findState(zone_);
+    if (s != nullptr) {
+        for (std::size_t i = 0; i < s->monsters.size(); ++i) {
+            const auto& m = s->monsters[i];
+            if (!s->monsterEnabled[i] || s->monsterDead[i]) {
+                continue;
             }
-            if ((tx != 0 || ty != 0) && freeForMonster({m.at.x + tx, m.at.y + ty})) {
-                dx = tx;
-                dy = ty;
-                return;
+            if (m.at == at && !m.hidden) {
+                return m.tile == kNone16 ? std::uint16_t{0} : m.tile;
+            }
+            if (m.shotShown && m.shotAt == at) {
+                const Fighter* f = fighter(zone().monsters[i].character);
+                const Fighter* gun = f != nullptr ? fighter(f->weapon) : nullptr;
+                const std::uint16_t shot =
+                    gun != nullptr ? gun->character.frame(0, facingOf(m.shotDx, m.shotDy)) : kNone16;
+                return shot == kNone16 ? std::uint16_t{0} : shot;
             }
         }
+    }
+    return tile(at, kObjectLayer);
+}
+
+int World::slide(Position from, int dx, int dy) {
+    const int nx = from.x + dx;
+    const int ny = from.y + dy;
+    if (!inside({nx, ny})) {
+        return -1;
+    }
+    if (objectAt({nx, ny}) == kNone16) {
+        return 1;
+    }
+    // Blocked: try one cell aside, starting on a random side.
+    const int r = (rng_() & 1) != 0 ? -1 : 1;
+    const auto vacant = [&](int x, int y) { return inside({x, y}) && objectAt({x, y}) == kNone16; };
+    int tx = nx;
+    int ty = ny;
+    bool found = false;
+    if (dx == 0 && dy != 0) {
+        if (nx - r >= 0 && vacant(nx - r, ny)) {
+            tx = nx - r;
+            found = true;
+        } else if (nx + r < zone().width && vacant(nx + r, ny)) {
+            tx = nx + r;
+            found = true;
+        }
+    } else if (dy == 0 && dx != 0) {
+        if (ny - r >= 0 && vacant(nx, ny - r)) {
+            ty = ny - r;
+            found = true;
+        } else if (ny + r < zone().height && vacant(nx, ny + r)) {
+            ty = ny + r;
+            found = true;
+        }
+    } else {
+        // Diagonal (or standing): drop one of the two parts.
+        const int sx = dx < 0 ? nx + 1 : nx - 1;
+        if (vacant(sx, ny)) {
+            tx = sx;
+            found = true;
+        } else {
+            const int sy = dy < 0 ? ny + 1 : ny - 1;
+            if (vacant(nx, sy)) {
+                ty = sy;
+                found = true;
+            }
+        }
+    }
+    if (!found) {
+        return 0;
+    }
+    if (ty < ny) {
+        return 5;
+    }
+    if (ty > ny) {
+        return 4;
+    }
+    if (tx < nx) {
+        return 3;
+    }
+    return tx > nx ? 2 : 0;
+}
+
+void World::meleeHit(const Fighter& f) {
+    // Yoda Stories skips a damage of 0xFFFF; a damage of 0 only sounds.
+    if (data_.layout() == data::Layout::Yoda && f.harmless) {
+        return;
+    }
+    effects_.push_back({Effect::Kind::Sound, {}, {}, kHurtSound});
+    hurtHero(f.damage);
+}
+
+void World::faceMonster(MonsterState& m, int character, int dx, int dy) {
+    const Fighter* f = fighter(character);
+    if (f == nullptr) {
+        return;
+    }
+    const data::Facing facing = facingOf(sign(dx), sign(dy));
+    std::uint16_t tile = f->character.frame(0, facing);
+    if (tile == kNone16) {
+        tile = f->character.frame(0, data::Facing::Down);
+    }
+    m.facing = facing;
+    if (static_cast<std::size_t>(character) < characterTile_.size()) {
+        characterTile_[static_cast<std::size_t>(character)] = tile;
+    }
+}
+
+void World::tickMonsters() {
+    ++monsterTicks_;
+    auto& s = state();
+    const auto& list = zone().monsters;
+    // The originals keep the step and one mode between monsters of a tick.
+    int dir[2] = {0, 0};
+    bool attackMode = false;
+    for (std::size_t i = 0; i < s.monsters.size() && i < list.size() && outcome_ == Outcome::Playing; ++i) {
+        if (s.monsterDead[i]) {
+            continue;
+        }
+        auto& m = s.monsters[i];
+        if (!s.monsterEnabled[i]) {
+            m.shotShown = false;
+            m.shotStep = 0;
+            m.shotAt = m.at;
+            m.shotDx = 0;
+            m.shotDy = 0;
+            continue;
+        }
+        const Fighter* f = fighter(list[i].character);
+        if (f == nullptr || f->character.type != kTypeEnemy) {
+            continue;
+        }
+        tickMonster(i, m, *f, dir, attackMode);
+    }
+}
+
+void World::tickMonster(std::size_t index, MonsterState& m, const Fighter& f, int (&dir)[2], bool& attackMode) {
+    const bool yoda = data_.layout() == data::Layout::Yoda;
+    const int character = zone().monsters[index].character;
+    const int movement = f.character.movement;
+    const int hx = player_.x;
+    const int hy = player_.y;
+    const auto rnd = [&]() { return static_cast<int>(rng_() & 0x7fff); };
+    const auto rand3 = [&]() { return rnd() % 3 - 1; };
+    int& dx = dir[0];
+    int& dy = dir[1];
+    const auto toward = [&] {
+        dx = sign(hx - m.at.x);
+        dy = sign(hy - m.at.y);
+    };
+    const auto away = [&] {
+        dx = -sign(hx - m.at.x);
+        dy = -sign(hy - m.at.y);
     };
     const auto wander = [&] {
-        static constexpr std::array<std::pair<int, int>, 5> kDirs{{{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}}};
-        const auto [tx, ty] = kDirs[rng_() % kDirs.size()];
-        if ((tx != 0 || ty != 0) && freeForMonster({m.at.x + tx, m.at.y + ty})) {
-            dx = tx;
-            dy = ty;
+        dx = rand3();
+        dy = rand3();
+    };
+    const auto none = [&] {
+        dx = 0;
+        dy = 0;
+    };
+    const auto within = [&](int cells) {
+        return std::abs(m.at.x - hx) < cells && std::abs(m.at.y - hy) < cells;
+    };
+    const auto adjust = [&](int r) {
+        switch (r) {
+        case 1: break;
+        case 2: ++dx; break;
+        case 3: --dx; break;
+        case 4: ++dy; break;
+        case 5: --dy; break;
+        default: none(); break;
         }
     };
-    switch (kind) {
-    case Still:
-    case Sit:
-    case Scenery: break;
-    case Chase:
-    case Rolling: toward(false); break;
-    case Lurk:
-        if (near <= kNearby) {
-            toward(false);
-        } else {
-            wander();
+    const auto heading = [&] {
+        switch (m.heading) {
+        case -1: dx = 0; dy = -1; break;
+        case 0: dx = 0; dy = 1; break;
+        case 1: dx = 1; dy = 0; break;
+        case 2: dx = -1; dy = 0; break;
+        default: break;
         }
-        break;
-    case Stalk:
-        if (near <= kNearby) {
-            toward(false);
+    };
+    const auto atHero = [&] { return m.at.x + dx == hx && m.at.y + dy == hy; };
+    const Fighter* gun = f.weapon >= 0 ? fighter(f.weapon) : nullptr;
+    bool moved = false;
+    // Moves when the target cell is free and has a floor monsters may use.
+    // Returns false when the floor keeps it out.
+    const auto tryMove = [&]() -> bool {
+        const Position to{m.at.x + dx, m.at.y + dy};
+        if (objectAt(to) != kNone16) {
+            none();
+            return true;
         }
-        break;
-    case Scared:
-        if (near <= kNearby) {
-            toward(true);
-        } else {
-            wander();
+        const std::uint16_t floor = tile(to, kFloorLayer);
+        if (floor == kNone16) {
+            return true;
         }
-        break;
-    case Patrol: {
-        // Yoda Stories gives patrols waypoints (x, y pairs; zero ends them).
-        const auto& wp = zone().monsters[index].waypoints;
-        const int count = [&] {
-            int n = 0;
-            while (n < 8 && (wp[static_cast<std::size_t>(n * 2)] != 0 || wp[static_cast<std::size_t>(n * 2 + 1)] != 0)) {
-                ++n;
+        if ((flags(floor) & kNoMonsters) != 0) {
+            return false;
+        }
+        m.at = to;
+        moved = true;
+        return true;
+    };
+
+    // Its shot: one cell per tick, three cells at most.
+    if (gun != nullptr) {
+        bool fired = false;
+        bool fly = false;
+        if (m.shotStep == 0 && (!yoda || m.wait <= 0)) {
+            if (within(4)) {
+                m.shotAt = m.at;
+                const bool sitting = movement == 4;
+                const auto chance = [&] { return (!yoda && sitting) ? (rnd() & 3) == 0 : rnd() % 7 == 3; };
+                if (m.at.x == hx) {
+                    if (m.at.y != hy) {
+                        m.shotDy = sign(hy - m.at.y);
+                    }
+                    m.shotDx = 0;
+                    fly = chance();
+                    if (!fly) {
+                        m.shotDy = 0;
+                    }
+                } else if (m.at.y == hy) {
+                    m.shotDx = sign(hx - m.at.x);
+                    m.shotDy = 0;
+                    fly = chance();
+                    if (!fly) {
+                        m.shotDx = 0;
+                    }
+                } else {
+                    fly = true; // the originals go on with no direction: nothing flies
+                }
+                fired = fly;
             }
-            return n;
-        }();
-        if (count == 0) {
-            wander();
-            break;
-        }
-        const Position goal{wp[static_cast<std::size_t>(m.waypoint * 2)], wp[static_cast<std::size_t>(m.waypoint * 2 + 1)]};
-        if (m.at == goal) {
-            m.waypoint = (m.waypoint + 1) % count;
-            break;
-        }
-        const int sx = goal.x > m.at.x ? 1 : (goal.x < m.at.x ? -1 : 0);
-        const int sy = goal.y > m.at.y ? 1 : (goal.y < m.at.y ? -1 : 0);
-        if (sx != 0 && freeForMonster({m.at.x + sx, m.at.y})) {
-            dx = sx;
-        } else if (sy != 0 && freeForMonster({m.at.x, m.at.y + sy})) {
-            dy = sy;
         } else {
-            m.waypoint = (m.waypoint + 1) % count;
+            fly = true;
         }
-        break;
+        if (fly) {
+            ++m.shotStep;
+            bool going = false;
+            if (slide(m.shotAt, m.shotDx, m.shotDy) == 1) {
+                const Position next{m.shotAt.x + m.shotDx, m.shotAt.y + m.shotDy};
+                if (next == player_) {
+                    m.shotDx = 0;
+                    m.shotDy = 0;
+                    if (!yoda && gun->sound >= 0) {
+                        effects_.push_back({Effect::Kind::Sound, {}, {}, gun->sound});
+                    }
+                    // The shot does the monster's own damage.
+                    effects_.push_back({Effect::Kind::Sound, {}, {}, kHurtSound});
+                    hurtHero(f.harmless ? 0 : f.damage);
+                } else {
+                    m.shotAt = next;
+                    going = true;
+                    if (m.shotStep == 1 && fired && gun->sound >= 0) {
+                        effects_.push_back({Effect::Kind::Sound, {}, {}, gun->sound});
+                    }
+                }
+            }
+            if (going && m.shotStep < 4) {
+                m.shotShown = true;
+            } else {
+                m.shotShown = false;
+                m.shotStep = 0;
+                m.shotAt = m.at;
+                m.shotDx = 0;
+                m.shotDy = 0;
+            }
+        }
+        if (outcome_ != Outcome::Playing) {
+            return;
+        }
     }
-    default: wander(); break;
-    }
-    if (dx != 0 || dy != 0) {
-        m.at = {m.at.x + dx, m.at.y + dy};
-        m.facing = facingOf(dx, dy);
-        m.frame = m.frame == 1 ? 2 : 1;
+
+    const auto odd = [&] { return (monsterTicks_ & 1) != 0; };
+    bool rockReset = false;
+    if (yoda) {
+        // Most kinds stand still while they wait.
+        const auto waiting = [&] {
+            if (m.wait != 0) {
+                --m.wait;
+                none();
+                return true;
+            }
+            return false;
+        };
+        switch (movement) {
+        case 1: // chases the hero; after 15 steps or two hits it backs off for 4
+            if (waiting()) {
+                break;
+            }
+            if (rnd() % 2 == 0) {
+                none();
+                break;
+            }
+            if (m.retreat) {
+                if (rnd() % 2 == 0) {
+                    away();
+                } else {
+                    wander();
+                }
+                if (++m.count > 3) {
+                    m.retreat = false;
+                    m.count = 0;
+                }
+            } else {
+                toward();
+            }
+            adjust(slide(m.at, dx, dy));
+            if (atHero()) {
+                none();
+                meleeHit(f);
+                if (++m.count > 1) {
+                    m.retreat = true;
+                    m.count = 0;
+                }
+            }
+            (void)tryMove();
+            if (!m.retreat && ++m.count >= 15) {
+                m.retreat = true;
+                m.count = 0;
+            }
+            break;
+        case 2: // walks its way; close by, attacks or steps at random
+        case 7: // walks its way; close by, attacks
+        case 8: // as 7, and now and then a random step
+            if (waiting()) {
+                break;
+            }
+            if (movement != 8 && rnd() % 2 == 0) {
+                none();
+                break;
+            }
+            if (within(2)) {
+                if (movement == 7) {
+                    attackMode = true;
+                    toward();
+                } else if (movement == 8) {
+                    attackMode = true;
+                    if (rnd() % 2 == 0) {
+                        wander();
+                    } else {
+                        toward();
+                    }
+                } else if (rnd() % 2 == 0) {
+                    wander(); // keeps the mode of the monster before it
+                } else {
+                    attackMode = true;
+                    toward();
+                }
+            } else if (movement == 8 && rnd() % 3 == 0) {
+                attackMode = true;
+                wander();
+            } else {
+                attackMode = false;
+                heading();
+            }
+            {
+                const int r = slide(m.at, dx, dy);
+                if (attackMode) {
+                    adjust(r);
+                } else if (r != 1) {
+                    none();
+                    m.wait = movement == 2 ? rnd() % 3 : (movement == 7 ? rnd() % 8 : rnd() % 10);
+                    m.heading = rnd() % 4 - 1;
+                }
+            }
+            if (atHero()) {
+                none();
+                // Movement 8 hits half the time, and not with a weapon in hand.
+                if (movement != 8 || (gun == nullptr && !f.harmless && rnd() % 2 == 0)) {
+                    meleeHit(f);
+                }
+            }
+            (void)tryMove();
+            break;
+        case 3: // wanders; close by, now and then goes for the hero
+            if (waiting()) {
+                break;
+            }
+            if (rnd() % 2 == 0) {
+                none();
+                break;
+            }
+            if (within(2) && rnd() % 2 != 0) {
+                toward();
+            } else {
+                wander();
+            }
+            adjust(slide(m.at, dx, dy));
+            if (atHero()) {
+                none();
+                if (gun == nullptr) {
+                    meleeHit(f);
+                }
+            }
+            (void)tryMove();
+            break;
+        case 4: // sits and turns to the hero
+            toward();
+            break;
+        case 6: // keeps away, now and then comes closer; close by, random
+            if (waiting()) {
+                break;
+            }
+            if (monsterTicks_ % 3 != 0) {
+                none();
+                break;
+            }
+            if (m.approach == 0) {
+                m.approach = monsterTicks_ % 10 == 0 ? 1 : 0;
+            }
+            if (m.approach != 0) {
+                toward();
+            } else {
+                away();
+            }
+            if (within(6)) {
+                wander();
+            }
+            adjust(slide(m.at, dx, dy));
+            if (atHero()) {
+                none();
+                if (gun == nullptr) {
+                    meleeHit(f);
+                }
+                if (++m.approach > 4) {
+                    m.approach = 0;
+                }
+            }
+            (void)tryMove();
+            break;
+        case 9: // walks its way, every other tick
+            if (waiting()) {
+                break;
+            }
+            if (!odd()) {
+                none();
+                break;
+            }
+            heading();
+            if (slide(m.at, dx, dy) != 1) {
+                none();
+                m.wait = rnd() % 3;
+                m.heading = rnd() % 4 - 1;
+            }
+            if (atHero()) {
+                none();
+                if (gun == nullptr) {
+                    meleeHit(f);
+                }
+            }
+            (void)tryMove();
+            break;
+        case 10: { // walks its four waypoints, every other tick
+            const auto& wp = zone().monsters[index].waypoints;
+            const auto k = static_cast<std::size_t>((m.waypoint + 1) * 4);
+            const int wx = k + 1 < wp.size() ? static_cast<std::int32_t>(wp[k] | (wp[k + 1] << 16)) : m.at.x;
+            const int wy = k + 3 < wp.size() ? static_cast<std::int32_t>(wp[k + 2] | (wp[k + 3] << 16)) : m.at.y;
+            if (waiting()) {
+                break;
+            }
+            if (!odd()) {
+                none();
+                break;
+            }
+            dx = sign(wx - m.at.x);
+            dy = sign(wy - m.at.y);
+            if (dx == 0 && dy == 0 && ++m.waypoint > 2) {
+                m.waypoint = -1;
+            }
+            if (atHero()) {
+                none();
+                meleeHit(f);
+            }
+            (void)tryMove();
+            break;
+        }
+        case 11: { // keeps away from the hero when close, else wanders
+            bool first = true;
+            for (int tries = 0; tries < 1000; ++tries) {
+                if (first && within(6)) {
+                    away();
+                } else {
+                    wander();
+                }
+                first = false;
+                adjust(slide(m.at, dx, dy));
+                if (atHero()) {
+                    none();
+                    meleeHit(f);
+                }
+                if (tryMove() || outcome_ != Outcome::Playing) {
+                    break;
+                }
+            }
+            break;
+        }
+        case 12: // part of the scenery
+            none();
+            break;
+        default: none(); break;
+        }
     } else {
-        m.frame = 0;
+        switch (movement) {
+        case 1: // chases the hero; after 15 steps or two hits it backs off for 4
+            if (!odd()) {
+                none();
+                break;
+            }
+            if (m.retreat) {
+                if ((rnd() & 1) != 0) {
+                    wander();
+                } else {
+                    away();
+                }
+                if (++m.count > 3) {
+                    m.retreat = false;
+                    m.count = 0;
+                }
+            } else {
+                toward();
+            }
+            adjust(slide(m.at, dx, dy));
+            if (atHero()) {
+                none();
+                if (gun == nullptr) {
+                    meleeHit(f);
+                }
+                if (++m.count > 1) {
+                    m.retreat = true;
+                    m.count = 0;
+                }
+            }
+            (void)tryMove();
+            if (!m.retreat && ++m.count >= 15) {
+                m.retreat = true;
+                m.count = 0;
+            }
+            break;
+        case 2: // half its steps for the hero, half at random
+        case 3: // random; close by, now and then for the hero
+            if (!odd()) {
+                none();
+                break;
+            }
+            if (movement == 2 ? (rnd() & 1) != 0 : (within(2) && (rnd() & 1) != 0)) {
+                toward();
+            } else {
+                wander();
+            }
+            adjust(slide(m.at, dx, dy));
+            if (atHero()) {
+                none();
+                if (gun == nullptr) {
+                    meleeHit(f);
+                }
+            }
+            (void)tryMove();
+            break;
+        case 4: // sits and turns to the hero
+            toward();
+            break;
+        case 5: { // a rock that rolls down and starts again at the top
+            if (!m.homeSet) {
+                m.home = m.at;
+                m.homeSet = true;
+            }
+            if (!m.placed) {
+                m.at = m.home;
+                m.placed = true;
+            }
+            if (!odd()) {
+                none();
+                break;
+            }
+            dx = 0;
+            dy = 1;
+            if (gun == nullptr && m.at.x == hx && (m.at.y + 1 == hy || (m.at.y == hy && hy == 0))) {
+                meleeHit(f);
+            }
+            if (slide(m.at, 0, 1) == 1) {
+                ++m.at.y;
+                moved = true;
+                break;
+            }
+            const std::uint16_t below = objectAt({m.at.x, m.at.y + 1});
+            if (below == 0) {
+                break;
+            }
+            if (below != kNone16 && (flags(below) & kEnemyTile) != 0) {
+                ++m.at.y; // rolls over an enemy
+                moved = true;
+                break;
+            }
+            m.placed = false;
+            none();
+            rockReset = true;
+            break;
+        }
+        case 6: // keeps away, now and then comes closer; close by, random
+            if (monsterTicks_ % 3 != 0) {
+                none();
+                break;
+            }
+            if (m.approach == 0) {
+                m.approach = monsterTicks_ % 10 == 0 ? 1 : 0;
+            }
+            if (m.approach != 0) {
+                toward();
+            } else {
+                away();
+            }
+            if (within(6)) {
+                wander();
+            }
+            adjust(slide(m.at, dx, dy));
+            if (atHero()) {
+                none();
+                if (gun == nullptr) {
+                    meleeHit(f);
+                }
+                if (++m.approach > 4) {
+                    m.approach = 0;
+                }
+            }
+            (void)tryMove();
+            break;
+        default: none(); break;
+        }
+    }
+
+    // Which way it looks, and the tile it shows.
+    m.hidden = false;
+    const auto ch = static_cast<std::size_t>(character);
+    if (yoda) {
+        if (movement == 3) {
+            if (dx == 0 && dy == 0) {
+                toward();
+            }
+            faceMonster(m, character, dx, dy);
+        } else {
+            if (dx == 0 && dy == 0) {
+                if (m.at.x == hx || m.at.y == hy) {
+                    toward();
+                    faceMonster(m, character, dx, dy);
+                }
+            } else if (moved) {
+                faceMonster(m, character, dx, dy);
+            } else if (m.faceNext || movement == 4) {
+                faceMonster(m, character, dx, dy);
+                m.faceNext = false;
+            }
+            if (m.faceNext) {
+                faceMonster(m, character, dx, dy);
+                m.faceNext = false;
+            }
+        }
+        if (ch < characterTile_.size() && characterTile_[ch] != kNone16) {
+            m.tile = characterTile_[ch];
+        }
+        if (movement == 12) {
+            // Scenery shows its first six frames in turn.
+            const int frame = std::clamp(m.waypoint, 0, data::kFacingCount - 1);
+            m.tile = f.character.frame(0, static_cast<data::Facing>(frame));
+            if (ch < characterTile_.size()) {
+                characterTile_[ch] = m.tile;
+            }
+            if (++m.waypoint > 5) {
+                m.waypoint = 0;
+            }
+        }
+    } else {
+        if (dx == 0 && dy == 0) {
+            toward();
+        }
+        if (rockReset) {
+            // Back to the top; it shows again on the next tick.
+            m.at = m.home;
+            m.roll = 0;
+            m.hidden = true;
+        } else {
+            if (movement == 5) {
+                static constexpr int kRoll[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {-1, 1}};
+                faceMonster(m, character, kRoll[m.roll][0], kRoll[m.roll][1]);
+                if (++m.roll > 3) {
+                    m.roll = 0;
+                }
+            } else {
+                faceMonster(m, character, dx, dy);
+            }
+            if (ch < characterTile_.size() && characterTile_[ch] != kNone16) {
+                m.tile = characterTile_[ch];
+            }
+        }
     }
 }
 
@@ -547,49 +1235,10 @@ void World::update(int ms) {
     if (shots_.empty()) {
         shotMs_ = 0;
     }
-    auto& s = state();
-    const auto& list = zone().monsters;
-    for (std::size_t i = 0; i < s.monsters.size() && i < list.size() && outcome_ == Outcome::Playing; ++i) {
-        if (!s.monsterEnabled[i] || s.monsterDead[i]) {
-            continue;
-        }
-        const Fighter* f = fighter(list[i].character);
-        if (f == nullptr || f->character.type != kTypeEnemy || f->character.movement == Scenery) {
-            continue;
-        }
-        auto& m = s.monsters[i];
-        m.moveMs -= ms;
-        m.attackMs -= ms;
-        const bool adjacent = distance(m.at, player_) == 1;
-        if (adjacent) {
-            m.facing = facingOf(player_.x - m.at.x, player_.y - m.at.y);
-            if (m.attackMs <= 0 && f->damage > 0) {
-                m.attackMs = kAttackMs;
-                hurtHero(f->damage);
-            }
-            continue;
-        }
-        // A monster with a weapon shoots along a clear row or column.
-        const Fighter* gun = f->weapon >= 0 ? fighter(f->weapon) : nullptr;
-        if (gun != nullptr && gun->character.type == kTypeWeapon && m.attackMs <= 0 &&
-            distance(m.at, player_) <= kShotRange && lineClear(m.at, player_)) {
-            const int dx = player_.x > m.at.x ? 1 : (player_.x < m.at.x ? -1 : 0);
-            const int dy = player_.y > m.at.y ? 1 : (player_.y < m.at.y ? -1 : 0);
-            m.facing = facingOf(dx, dy);
-            m.attackMs = kShootMs;
-            fire(m.at, dx, dy, *gun, gun->damage, false);
-            if (gun->sound >= 0) {
-                effects_.push_back({Effect::Kind::Sound, {}, {}, gun->sound});
-            }
-            continue;
-        }
-        if (m.moveMs <= 0) {
-            m.moveMs += kStepMs;
-            if (m.moveMs <= 0) {
-                m.moveMs = kStepMs;
-            }
-            stepMonster(i, m, *f);
-        }
+    monsterMs_ += ms;
+    while (monsterMs_ >= kTickMs && outcome_ == Outcome::Playing && !paused_) {
+        monsterMs_ -= kTickMs;
+        tickMonsters();
     }
 }
 

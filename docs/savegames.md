@@ -70,6 +70,7 @@ makes, so a save is only continued with the same mods switched on.
 | `goals` | for each puzzle site: zone, site index, the two required items, the item to find, and whether it is solved |
 | `zones` | the zones the player has seen, by zone number |
 | `rng` | the state of the world's random numbers, so play goes on as it would have |
+| `monsterTicks`, `monsterMs` | the monsters' game tick count and the time towards the next tick (older saves have neither) |
 
 Each zone in `zones` holds:
 
@@ -78,7 +79,7 @@ Each zone in `zones` holds:
 | `cells` | the cells that differ from the game data: cell index, then the three tile layers |
 | `hidden` | items still hidden in the zone: x, y, item |
 | `hotspots`, `actionsOff`, `monstersOn`, `monstersDead` | one character per hotspot, script or monster: `1` or `0` |
-| `monsters` | each monster's x, y, health, facing and waypoint |
+| `monsters` | each monster's x, y, health, facing and waypoint, then what the monster rules keep: wait, count, retreat, approach, heading, face next, tile, shot x, y, dx, dy, step and shown, Indy's rock: start x, y, start known, placed, roll and hidden (older saves stop after the waypoint) |
 | `entered` | whether the zone's first-entry scripts have run |
 | `counter`, `random`, `sharedCounter` | the zone's script counters |
 

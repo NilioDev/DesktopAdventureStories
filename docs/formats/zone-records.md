@@ -71,10 +71,14 @@ A placed character is 6 bytes in Indy and 44 bytes in Yoda Stories:
 u16  character         index into CHAR
 u16  x, y
 (Yoda Stories only)
-u16  item              0xFFFF for none
-u32  unknown
-u16  waypoints[16]     0xFFFF when unused
+u16  item              one more than the tile it drops; 0: the zone's own item
+u32  drops             1: drops its item when it dies, 0: drops nothing
+u32  waypoints[8]      four x, y pairs for patrols (movement 10)
 ```
+
+The originals read these fields this way (see [combat.md](../combat.md)). Our
+data model keeps the waypoints as sixteen 16-bit halves and the drop flag as
+`unknown`, so files round-trip byte for byte.
 
 ## IZX2 and IZX3 blocks
 

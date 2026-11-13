@@ -43,9 +43,9 @@ own adventures.
 - 🗺️ **A new adventure every time.** Worlds are generated just like in the
   originals: the same seed gives the same world. Pick the world size and the
   difficulty.
-- 🎯 **True to the original.** In Yoda Stories the zone scripts run the way
-  the original program runs them, and the difficulty scales the damage you
-  take just like there (on Normal you take half).
+- 🎯 **True to the original.** The zone scripts run the way the original
+  programs run them, and the difficulty scales the damage you take just like
+  there (on Normal you take half).
 - 🃏 **Pick your adventure.** The game starts with a card for each game,
   Indiana Jones first and Yoda Stories next to it, showing the game's own
   title screen from your files and when you last saved. Continue right away

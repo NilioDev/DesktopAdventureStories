@@ -22,29 +22,26 @@ a later action sees what an earlier one changed.
 
 | Event | Started when | Event values |
 | --- | --- | --- |
-| Walk | the hero stepped onto a cell; in Yoda Stories also on every game tick, for the cell the hero stands on | x, y |
+| Walk | on every game tick, for the cell the hero stands on (we also run it right after a step) | x, y |
 | Bump | the hero walked against something that blocks | hero x, y and the step dx, dy |
 | PlaceItem | the player used an inventory item on a cell | x, y, item |
 | Enter | the hero entered the zone | |
-| Update | right after Enter (Yoda Stories: twice, the second time when the change of zone has finished); Indy: also after a speech bubble was closed | |
+| Update | twice after Enter: once when the new zone is swapped in and once when the change of zone has finished | |
 
-A speech bubble or a pause stops the pass in the middle of an action; it
-continues once the bubble is closed or the time has passed. Yoda Stories
-shows its bubbles modally, inside the instruction, and does not start any
-other pass after one. For Indy we still run an Update pass after a pass in
-which something was said, which lets conversations go on. (We stop after 32
-Update passes in a row, in case scripts keep starting each other.)
+This was checked in both original programs (Yodesk.exe and the 16-bit
+DESKADV.EXE). A speech bubble or a pause stops the pass in the middle of an
+action; it continues once the bubble is closed or the time has passed. The
+originals show their bubbles modally, inside the instruction, and do not
+start another pass after one.
 
-Because Yoda Stories looks at the hero's cell on every tick, StandingOn and
-HeroIsAt also notice a hero who stands still or whom a script put somewhere
-(the landing on Dagobah needs this). For Indy, a script that moves the hero
-counts as a step onto where he ended up.
+Because the hero's cell is checked on every tick, StandingOn and HeroIsAt
+also notice a hero who stands still or whom a script put somewhere (the
+landing on Dagobah needs this).
 
-ChangeZone works differently in the two engines. In Yoda Stories it only
-asks for the change: the rest of the action and the rest of the pass still
-run in the old zone (the data has DisableAction and tile changes after a
-ChangeZone), and the hero goes to the new zone when the pass is over. In our
-Indy, changing zones ends the pass at once.
+ChangeZone only asks for the change: the rest of the action and the rest of
+the pass still run in the old zone (the data has DisableAction and tile
+changes after a ChangeZone), and the hero goes to the new zone when the pass
+is over.
 
 ## Zone state
 
@@ -53,7 +50,7 @@ monsters are enabled, which actions are disabled, whether it has been
 entered before, and three numbers that scripts use: the *counter*, the
 *random* value and the *shared counter*.
 
-In Yoda Stories the counter starts at 0 and the random value and the shared
+The counter starts at 0 and the random value and (Yoda Stories) the shared
 counter at -1, so "RandomIs 0" or "SharedCounterIs 0" do not hold until a
 script sets them (many zones do so on their first Enter). The shared counter
 goes along when the hero changes zones through a door (in and out) or a
@@ -86,7 +83,7 @@ as Yoda Stories does; the Indy column gives Indiana Jones' own number.
 | 0 | 4 | FirstEnter | | Enter event, and the zone has not been entered before |
 | 1 | 5 | Enter | | Enter event |
 | 2 | 2 | Bump | x, y, tile | Bump event against x, y, and the object layer there holds tile |
-| 3 | 3 | PlaceItem | x, y, layer, tile, item | PlaceItem event on x, y; the cell on layer holds tile (-1: any tile); the item used is item (-1: the zone's required item). Indy: we also accept an empty cell, which is not checked against the Indy program yet |
+| 3 | 3 | PlaceItem | x, y, layer, tile, item | PlaceItem event on x, y; the cell on layer holds tile (-1: any tile); the item used is item (-1: the zone's required item) |
 | 4 | 1 | StandingOn | x, y, tile | Walk event onto x, y, whose floor tile is tile |
 | 5 | 6 | CounterIs | value | counter = value |
 | 6 | 13 | RandomIs | value | random = value |
@@ -160,20 +157,21 @@ as Yoda Stories does; the Indy column gives Indiana Jones' own number.
 | 30 | 33 | MarkAsSolved | | the zone's goal is solved |
 | 31 | 27 | WinGame | | |
 | 32 | 31 | LoseGame | | |
-| 33 | 34 | ChangeZone | zone, x, y | the hero goes to zone, on x, y (Yoda Stories: once the pass is over, see above) |
+| 33 | 34 | ChangeZone | zone, x, y | the hero goes to zone, on x, y, once the pass is over (see above) |
 | 34 | | SetSharedCounter | value | |
 | 35 | | AddToSharedCounter | value | |
 | 36 | | SetRandom | value | |
-| 37 | | AddHealth | value | may be negative; Yoda Stories scales a loss by the difficulty like a hit (docs/combat.md), and a loss down to 0 loses the game |
+| 37 | | AddHealth | value | may be negative; a loss is scaled by the difficulty like a hit (docs/combat.md), and a loss down to 0 loses the game |
 | | 20 | RedrawZone | | screen update only |
 | | 7, 8 | | | do nothing |
 
 ## Open questions
 
-- Health: 0..300 (three bars of 100). Yoda Stories stores it as a bar and
+- Health: 0..300 (three bars of 100). The originals store it as a bar and
   points within the bar; the comparisons read 300 at full health, so our
   scale fits.
-- The Indy program (16-bit Windows) has not been checked opcode by opcode
-  yet; the Indy column follows the Yoda Stories behaviour except where noted.
+- In the Indy program we checked the flow of passes, PlaceItem, ChangeZone
+  and the counters; the other Indy opcodes still follow the Yoda Stories
+  behaviour.
 - How DropItem hands the item over: Yoda Stories shows the item blinking on
   the cell; we put it on the object layer.

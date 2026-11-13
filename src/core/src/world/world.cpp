@@ -58,12 +58,10 @@ World::ZoneState& World::stateOf(int zoneIndex) {
         fresh.actionDisabled.assign(z.actions ? z.actions->size() : 0, false);
         fresh.monsterEnabled.assign(z.monsters.size(), true);
         fresh.monsterDead.assign(z.monsters.size(), false);
-        if (data_.layout() == data::Layout::Yoda) {
-            // Yoda Stories starts a zone's random value and shared counter
-            // at -1, so "is 0" does not hold until a script sets it.
-            fresh.random = -1;
-            fresh.sharedCounter = -1;
-        }
+        // Both games start a zone's random value (and Yoda Stories its
+        // shared counter) at -1, so "is 0" does not hold until a script sets it.
+        fresh.random = -1;
+        fresh.sharedCounter = -1;
         initMonsters(zoneIndex, fresh);
         prepareZone(zoneIndex, fresh);
         it = states_.emplace(zoneIndex, std::move(fresh)).first;
@@ -143,7 +141,7 @@ void World::setGoal(int zoneIndex, ZoneGoal g) {
 }
 
 void World::carrySharedCounter(int toZone) {
-    if (data_.layout() != data::Layout::Yoda || toZone == zone_ || toZone < 0 ||
+    if (toZone == zone_ || toZone < 0 ||
         static_cast<std::size_t>(toZone) >= data_.zones.size()) {
         return;
     }
@@ -341,14 +339,11 @@ void World::enter(int zoneIndex, Position at) {
     pendingZone_.reset();
     paused_ = false;
     zoneChanged_ = true;
-    chainedUpdates_ = 0;
     trigger(script::Event::Enter);
     trigger(script::Event::Update);
-    if (data_.layout() == data::Layout::Yoda) {
-        // Yoda Stories runs the Update scripts once more when the change
-        // of zone has finished.
-        trigger(script::Event::Update);
-    }
+    // The originals run the Update scripts once more when the change of
+    // zone has finished.
+    trigger(script::Event::Update);
     runScripts();
 }
 

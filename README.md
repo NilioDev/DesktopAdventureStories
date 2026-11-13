@@ -41,8 +41,10 @@ own adventures.
 ## Features
 
 - 🗺️ **A new adventure every time.** Worlds are generated just like in the
-  originals: the same seed gives the same world. Pick the world size and the
-  difficulty.
+  originals: the same seed gives the same world. Like there, each game
+  remembers the ones before it: Yoda Stories moves you to another planet,
+  goals you just played are left out, and some goals wait until you have won
+  a few games. Pick the world size and the difficulty.
 - 🎯 **True to the original.** The zone scripts run the way the original
   programs run them, and every kind of enemy moves, chases, backs off, hits
   and shoots by the rules of the original programs, at their speed. The

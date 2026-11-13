@@ -53,6 +53,21 @@ bool WorldMap::locate(int zone, const Map*& map, int& x, int& y) const {
     return false;
 }
 
+int nextPlanet(int last, int gamesWon, bool coin) {
+    if (gamesWon == 5 || gamesWon == 10 || gamesWon == 15) {
+        switch (last) {
+        case 1: return 3;
+        case 2: return coin ? 1 : 3;
+        default: return 1;
+        }
+    }
+    switch (last) {
+    case 1: return coin ? 2 : 3;
+    case 2: return coin ? 1 : 3;
+    default: return coin ? 2 : 1;
+    }
+}
+
 WorldMap generateWorld(const data::GameData& data, const GeneratorOptions& options) {
     if (data.layout() == data::Layout::Yoda) {
         return yoda::generate(data, options);

@@ -125,6 +125,11 @@ public:
 
 WorldMap generateWorld(const data::GameData& data, const GeneratorOptions& options);
 
+// Yoda Stories: the planet of a new game, as the original picks it. It always
+// differs from the last one; coin (a random bit) picks between the other
+// two. After 5, 10 and 15 won games the snow planet (2) is skipped.
+int nextPlanet(int last, int gamesWon, bool coin);
+
 // The zone and every room reachable through its doors (DoorIn hotspots).
 std::vector<int> zoneCluster(const data::GameData& data, int zone);
 

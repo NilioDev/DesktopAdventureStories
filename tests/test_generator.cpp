@@ -263,7 +263,7 @@ DAS_TEST("Indy's mission giver briefs the hero and hands over the first item onc
         world::World w(game);
         w.setMap(map);
         w.begin();
-        DAS_CHECK(w.weapon() != data::kNoTile); // his whip
+        DAS_CHECK(w.inventory().empty()); // the original starts with nothing
         // Marcus sits at his desk in a room of the town; walk into him from
         // the cell below.
         int room = -1;
@@ -295,11 +295,17 @@ DAS_TEST("Indy's mission giver briefs the hero and hands over the first item onc
             int items = 0;
             for (const auto& e : w.takeEffects()) {
                 spoke = spoke || e.kind == world::Effect::Kind::Speech;
-                items += e.kind == world::Effect::Kind::ItemFound && e.value == map.startItem ? 1 : 0;
+                items += e.kind == world::Effect::Kind::ItemDrop && e.value == map.startItem ? 1 : 0;
             }
             while (w.paused()) {
                 (void)w.takeEffects();
                 w.resume();
+            }
+            // It blinks on the desk until the player takes it.
+            if (items > 0) {
+                DAS_CHECK(w.drop() && w.drop()->at == desk);
+                DAS_CHECK(!w.hasItem(map.startItem));
+                w.pickUp();
             }
             DAS_CHECK(spoke);
             return items;
@@ -397,5 +403,95 @@ DAS_TEST("after the landing on Dagobah the hero can walk away from the ship") {
             DAS_CHECK(moved);
             DAS_CHECK(!(w.player() == start));
         }
+    }
+}
+
+DAS_TEST("standing on a ship or vehicle spot travels, like the originals") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        const auto settle = [](world::World& w) {
+            for (int i = 0; i < 64; ++i) {
+                (void)w.takeEffects();
+                if (w.paused()) {
+                    w.resume();
+                } else {
+                    w.update(100);
+                }
+            }
+        };
+        world::GeneratorOptions options;
+        options.seed = 4023434935u; // planet 2, town 151, a vehicle from 465 to 466
+        const auto map = world::generateWorld(game, options);
+        {
+            // On Dagobah, bumping into the X-wing plays the take-off, which
+            // ends with the hero on the ship's spot; the next tick flies.
+            world::World w(game);
+            w.setMap(map);
+            w.begin();
+            settle(w);
+            (void)w.move({0, -1});
+            settle(w);
+            (void)w.move({0, -1});
+            settle(w);
+            DAS_CHECK(w.zoneIndex() == 151);
+        }
+        {
+            // The key starts the vehicle; its script puts the hero on the
+            // vehicle's spot, and the next tick takes him to the island.
+            world::World w(game);
+            w.setMap(map);
+            w.begin();
+            settle(w);
+            w.enter(465, {10, 8});
+            settle(w);
+            w.addItem(1240);
+            DAS_CHECK(w.useItem(1240, {10, 7}));
+            settle(w);
+            DAS_CHECK(w.zoneIndex() == 466);
+        }
+    }
+}
+
+DAS_TEST("yoda: the next planet follows the original's rule") {
+    using world::nextPlanet;
+    for (const bool coin : {false, true}) {
+        for (int last = 1; last <= 3; ++last) {
+            DAS_CHECK(nextPlanet(last, 0, coin) != last);
+        }
+    }
+    DAS_CHECK(nextPlanet(1, 0, false) == 3);
+    DAS_CHECK(nextPlanet(1, 0, true) == 2);
+    DAS_CHECK(nextPlanet(2, 3, false) == 3);
+    DAS_CHECK(nextPlanet(2, 3, true) == 1);
+    DAS_CHECK(nextPlanet(3, 1, false) == 1);
+    DAS_CHECK(nextPlanet(3, 1, true) == 2);
+    // After 5, 10 and 15 won games the snow planet is left out.
+    for (const int won : {5, 10, 15}) {
+        for (const bool coin : {false, true}) {
+            DAS_CHECK(nextPlanet(1, won, coin) == 3);
+            DAS_CHECK(nextPlanet(3, won, coin) == 1);
+        }
+        DAS_CHECK(nextPlanet(2, won, false) == 3);
+        DAS_CHECK(nextPlanet(2, won, true) == 1);
+    }
+}
+
+DAS_TEST("indy: a game starts in front of the mission giver's house") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Indy) {
+            continue;
+        }
+        world::GeneratorOptions options;
+        options.seed = 12345;
+        world::World w(game);
+        w.setMap(world::generateWorld(game, options));
+        w.begin();
+        DAS_CHECK(w.zoneIndex() == 120);
+        // Below the door at (11,4), to the office with the mission giver.
+        DAS_CHECK(w.player() == (world::Position{11, 5}));
     }
 }

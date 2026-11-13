@@ -703,6 +703,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     int zone = 0;
     std::string walkPath;
     std::uint32_t seed = static_cast<std::uint32_t>(SDL_GetPerformanceCounter());
+    bool seedGiven = false;
     auto size = das::world::WorldSize::Medium;
     std::string libraryPath;
     bool reimport = false;
@@ -725,6 +726,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
             zone = std::atoi(argv[++i]);
         } else if (arg == "--seed" && hasValue) {
             seed = static_cast<std::uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+            seedGiven = true;
         } else if (arg == "--size" && hasValue) {
             const std::string value = argv[++i];
             size = value == "small"   ? das::world::WorldSize::Small
@@ -839,7 +841,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     }
     if (mode == "play" || mode == "game" || mode == "continue") {
         if (mode == "game") {
-            app->viewer.newGame(seed, size);
+            // A given seed always makes the same world: no history.
+            app->viewer.newGame(seed, size, !seedGiven);
         } else if (mode == "continue") {
             if (!app->viewer.continueGame()) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No saved game to continue");

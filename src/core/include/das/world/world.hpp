@@ -37,6 +37,8 @@ enum class HotspotType : std::uint32_t {
     CrateItem = 6, // argument: an item lying here or hidden in the object
     DoorIn = 9,    // argument: the zone behind the door
     DoorOut = 10,  // leads back to where the player came from
+    VehicleTo = 3,        // argument: the zone it goes to (an island's landing)
+    VehicleBack = 4,      // argument: the zone it goes back to
     ShipFromDagobah = 14, // argument: the town zone it flies to
     ShipToDagobah = 15,   // argument: the Dagobah zone it flies to
 };
@@ -307,7 +309,7 @@ private:
     void carrySharedCounter(int toZone);
     void prepareZone(int zone, ZoneState& state);
     bool leaveEdge(Step step);
-    bool fly(Position target);
+    bool travel();
     Position nearWalkable(int zone, Position at) const;
     // The hero's own reactions when no script reacted.
     bool bumpBuiltIn(Position target);
@@ -381,6 +383,8 @@ private:
     int scriptTickMs_ = 0;
     std::optional<Drop> drop_;
     std::mt19937 rng_{0x5eed};
+    bool sliding_ = false;
+    bool scriptActed_ = false; // a script changed the zone, spoke or moved the hero
 
     std::vector<Fighter> fighters_; // by character index
     std::uint16_t weapon_ = data::kNoTile;

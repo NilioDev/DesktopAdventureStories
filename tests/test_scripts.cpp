@@ -276,7 +276,7 @@ DAS_TEST("a ChangeZone lets the rest of the pass run first") {
     w.enter(3, {1, 1});
     drain(w);
     // DisableAction after the ChangeZone ran too: no second trip.
-    DAS_CHECK(w.move({0, -1}) == world::MoveResult::Blocked);
+    DAS_CHECK(w.move({0, -1}) != world::MoveResult::ChangedZone);
     DAS_CHECK(w.zoneIndex() == 3);
 }
 

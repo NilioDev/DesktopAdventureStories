@@ -299,6 +299,19 @@ or, in the hut, on the spot at (3,3) (the other helper at (3,2)).
 ## 8. Our own choices
 
 - When the planet is left open: `1 + seed % 3`.
+- The app keeps the history per game in its settings file (`history`): games
+  won, the last planet, the recent goals per planet and, for Indy, the zones
+  of the last game. A new game from the menu uses and updates it the way the
+  originals do (below); a world asked for with `--seed` leaves it out, so the
+  seed alone decides the world.
+- The planet of a new Yoda Stories game (`nextPlanet`): never the last one;
+  a random bit picks one of the other two. After exactly 5, 10 or 15 won
+  games planet 1 goes to 3, 3 goes to 1 and 2 goes to 1 or 3. The original
+  starts from planet 1 on a new installation. It draws that bit from the C
+  library, not from the seed; we take bit 16 of the seed.
+- Yoda Stories trims the recent goals of the planet once more before making
+  the world and once when it stores the new list (more than three: the
+  oldest goes).
 - When a seed fails: the next seed comes from the old one (section 5), in both
   games.
 - The original's map cells keep a few values from the previous game; we start

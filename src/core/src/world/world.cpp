@@ -417,44 +417,52 @@ bool World::leaveEdge(Step step) {
     return true;
 }
 
-bool World::fly(Position target) {
-    if (!zone().hotspots) {
+bool World::travel() {
+    // Like the originals: on each game tick, in a zone where a journey
+    // starts or ends (travel start, travel end, town), standing on an
+    // enabled vehicle or ship spot takes the hero to the zone it names, onto
+    // the spot there that leads back. The take-off scripts put the hero on
+    // that spot when their animation is done.
+    const auto kind = static_cast<ZoneType>(zone().type);
+    if (kind != ZoneType::TravelStart && kind != ZoneType::TravelEnd && kind != ZoneType::Town) {
         return false;
     }
-    // The town the ship flies to: the one on the map, if there is a map.
-    int town = -1;
-    for (const auto& s : map_.world.sites) {
-        if (s.kind == SiteKind::Town) {
-            town = s.zone;
-        }
+    if (!zone().hotspots) {
+        return false;
     }
     const auto& list = *zone().hotspots;
     for (std::size_t i = 0; i < list.size(); ++i) {
         const auto& h = list[i];
-        if (!hotspotEnabled(i) || h.x != target.x || h.y != target.y || h.argument >= data_.zones.size()) {
+        if (h.x != player_.x || h.y != player_.y || !hotspotEnabled(i) || h.argument >= data_.zones.size()) {
             continue;
         }
         HotspotType arrival;
-        if (h.type == static_cast<std::uint32_t>(HotspotType::ShipFromDagobah) && (town < 0 || h.argument == town)) {
-            arrival = HotspotType::ShipToDagobah;
-        } else if (h.type == static_cast<std::uint32_t>(HotspotType::ShipToDagobah)) {
-            arrival = HotspotType::ShipFromDagobah;
-        } else {
-            continue;
+        switch (static_cast<HotspotType>(h.type)) {
+        case HotspotType::VehicleTo: arrival = HotspotType::VehicleBack; break;
+        case HotspotType::VehicleBack: arrival = HotspotType::VehicleTo; break;
+        case HotspotType::ShipFromDagobah: arrival = HotspotType::ShipToDagobah; break;
+        case HotspotType::ShipToDagobah: arrival = HotspotType::ShipFromDagobah; break;
+        default: continue;
         }
         const int to = h.argument;
+        // A vehicle only goes to a zone of the planet's map.
+        if ((arrival == HotspotType::VehicleTo || arrival == HotspotType::VehicleBack) && !map_.world.sites.empty() &&
+            site(to) == nullptr) {
+            continue;
+        }
         const auto& z = data_.zones[static_cast<std::size_t>(to)];
-        Position at{z.width / 2, z.height / 2};
-        if (z.hotspots) {
-            for (const auto& other : *z.hotspots) {
-                if (other.type == static_cast<std::uint32_t>(arrival)) {
-                    at = {other.x, other.y};
-                    break;
-                }
-            }
+        if (!z.hotspots) {
+            continue;
+        }
+        const auto spot = std::find_if(z.hotspots->begin(), z.hotspots->end(), [&](const data::Hotspot& other) {
+            return other.type == static_cast<std::uint32_t>(arrival);
+        });
+        if (spot == z.hotspots->end()) {
+            continue;
         }
         returns_.clear();
-        enter(to, nearWalkable(to, at));
+        carrySharedCounter(to);
+        enter(to, {spot->x, spot->y});
         ++steps_;
         return true;
     }
@@ -581,10 +589,6 @@ MoveResult World::move(Step step) {
     if (!inside(target)) {
         return leaveEdge(step) ? MoveResult::ChangedZone : MoveResult::Blocked;
     }
-    if (fly(target)) {
-        return MoveResult::ChangedZone;
-    }
-
     if (const auto* door = hotspotAt(target, HotspotType::DoorIn)) {
         if (door->argument < data_.zones.size()) {
             returns_.push_back({zone_, target});

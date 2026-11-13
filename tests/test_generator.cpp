@@ -399,3 +399,52 @@ DAS_TEST("after the landing on Dagobah the hero can walk away from the ship") {
         }
     }
 }
+
+DAS_TEST("standing on a ship or vehicle spot travels, like the originals") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Yoda) {
+            continue;
+        }
+        const auto settle = [](world::World& w) {
+            for (int i = 0; i < 64; ++i) {
+                (void)w.takeEffects();
+                if (w.paused()) {
+                    w.resume();
+                } else {
+                    w.update(100);
+                }
+            }
+        };
+        world::GeneratorOptions options;
+        options.seed = 4023434935u; // planet 2, town 151, a vehicle from 465 to 466
+        const auto map = world::generateWorld(game, options);
+        {
+            // On Dagobah, bumping into the X-wing plays the take-off, which
+            // ends with the hero on the ship's spot; the next tick flies.
+            world::World w(game);
+            w.setMap(map);
+            w.begin();
+            settle(w);
+            (void)w.move({0, -1});
+            settle(w);
+            (void)w.move({0, -1});
+            settle(w);
+            DAS_CHECK(w.zoneIndex() == 151);
+        }
+        {
+            // The key starts the vehicle; its script puts the hero on the
+            // vehicle's spot, and the next tick takes him to the island.
+            world::World w(game);
+            w.setMap(map);
+            w.begin();
+            settle(w);
+            w.enter(465, {10, 8});
+            settle(w);
+            w.addItem(1240);
+            DAS_CHECK(w.useItem(1240, {10, 7}));
+            settle(w);
+            DAS_CHECK(w.zoneIndex() == 466);
+        }
+    }
+}

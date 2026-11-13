@@ -1224,6 +1224,9 @@ void World::update(int ms) {
                 if (paused_ || outcome_ != Outcome::Playing) {
                     return;
                 }
+                if (passes_.empty() && travel()) {
+                    return;
+                }
             }
         }
     }

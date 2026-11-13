@@ -512,8 +512,10 @@ bool World::bumpBuiltIn(Position target) {
         }
         if (!briefed) {
             setSolved(zone_);
+            // The item lies blinking on his desk until the player takes it.
             if (map_.startItem != data::kNoTile) {
-                found(map_.startItem);
+                drop_ = Drop{target, map_.startItem};
+                effects_.push_back({Effect::Kind::ItemDrop, {}, target, map_.startItem});
             }
         }
         return true;

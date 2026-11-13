@@ -263,7 +263,7 @@ DAS_TEST("Indy's mission giver briefs the hero and hands over the first item onc
         world::World w(game);
         w.setMap(map);
         w.begin();
-        DAS_CHECK(w.weapon() != data::kNoTile); // his whip
+        DAS_CHECK(w.inventory().empty()); // the original starts with nothing
         // Marcus sits at his desk in a room of the town; walk into him from
         // the cell below.
         int room = -1;
@@ -295,11 +295,17 @@ DAS_TEST("Indy's mission giver briefs the hero and hands over the first item onc
             int items = 0;
             for (const auto& e : w.takeEffects()) {
                 spoke = spoke || e.kind == world::Effect::Kind::Speech;
-                items += e.kind == world::Effect::Kind::ItemFound && e.value == map.startItem ? 1 : 0;
+                items += e.kind == world::Effect::Kind::ItemDrop && e.value == map.startItem ? 1 : 0;
             }
             while (w.paused()) {
                 (void)w.takeEffects();
                 w.resume();
+            }
+            // It blinks on the desk until the player takes it.
+            if (items > 0) {
+                DAS_CHECK(w.drop() && w.drop()->at == desk);
+                DAS_CHECK(!w.hasItem(map.startItem));
+                w.pickUp();
             }
             DAS_CHECK(spoke);
             return items;

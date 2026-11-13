@@ -149,14 +149,7 @@ bool World::equip(std::uint16_t item) {
 }
 
 void World::begin() {
-    if (data_.layout() == data::Layout::Indy) {
-        for (const Fighter& f : fighters_) {
-            if (f.character.type == kTypeWeapon && f.item != kNone16) {
-                addItem(f.item);
-                break;
-            }
-        }
-    }
+    // Both heroes start with empty hands: Indy finds his whip on the way.
     start(map_.startZone);
     // Indy starts in front of the door to the mission giver's office, like
     // in the original.

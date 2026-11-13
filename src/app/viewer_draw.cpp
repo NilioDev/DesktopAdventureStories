@@ -141,7 +141,9 @@ void Viewer::renderMenuCard(SDL_Renderer* renderer, const SDL_FRect& field) cons
                           : page_ == Page::Slots    ? (slotsSaving_ ? "Save game" : "Load game")
                           : help                    ? "How to play"
                           : card                    ? "Report a bug"
-                                                    : "Paused";
+                          : world_ && world_->outcome() == world::Outcome::Won  ? "You won!"
+                          : world_ && world_->outcome() == world::Outcome::Lost ? "You lost"
+                                                                                : "Paused";
     if (card) {
         float ty = box.y + kPad;
         ui::text(renderer, box.x + kPad, ty, heading, ui::color::accent);
@@ -355,22 +357,39 @@ void Viewer::renderBanner(SDL_Renderer* renderer, const SDL_FRect& field) const 
     if (banner_.empty()) {
         return;
     }
-    const float w = ui::textWidth(banner_, 2) + 48;
+    const std::string next = device_ == InputDevice::Touch ? "Tap Menu for what's next"
+                                                             : controlName(Action::Menu) + ": what's next";
+    const float w = std::max(ui::textWidth(banner_, 2), ui::textWidth(next)) + 48;
     const SDL_FRect box{std::floor(field.x + (field.w - w) / 2), std::floor(field.y + field.h / 2 - 28), w, 56};
     ui::panel(renderer, box);
     ui::textCentered(renderer, box.x + box.w / 2, box.y + 12, banner_, ui::color::accent, 2);
-    ui::textCentered(renderer, box.x + box.w / 2, box.y + 36, "Menu: back to the title", ui::color::dim);
+    ui::textCentered(renderer, box.x + box.w / 2, box.y + 36, next, ui::color::dim);
 }
 
 namespace {
 
-// The colours of the map's sites.
-constexpr ui::Color kTown{110, 160, 230};
-constexpr ui::Color kSolved{96, 112, 128};
-constexpr ui::Color kGoal{244, 211, 94};
-constexpr ui::Color kPlain{78, 88, 100};
+using mapcolor::kGoal;
+using mapcolor::kPlain;
+using mapcolor::kSolved;
+using mapcolor::kTown;
 
 } // namespace
+
+void drawMapCheck(SDL_Renderer* renderer, const SDL_FRect& box) {
+    if (box.w < 7) {
+        return;
+    }
+    const float x = box.x;
+    const float y = box.y;
+    const float size = box.w;
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 20, 24, 30, 230);
+    for (int t = 0; t < (size >= 12 ? 2 : 1); ++t) {
+        const float o = static_cast<float>(t);
+        SDL_RenderLine(renderer, x + size * 0.22f, y + size * 0.52f + o, x + size * 0.42f, y + size * 0.72f + o);
+        SDL_RenderLine(renderer, x + size * 0.42f, y + size * 0.72f + o, x + size * 0.78f, y + size * 0.30f + o);
+    }
+}
 
 Viewer::MapHere Viewer::mapHere() const {
     const auto& wm = world_->map();
@@ -416,6 +435,9 @@ void Viewer::renderMapCells(SDL_Renderer* renderer, const MapHere& here, float x
             default: break;
             }
             ui::fillRounded(renderer, box, radius, c);
+            if (site.kind == world::SiteKind::Puzzle && world_->goal(site.zone).solved) {
+                drawMapCheck(renderer, box);
+            }
             if (cx == here.x && cy == here.y) {
                 ui::outlineRounded(renderer, {box.x - 1, box.y - 1, box.w + 2, box.h + 2}, radius + 1,
                                    ui::color::text);
@@ -450,6 +472,9 @@ void Viewer::renderMap(SDL_Renderer* renderer, const SDL_FRect& field) const {
     const float ly = field.y + field.h - kPad - 8;
     for (const auto& e : entries) {
         ui::fillRounded(renderer, {lx, ly, 8, 8}, 2, e.c);
+        if (e.c.r == kSolved.r && e.c.g == kSolved.g && e.c.b == kSolved.b) {
+            drawMapCheck(renderer, {lx, ly, 8, 8});
+        }
         ui::text(renderer, lx + 11, ly, e.name, ui::color::dim);
         lx += 11 + ui::textWidth(e.name) + 12;
     }
@@ -512,7 +537,12 @@ std::string Viewer::controlName(Action action) const {
     }
     const std::string names =
         device_ == InputDevice::Gamepad ? bindings_->buttonNames(action) : bindings_->keyNames(action);
-    return names.substr(0, names.find(','));
+    const std::string first = names.substr(0, names.find(','));
+    // Both Shift keys (or both Ctrl keys) work: name them just "Shift".
+    if (first.size() > 1 && first[0] == 'L' && names.find("R" + first.substr(1)) != std::string::npos) {
+        return first.substr(1);
+    }
+    return first;
 }
 
 std::string Viewer::hintText() const {
@@ -521,6 +551,19 @@ std::string Viewer::hintText() const {
         return device_ == InputDevice::Gamepad ? "Press the new button" : "Press the new key\nEsc cancels";
     }
     const auto key = [&](Action a) { return controlName(a); };
+    // What a new player needs to know right now comes first.
+    if (!menu && mode_ == ViewMode::Play && world_) {
+        const bool touch = device_ == InputDevice::Touch;
+        if (!banner_.empty()) {
+            return touch ? "Tap Menu for what's next" : key(Action::Menu) + ": what's next";
+        }
+        if (bubble_) {
+            return touch ? "Tap to read on" : key(Action::Use) + ": read on";
+        }
+        if (world_->drop()) {
+            return touch ? "Tap to take the item" : key(Action::Use) + ": take the item";
+        }
+    }
     switch (device_) {
     case InputDevice::Touch: return menu ? "Tap to choose" : "Tap to walk and talk\nTap an item twice\nto use it";
     case InputDevice::Gamepad:
@@ -539,7 +582,13 @@ std::string Viewer::hintText() const {
 std::string Viewer::howToPlayText() const {
     std::string text =
         "Explore, talk to everyone and pick up what you find. Most people want something before they help you: "
-        "bring it and use it on them. The map shows the puzzles still open; solve them all to reach the final one.\n\n";
+        "bring it and use it on them. The map shows the puzzles still open; solve them all to reach the final one.\n";
+    if (world_ && generated_) {
+        text += game().game == data::Layout::Indy
+                    ? "First stop: go into the house where you start. The man at the desk has a job for you.\n"
+                    : "First stop: find Yoda somewhere on Dagobah and talk to him.\n";
+    }
+    text += "\n";
     const auto key = [&](Action a) { return controlName(a); };
     switch (device_) {
     case InputDevice::Touch:

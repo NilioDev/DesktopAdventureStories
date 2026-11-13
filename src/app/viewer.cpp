@@ -594,10 +594,13 @@ bool Viewer::autosave() {
     if (!world_ || !generated_ || saveFolder_.empty()) {
         return false;
     }
-    if (world_->outcome() != world::Outcome::Playing) {
+    if (world_->outcome() == world::Outcome::Won) {
         std::error_code ec;
-        std::filesystem::remove(savePath(0), ec); // a finished game is not continued
+        std::filesystem::remove(savePath(0), ec); // a won game is not continued
         return false;
+    }
+    if (world_->outcome() == world::Outcome::Lost) {
+        return false; // keep the last save from before, to try again from there
     }
     return writeSave(0);
 }
@@ -841,6 +844,15 @@ std::vector<Viewer::Row> Viewer::menuRows() const {
         rows.push_back({RowId::Back, "Other game", ""});
         break;
     case Page::Pause:
+        if (world_ && generated_ && world_->outcome() != world::Outcome::Playing) {
+            // The game is over: what next?
+            if (world_->outcome() == world::Outcome::Lost && hasSave()) {
+                rows.push_back({RowId::Continue, "Try again from your last save", ""});
+            }
+            rows.push_back({RowId::NewGame, "New adventure", ""});
+            rows.push_back({RowId::SaveAndQuit, "Back to the title", ""});
+            break;
+        }
         rows.push_back({RowId::Resume, "Resume", ""});
         if (generated_) {
             rows.push_back({RowId::SaveGame, "Save game", ""});

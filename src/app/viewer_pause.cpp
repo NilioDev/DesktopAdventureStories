@@ -231,11 +231,9 @@ void Viewer::renderMapTab(SDL_Renderer* renderer, const SDL_FRect& area) const {
         ui::Color c;
         const char* name;
     };
-    const Entry entries[] = {{ui::color::accent, "Open puzzle"},
-                             {{96, 112, 128}, "Solved"},
-                             {{244, 211, 94}, "Final goal"},
-                             {{110, 160, 230}, "Town"},
-                             {{78, 88, 100}, "Other places"}};
+    const Entry entries[] = {{ui::color::accent, "Open puzzle"}, {mapcolor::kSolved, "Solved"},
+                             {mapcolor::kGoal, "Final goal"},    {mapcolor::kTown, "Town"},
+                             {mapcolor::kPlain, "Other places"}, {ui::color::text, "You are here"}};
     float lx = x;
     for (const auto& e : entries) {
         const float ew = 12 + ui::textWidth(e.name) + 14;
@@ -246,7 +244,17 @@ void Viewer::renderMapTab(SDL_Renderer* renderer, const SDL_FRect& area) const {
         if (y + 10 > info.y + info.h) {
             break;
         }
-        ui::fillRounded(renderer, {lx, y, 9, 9}, 2, e.c);
+        const SDL_FRect swatch{lx, y, 9, 9};
+        if (&e == &entries[std::size(entries) - 1]) {
+            // The hero's cell: an outline with a dot, like on the map.
+            ui::outlineRounded(renderer, swatch, 2, ui::color::text);
+            ui::fillRounded(renderer, {lx + 3, y + 3, 3, 3}, 1, ui::color::text);
+        } else {
+            ui::fillRounded(renderer, swatch, 2, e.c);
+        }
+        if (&e == &entries[1]) {
+            drawMapCheck(renderer, swatch);
+        }
         ui::text(renderer, lx + 13, y + 1, e.name, ui::color::dim);
         lx += ew;
     }

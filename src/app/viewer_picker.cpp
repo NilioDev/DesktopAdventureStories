@@ -303,9 +303,22 @@ void Viewer::renderPicker(SDL_Renderer* renderer, const ui::Layout& layout) cons
         const auto buttons = pickButtons(card);
         float by = r.y + r.h - 10 - static_cast<float>(buttons.size()) * (kButtonH + 6) + 6;
         by = std::max(by, chipRect.y + chipRect.h + 8);
+        // When the buttons do not fit above each other (a long name takes
+        // two lines), they go side by side on one row.
+        float rowW = 0;
+        for (const auto& b : buttons) {
+            rowW += std::max(120.0f, ui::textWidth(b.label) + 28) + 6;
+        }
+        const bool sideBySide = buttons.size() > 1 &&
+                                by + static_cast<float>(buttons.size()) * (kButtonH + 6) - 6 > r.y + r.h - 8 &&
+                                rowW - 6 <= tw;
+        if (sideBySide) {
+            by = std::max(r.y + r.h - 10 - kButtonH, chipRect.y + chipRect.h + 8);
+        }
+        float bx = tx;
         for (std::size_t i = 0; i < buttons.size(); ++i) {
             const auto& b = buttons[i];
-            const SDL_FRect br{tx, by, std::min(tw, std::max(120.0f, ui::textWidth(b.label) + 28)), kButtonH};
+            const SDL_FRect br{bx, by, std::min(tw, std::max(120.0f, ui::textWidth(b.label) + 28)), kButtonH};
             if (b.primary) {
                 ui::fillRounded(renderer, br, kButtonH / 2, c.accent);
             } else {
@@ -317,7 +330,11 @@ void Viewer::renderPicker(SDL_Renderer* renderer, const ui::Layout& layout) cons
             ui::textCentered(renderer, br.x + br.w / 2, br.y + (br.h - ui::kFont) / 2, b.label,
                              b.primary ? c.ink : ui::color::text);
             addHit(Hit::Kind::Pick, br, (card + 1) * 10 + static_cast<int>(i));
-            by += kButtonH + 6;
+            if (sideBySide) {
+                bx += br.w + 6;
+            } else {
+                by += kButtonH + 6;
+            }
         }
     }
 

@@ -68,11 +68,15 @@ own adventures.
   your backpack; switch them with Q / E or LB / RB. Menus use the easy-to-read Fira Sans font,
   sharp on every screen, and what characters say appears in a classic pixel
   font that suits the game's art. No Windows 3.1 look.
+- 💡 **Help when you need it.** The line beside the play field shows the
+  keys, and tells you what to press when someone talks, hands you something
+  or the game is over. The map marks solved puzzles with a check mark.
 - 🎮 **Play your way.** Keyboard, mouse, gamepad or touch (a round stick and
   big Use, Hit and Item buttons on phones and tablets). Every key and button
   can be changed.
 - 💾 **Never lose your game.** It saves itself every few minutes and whenever
-  you leave, and you can save in three slots of your own.
+  you leave, and you can save in three slots of your own. If you lose, *Try
+  again from your last save* takes you back to just before.
 - 🐞 **Report bugs from the game.** F8, both gamepad sticks or the pause menu
   save a snapshot of the moment (your note, a screenshot and the game's state)
   and fill in a bug report for you.
@@ -81,6 +85,21 @@ own adventures.
   scripts and sounds in a beginner-friendly editor, and share them as mods.
 - 🔓 **Open.** GPL-licensed code, and open file formats for game data, mods
   and saves.
+
+## New to these games?
+
+Both games are short adventures in a world made just for you. You walk
+from screen to screen, talk to people and pick up what you find. Most people
+want something before they help you: bring it and use it on them, and they
+give you something new. Step by step this leads to the final goal.
+
+- **Indiana Jones:** go into the house where you start. The man at the desk
+  has a job for you.
+- **Yoda Stories:** find Yoda somewhere on Dagobah and talk to him.
+
+The map (M) shows the puzzles still open in colour and the solved ones with a
+check mark. A small world makes a short game. If you get stuck, look for a block you can push, try your items
+on people, and visit the places on the map you haven't solved yet.
 
 ## Download and play
 

@@ -17,13 +17,16 @@ using script::Instruction;
 namespace {
 
 constexpr int kLayers = 3;
-// Update passes started by other passes; a guard against scripts that keep
-// starting each other.
-constexpr int kMaxChainedUpdates = 32;
 // In the original text, these bytes stand for the names of the zone's
 // required item and find item.
 constexpr char kRequiredItemMark = '\xa2';
 constexpr char kFindItemMark = '\xa5';
+
+// Yoda Stories: items that a PlaceItemIsNot script never answers to (the
+// locator and the like keep their own use).
+bool ignoredByPlaceItemIsNot(int item) {
+    return item == 18 || (item >= 510 && item <= 514) || item == 516 || item == 517 || item == 794;
+}
 
 int arg(const data::ScriptLine& line, int index) { return line.args[static_cast<std::size_t>(index)]; }
 
@@ -153,29 +156,19 @@ void World::runScripts() {
                 break;
             }
         }
-        const bool spoke = pass.spoke;
-        const bool wasUpdate = pass.event == Event::Update;
-        // A script that put the hero on another cell counts as a step onto
-        // where he ended up. Yoda Stories needs this: after the landing on
-        // Dagobah a script fences the hero in, and the one that takes the
-        // fence away again waits for him to stand next to the ship. Not
-        // after a step itself, or two teleporters would send him to and fro.
-        const bool placed = pass.placedHero && pass.event != Event::Walk;
         passes_.pop_front();
         if (stopped) {
             passes_.clear();
             break;
         }
-        if (placed) {
-            trigger(Event::Walk, {player_.x, player_.y, 0, 0, -1});
-        }
-        // After speech, the original runs the zone's scripts once more so
-        // that conversations can go on.
-        if (spoke && chainedUpdates_ < kMaxChainedUpdates) {
-            ++chainedUpdates_;
-            trigger(Event::Update);
-        } else if (wasUpdate && passes_.empty()) {
-            chainedUpdates_ = 0;
+        if (pendingZone_) {
+            // A ChangeZone takes effect once the pass is over.
+            const auto [to, at] = *pendingZone_;
+            pendingZone_.reset();
+            state().initialized = true;
+            carrySharedCounter(to);
+            changeZone(to, at);
+            return;
         }
     }
     if (passes_.empty()) {
@@ -214,7 +207,12 @@ bool World::conditionHolds(const data::ScriptLine& line, const Pass& pass) {
         return pass.event == Event::Walk && e.x == arg(line, 0) && e.y == arg(line, 1) &&
                tileAt(arg(line, 0), arg(line, 1), 0) == arg(line, 2);
     case Condition::PlaceItem: {
-        if (pass.event != Event::PlaceItem || !itemTarget()) {
+        if (pass.event != Event::PlaceItem) {
+            return false;
+        }
+        // The cell must hold exactly that tile; -1 takes any (Yoda Stories).
+        if (arg(line, 0) != e.x || arg(line, 1) != e.y ||
+            (arg(line, 3) != -1 && tileAt(e.x, e.y, arg(line, 2)) != arg(line, 3))) {
             return false;
         }
         const int wanted = arg(line, 4) == -1 ? (g.requiredItem == data::kNoTile ? -1 : g.requiredItem) : arg(line, 4);
@@ -225,6 +223,9 @@ bool World::conditionHolds(const data::ScriptLine& line, const Pass& pass) {
             return false;
         }
         const int wanted = arg(line, 4) == -1 ? (g.requiredItem == data::kNoTile ? -1 : g.requiredItem) : arg(line, 4);
+        if (data_.layout() == data::Layout::Yoda && ignoredByPlaceItemIsNot(e.item)) {
+            return false;
+        }
         return wanted >= 0 && e.item != wanted;
     }
     case Condition::CounterIs: return s.counter == arg(line, 0);
@@ -319,7 +320,6 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
             effect.at = at(0, 1);
         }
         effects_.push_back(std::move(effect));
-        pass.spoke = true;
         // Pausing does not advance the pass, so step past this line here.
         ++pass.instruction;
         return false;
@@ -354,7 +354,6 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
     case Instruction::ShowHero: heroVisible_ = true; return true;
     case Instruction::SetHeroPosition:
         if (inside(at(0, 1))) {
-            pass.placedHero = pass.placedHero || !(player_ == at(0, 1));
             player_ = at(0, 1);
         }
         return true;
@@ -374,7 +373,6 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
         next.x += to.x > from.x ? 1 : to.x < from.x ? -1 : 0;
         next.y += to.y > from.y ? 1 : to.y < from.y ? -1 : 0;
         player_ = next;
-        pass.placedHero = true;
         Effect effect;
         effect.kind = Effect::Kind::Wait;
         effect.value = std::max(0, arg(line, 4)) * 100;
@@ -445,8 +443,21 @@ bool World::execute(const data::ScriptLine& line, Pass& pass) {
         outcome_ = Outcome::Lost;
         effects_.push_back({Effect::Kind::Lost, {}, {}, 0});
         return true;
-    case Instruction::AddHealth: health_ = std::clamp(health_ + arg(line, 0), 0, kMaxHealth); return true;
-    case Instruction::ChangeZone: changeZone(arg(line, 0), at(1, 2)); return true;
+    case Instruction::AddHealth:
+        if (arg(line, 0) < 0) {
+            // Treated like a hit: scaled by the difficulty.
+            hurtHero(-arg(line, 0));
+            return true;
+        }
+        health_ = std::clamp(health_ + arg(line, 0), 0, kMaxHealth);
+        return true;
+    case Instruction::ChangeZone:
+        // The rest of the pass still runs here first; in the data, a
+        // DisableAction or tile changes often follow the ChangeZone.
+        if (arg(line, 0) >= 0 && static_cast<std::size_t>(arg(line, 0)) < data_.zones.size()) {
+            pendingZone_ = std::make_pair(static_cast<int>(arg(line, 0)), at(1, 2));
+        }
+        return true;
     case Instruction::RedrawTile:
     case Instruction::RedrawTiles:
     case Instruction::RedrawZone:

@@ -58,6 +58,10 @@ World::ZoneState& World::stateOf(int zoneIndex) {
         fresh.actionDisabled.assign(z.actions ? z.actions->size() : 0, false);
         fresh.monsterEnabled.assign(z.monsters.size(), true);
         fresh.monsterDead.assign(z.monsters.size(), false);
+        // Both games start a zone's random value (and Yoda Stories its
+        // shared counter) at -1, so "is 0" does not hold until a script sets it.
+        fresh.random = -1;
+        fresh.sharedCounter = -1;
         initMonsters(zoneIndex, fresh);
         prepareZone(zoneIndex, fresh);
         it = states_.emplace(zoneIndex, std::move(fresh)).first;
@@ -134,6 +138,17 @@ void World::setGoal(int zoneIndex, ZoneGoal g) {
     zoneSite_[zoneIndex] = static_cast<int>(goals_.size());
     goals_.push_back(g);
     sites_.push_back(std::move(s));
+}
+
+void World::carrySharedCounter(int toZone) {
+    if (toZone == zone_ || toZone < 0 ||
+        static_cast<std::size_t>(toZone) >= data_.zones.size()) {
+        return;
+    }
+    const int value = state().sharedCounter;
+    if (value >= 0) {
+        stateOf(toZone).sharedCounter = value;
+    }
 }
 
 void World::setSolved(int zoneIndex) {
@@ -321,10 +336,13 @@ void World::enter(int zoneIndex, Position at) {
     shots_.clear();
     // Scripts of the zone we left do not continue here.
     passes_.clear();
+    pendingZone_.reset();
     paused_ = false;
     zoneChanged_ = true;
-    chainedUpdates_ = 0;
     trigger(script::Event::Enter);
+    trigger(script::Event::Update);
+    // The originals run the Update scripts once more when the change of
+    // zone has finished.
     trigger(script::Event::Update);
     runScripts();
 }
@@ -571,6 +589,7 @@ MoveResult World::move(Step step) {
         if (door->argument < data_.zones.size()) {
             returns_.push_back({zone_, target});
             const int to = door->argument;
+            carrySharedCounter(to);
             enter(to, startPosition(to));
             ++steps_;
             return MoveResult::ChangedZone;
@@ -579,6 +598,7 @@ MoveResult World::move(Step step) {
     if (hotspotAt(target, HotspotType::DoorOut) && !returns_.empty()) {
         const Return back = returns_.back();
         returns_.pop_back();
+        carrySharedCounter(back.zone);
         enter(back.zone, back.at);
         ++steps_;
         return MoveResult::ChangedZone;

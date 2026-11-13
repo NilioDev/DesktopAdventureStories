@@ -45,6 +45,7 @@ constexpr int kShotRange = 8;
 constexpr int kNearby = 4;           // how close Lurk and Stalk notice the hero
 constexpr int kHeroAttackMs = 300;   // between the hero's attacks
 constexpr int kAttackShowMs = 200;
+constexpr int kScriptTickMs = 100;   // a Walk pass on the hero's cell
 
 int distance(Position a, Position b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
 
@@ -237,9 +238,10 @@ void World::hurtHero(int damage) {
     if (damage <= 0 || outcome_ != Outcome::Playing) {
         return;
     }
-    // Difficulty scales what monsters do: half at 0, normal at 50, one and a
-    // half times at 100.
-    const int scaled = std::max(1, damage * (50 + difficulty_) / 100);
+    // As in the originals: damage is divided by 100 / difficulty (whole
+    // numbers), so half at the normal 50 and all of it at 100; at least 1.
+    const int divisor = std::max(1, 100 / std::max(1, difficulty_));
+    const int scaled = std::max(1, damage / divisor);
     health_ = std::max(0, health_ - scaled);
     if (health_ == 0) {
         outcome_ = Outcome::Lost;
@@ -452,6 +454,22 @@ void World::update(int ms) {
     attackShowMs_ = std::max(0, attackShowMs_ - ms);
     if (paused_) {
         return;
+    }
+    {
+        // The originals check the cell the hero stands on on every game
+        // tick, so StandingOn and HeroIsAt scripts also notice a hero that
+        // stands still or that a script put somewhere.
+        scriptTickMs_ += ms;
+        if (scriptTickMs_ >= kScriptTickMs) {
+            scriptTickMs_ = 0;
+            if (passes_.empty()) {
+                trigger(script::Event::Walk, {player_.x, player_.y, 0, 0, -1});
+                runScripts();
+                if (paused_ || outcome_ != Outcome::Playing) {
+                    return;
+                }
+            }
+        }
     }
     shotMs_ += ms;
     while (shotMs_ >= kShotStepMs && !shots_.empty()) {

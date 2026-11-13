@@ -227,3 +227,80 @@ DAS_TEST("an item dropped into a cabinet is found by bumping it, and the cabinet
     DAS_CHECK(w.hasItem(kKey));
     DAS_CHECK(w.tile({1, 0}, 1) == kWall);
 }
+
+namespace {
+
+// Yoda Stories behaviour checked against the original program; see
+// docs/formats/scripts.md.
+data::GameData makeFlowGame() {
+    data::GameData data = makeGame();
+    // Zone 3: bumping the wall at (1,0) sends the hero to zone 1, and the
+    // action switches itself off after the ChangeZone. Entering counts the
+    // Update passes; standing on (2,2) sets the counter to 50. The door at
+    // (0,1) leads to zone 4.
+    data::Zone z = makeZone(3);
+    z.cells[1].layers[1] = kWall;
+    z.hotspots->push_back({9, 0, 1, 1, 4});
+    z.actions->push_back({{line(c(Condition::Bump), {1, 0, kWall})},
+                          {line(i(Instruction::ChangeZone), {1, 1, 1}), line(i(Instruction::DisableAction)),
+                           line(i(Instruction::SetSharedCounter), {7})}});
+    z.actions->push_back({{line(c(Condition::Update))}, {line(i(Instruction::AddToCounter), {1})}});
+    z.actions->push_back({{line(c(Condition::StandingOn), {2, 2, kFloor})}, {line(i(Instruction::SetCounter), {50})}});
+    data::Zone room = makeZone(3);
+    room.hotspots->push_back({10, 1, 2, 1, 0xffff});
+    data.zones.push_back(z);
+    data.zones.push_back(room);
+    return data;
+}
+
+} // namespace
+
+DAS_TEST("a ChangeZone lets the rest of the pass run first") {
+    const auto data = makeFlowGame();
+    world::World w(data);
+    w.start(3);
+    w.enter(3, {1, 1});
+    drain(w);
+    DAS_CHECK(w.move({0, -1}) == world::MoveResult::ChangedZone);
+    DAS_CHECK(w.zoneIndex() == 1);
+    // SetSharedCounter after the ChangeZone ran in zone 3 and went along.
+    DAS_CHECK(w.sharedCounter() == 7);
+    w.enter(3, {1, 1});
+    drain(w);
+    // DisableAction after the ChangeZone ran too: no second trip.
+    DAS_CHECK(w.move({0, -1}) == world::MoveResult::Blocked);
+    DAS_CHECK(w.zoneIndex() == 3);
+}
+
+DAS_TEST("Yoda zones start their counters at -1 and run Update twice on entering") {
+    const auto data = makeFlowGame();
+    world::World w(data);
+    w.start(3);
+    drain(w);
+    DAS_CHECK(w.counter() == 2);
+    DAS_CHECK(w.random() == -1);
+    DAS_CHECK(w.sharedCounter() == -1);
+}
+
+DAS_TEST("the shared counter goes through a door into a room") {
+    const auto data = makeFlowGame();
+    world::World w(data);
+    w.start(3);
+    w.enter(3, {1, 1});
+    drain(w);
+    DAS_CHECK(w.move({-1, 0}) == world::MoveResult::ChangedZone); // the door at (0,1), still -1
+    DAS_CHECK(w.zoneIndex() == 4);
+    DAS_CHECK(w.sharedCounter() == -1);
+}
+
+DAS_TEST("a game tick notices the hero standing on a cell") {
+    const auto data = makeFlowGame();
+    world::World w(data);
+    w.start(3);
+    w.enter(3, {2, 2});
+    drain(w);
+    DAS_CHECK(w.counter() != 50);
+    w.update(150);
+    drain(w);
+    DAS_CHECK(w.counter() == 50);
+}

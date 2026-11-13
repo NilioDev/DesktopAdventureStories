@@ -374,10 +374,17 @@ DAS_TEST("after the landing on Dagobah the hero can walk away from the ship") {
             world::World w(game);
             w.setMap(world::generateWorld(game, options));
             w.begin();
-            // Play the landing and what is said after it.
-            for (int guard = 0; guard < 256 && w.paused(); ++guard) {
+            // Play the landing and what is said after it. Let a few game
+            // ticks pass too: Yoda Stories looks at the hero's cell on each.
+            for (int guard = 0; guard < 256; ++guard) {
                 (void)w.takeEffects();
-                w.resume();
+                if (w.paused()) {
+                    w.resume();
+                } else if (guard < 32) {
+                    w.update(100);
+                } else {
+                    break;
+                }
             }
             const world::Position start = w.player();
             bool moved = false;

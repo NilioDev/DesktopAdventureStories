@@ -185,7 +185,7 @@ void Viewer::renderMapTab(SDL_Renderer* renderer, const SDL_FRect& area) const {
     int solved = 0;
     int total = 0;
     for (const auto& site : w.map().world.sites) {
-        if (site.kind == world::SiteKind::Puzzle || site.kind == world::SiteKind::Goal) {
+        if (world::isChainPuzzle(site)) {
             ++total;
             solved += w.goal(site.zone).solved ? 1 : 0;
         }

@@ -60,7 +60,8 @@ own adventures.
 - 🖥️ **Modern interface.** Your own game's pixel art, scaled sharply to any
   window. In the game, floating cards around the play field show your health
   as a ring, your weapon, a **minimap** with the puzzles still open and the
-  ones you solved, how many puzzles you solved, and the item in your hand;
+  ones you solved, how many of the puzzles on the way to the goal you
+  solved, and the item in your hand;
   your items sit in a bar under the field, or beside it when that lets the
   field grow. The play field takes as much of the window as it can.
   The pause screen has tabs for the menu, a large map with your progress and

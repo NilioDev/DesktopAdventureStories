@@ -92,6 +92,10 @@ DAS_TEST("the generator chains puzzles to the goal") {
                         }
                     }
                     puzzleSites += m == &map.world && (s.role == 10 || s.role == 15 || s.role == 16) ? 1 : 0;
+                    // The puzzle counter the player sees counts exactly these.
+                    if (m == &map.world) {
+                        DAS_CHECK(world::isChainPuzzle(s) == (s.role == 10 || s.role == 15 || s.role == 16));
+                    }
                     if (s.role >= 2 && s.role <= 18 && m == &map.world) {
                         const auto& z = game.zones.at(static_cast<std::size_t>(s.zone));
                         DAS_CHECK(z.type == s.role || (s.role == 17 && z.type == 18));

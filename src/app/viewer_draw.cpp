@@ -408,7 +408,11 @@ void Viewer::renderMapCells(SDL_Renderer* renderer, const MapHere& here, float x
             switch (site.kind) {
             case world::SiteKind::Town: c = kTown; break;
             case world::SiteKind::Goal: c = kGoal; break;
-            case world::SiteKind::Puzzle: c = world_->goal(site.zone).solved ? kSolved : ui::color::accent; break;
+            case world::SiteKind::Puzzle:
+                // Only the puzzles on the way to the goal show as open; a
+                // blockade or a vehicle never turns "done".
+                c = world_->goal(site.zone).solved ? kSolved : world::isChainPuzzle(site) ? ui::color::accent : kPlain;
+                break;
             default: break;
             }
             ui::fillRounded(renderer, box, radius, c);
@@ -521,15 +525,15 @@ std::string Viewer::hintText() const {
     case InputDevice::Touch: return menu ? "Tap to choose" : "Tap to walk and talk\nTap an item twice\nto use it";
     case InputDevice::Gamepad:
         return menu ? "D-pad choose\n" + key(Action::Use) + " select  " + key(Action::Attack) + " back"
-                    : key(Action::Use) + " use  " + key(Action::Attack) + " attack\n" + key(Action::InventoryPrev) +
-                          "/" + key(Action::InventoryNext) + " items\n" + key(Action::Map) + " map  " +
-                          key(Action::Menu) + " menu";
+                    : key(Action::Use) + " use  " + key(Action::Attack) + " attack\n" + key(Action::Push) +
+                          " push  " + key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) + " items\n" +
+                          key(Action::Map) + " map  " + key(Action::Menu) + " menu";
     case InputDevice::Keyboard: break;
     }
     return menu ? "Arrows choose\n" + key(Action::Use) + " select  " + key(Action::Menu) + " back"
                 : "Arrows walk  " + key(Action::Attack) + " attack\n" + key(Action::Use) + " use  " +
-                      key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) + " items\n" + key(Action::Map) +
-                      " map  " + key(Action::Menu) + " menu";
+                      key(Action::Push) + " push\n" + key(Action::InventoryPrev) + "/" + key(Action::InventoryNext) +
+                      " items  " + key(Action::Map) + " map  " + key(Action::Menu) + " menu";
 }
 
 std::string Viewer::howToPlayText() const {
@@ -816,7 +820,7 @@ void Viewer::renderHud(SDL_Renderer* renderer, const ui::Layout& layout) const {
         int solved = 0;
         int total = 0;
         for (const auto& site : w.map().world.sites) {
-            if (site.kind == world::SiteKind::Puzzle || site.kind == world::SiteKind::Goal) {
+            if (world::isChainPuzzle(site)) {
                 ++total;
                 solved += w.goal(site.zone).solved ? 1 : 0;
             }

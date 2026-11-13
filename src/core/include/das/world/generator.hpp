@@ -80,6 +80,16 @@ struct Site {
     int itemSpot = -1;
 };
 
+// The sites the player must solve to win: the trades and uses of the
+// puzzle chain, and the goal. Blockades, places where an item lies and
+// vehicles are puzzle cells too, but no script marks them solved, so they
+// cannot count towards the player's progress.
+inline bool isChainPuzzle(const Site& s) {
+    return s.kind == SiteKind::Goal ||
+           (s.kind == SiteKind::Puzzle && (s.role == static_cast<std::uint32_t>(ZoneType::Use) ||
+                                           s.role == static_cast<std::uint32_t>(ZoneType::Trade)));
+}
+
 struct Map {
     int width = 0;
     int height = 0;

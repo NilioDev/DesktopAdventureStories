@@ -17,6 +17,8 @@ namespace {
 constexpr int kFloorLayer = 0;
 constexpr int kObjectLayer = 1;
 constexpr std::uint16_t kNone16 = 0xffff;
+// Indy: the desk of the mission giver's office.
+constexpr std::uint16_t kIndyMissionGiver = 794;
 
 // Character types (Character::type).
 constexpr std::uint16_t kTypeEnemy = 2;
@@ -156,6 +158,24 @@ void World::begin() {
         }
     }
     start(map_.startZone);
+    // Indy starts in front of the door to the mission giver's office, like
+    // in the original.
+    if (data_.layout() == data::Layout::Indy && zone().hotspots) {
+        for (const auto& h : *zone().hotspots) {
+            if (h.type != static_cast<std::uint32_t>(HotspotType::DoorIn) || h.argument >= data_.zones.size()) {
+                continue;
+            }
+            const auto& room = data_.zones[h.argument];
+            const bool office = std::any_of(room.cells.begin(), room.cells.end(), [](const data::ZoneCell& c) {
+                return c.layers[kObjectLayer] == kIndyMissionGiver;
+            });
+            const Position below{h.x, h.y + 1};
+            if (office && inside(below) && walkable(below)) {
+                player_ = below;
+                break;
+            }
+        }
+    }
 }
 
 void World::initMonsters(int zoneIndex, ZoneState& s) {

@@ -472,3 +472,20 @@ DAS_TEST("yoda: the next planet follows the original's rule") {
         DAS_CHECK(nextPlanet(2, won, true) == 1);
     }
 }
+
+DAS_TEST("indy: a game starts in front of the mission giver's house") {
+    const auto games = loadGames();
+    for (const auto& game : games) {
+        if (game.layout() != data::Layout::Indy) {
+            continue;
+        }
+        world::GeneratorOptions options;
+        options.seed = 12345;
+        world::World w(game);
+        w.setMap(world::generateWorld(game, options));
+        w.begin();
+        DAS_CHECK(w.zoneIndex() == 120);
+        // Below the door at (11,4), to the office with the mission giver.
+        DAS_CHECK(w.player() == (world::Position{11, 5}));
+    }
+}

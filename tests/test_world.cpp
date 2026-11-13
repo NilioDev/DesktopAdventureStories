@@ -47,7 +47,6 @@ data::GameData makeWorld() {
     put(outside, 3, 1, kWall); // walls beside it: no way around
     put(outside, 3, 3, kWall);
     put(outside, 2, 3, kBlock);
-    put(outside, 2, 0, kWall); // the door itself is drawn as an object
     outside.hotspots->push_back({9, 2, 0, 1, 1});
 
     // Zone 1: 3x3 room with its way out at (1,2).
@@ -106,6 +105,24 @@ DAS_TEST("player pushes a draggable block onto free floor only") {
     DAS_CHECK(data.zones[0].cells[3 * 5 + 2].layers[1] == kBlock);
 }
 
+DAS_TEST("a door under an object stays shut until a script removes it") {
+    auto data = makeWorld();
+    put(data.zones[0], 2, 0, kWall); // a closed door drawn as an object
+    world::World w(data);
+    w.enter(0, {2, 1});
+    DAS_CHECK(w.move({0, -1}) != MoveResult::ChangedZone);
+    DAS_CHECK(w.zoneIndex() == 0);
+}
+
+DAS_TEST("a door to a room without a way out does not open") {
+    auto data = makeWorld();
+    data.zones[1].hotspots->clear();
+    world::World w(data);
+    w.enter(0, {2, 1});
+    DAS_CHECK(w.move({0, -1}) != MoveResult::ChangedZone);
+    DAS_CHECK(w.zoneIndex() == 0);
+}
+
 DAS_TEST("doors lead into a room and back out to the same door") {
     const auto data = makeWorld();
     world::World w(data);
@@ -119,6 +136,25 @@ DAS_TEST("doors lead into a room and back out to the same door") {
     DAS_CHECK(w.zoneIndex() == 0);
     DAS_CHECK(w.player() == (Position{2, 0}));
     DAS_CHECK(w.doorDepth() == 0);
+}
+
+DAS_TEST("an item taken from where it lay at the start stays gone after loading") {
+    namespace f = data::tile_flags;
+    auto data = makeWorld();
+    data.tiles.push_back({});
+    const auto item = static_cast<std::uint16_t>(data.tiles.size() - 1);
+    data.tiles[item].flags = f::kObject | f::kItem;
+    data.zones[0].hotspots->push_back({6, 0, 4, 1, item}); // lies at (0,4)
+    world::World w(data);
+    w.enter(0, {1, 4});
+    DAS_CHECK(w.tile({0, 4}, 1) == item);
+    DAS_CHECK(w.move({-1, 0}) == MoveResult::Blocked); // takes it
+    DAS_CHECK(w.hasItem(item));
+    DAS_CHECK(w.tile({0, 4}, 1) == data::kNoTile);
+    world::World back(data);
+    back.loadState(w.saveState());
+    back.enter(0, {1, 4});
+    DAS_CHECK(back.tile({0, 4}, 1) == data::kNoTile);
 }
 
 DAS_TEST("start puts the player on the exit door or a free cell") {

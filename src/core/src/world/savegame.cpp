@@ -146,7 +146,11 @@ void World::loadState(const json::Value& v) {
         if (index < 0 || static_cast<std::size_t>(index) >= data_.zones.size()) {
             throw json::Error("a saved zone does not exist: " + key);
         }
-        ZoneState& s = stateOf(index); // the zone as it starts, then the changes
+        ZoneState& s = stateOf(index);
+        // Saved cells are the changes against the zone data itself, not
+        // against the zone as it starts: an item placed at the start and
+        // taken since must not come back.
+        s.cells = data_.zones[static_cast<std::size_t>(index)].cells;
         for (const auto& c : z["cells"].asArray()) {
             const auto& a = c.asArray();
             const auto i = static_cast<std::size_t>(a.at(0).as<std::uint32_t>());

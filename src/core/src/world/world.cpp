@@ -310,6 +310,13 @@ const data::Hotspot* World::hotspotAt(Position at, HotspotType type) const {
     return nullptr;
 }
 
+bool World::hasDoorOut(int zoneIndex) const {
+    const auto& z = data_.zones.at(static_cast<std::size_t>(zoneIndex));
+    return z.hotspots && std::any_of(z.hotspots->begin(), z.hotspots->end(), [](const data::Hotspot& h) {
+               return h.type == static_cast<std::uint32_t>(HotspotType::DoorOut);
+           });
+}
+
 Position World::startPosition(int zoneIndex) const {
     const auto& z = data_.zones.at(static_cast<std::size_t>(zoneIndex));
     if (z.hotspots) {
@@ -591,8 +598,11 @@ MoveResult World::move(Step step) {
     if (!inside(target)) {
         return leaveEdge(step) ? MoveResult::ChangedZone : MoveResult::Blocked;
     }
-    if (const auto* door = hotspotAt(target, HotspotType::DoorIn)) {
-        if (door->argument < data_.zones.size()) {
+    // Like the originals, a door only opens on a cell with nothing in the
+    // object layer: a door hidden under a wall or a bush stays shut.
+    const bool open = tile(target, kObjectLayer) == data::kNoTile;
+    if (const auto* door = open ? hotspotAt(target, HotspotType::DoorIn) : nullptr) {
+        if (door->argument < data_.zones.size() && hasDoorOut(door->argument)) {
             returns_.push_back({zone_, target});
             const int to = door->argument;
             carrySharedCounter(to);
@@ -601,7 +611,7 @@ MoveResult World::move(Step step) {
             return MoveResult::ChangedZone;
         }
     }
-    if (hotspotAt(target, HotspotType::DoorOut) && !returns_.empty()) {
+    if (open && hotspotAt(target, HotspotType::DoorOut) && !returns_.empty()) {
         const Return back = returns_.back();
         returns_.pop_back();
         carrySharedCounter(back.zone);

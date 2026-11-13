@@ -348,6 +348,8 @@ private:
     std::uint32_t flags(std::uint16_t tile) const;
     const data::Hotspot* hotspotAt(Position at, HotspotType type) const;
     Position startPosition(int zone) const;
+    // The originals refuse a door whose room has no way out (DoorOut).
+    bool hasDoorOut(int zone) const;
 
     const data::GameData& data_;
     int zone_ = 0;

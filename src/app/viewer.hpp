@@ -34,6 +34,18 @@ namespace das::app {
 
 enum class ViewMode { Title, Zone, Tiles, Play, Edit };
 
+// The colours of the map's cells, shared by the minimap, the map page and
+// their legends.
+namespace mapcolor {
+inline constexpr ui::Color kTown{110, 160, 230};
+inline constexpr ui::Color kSolved{136, 152, 170};
+inline constexpr ui::Color kGoal{244, 211, 94};
+inline constexpr ui::Color kPlain{66, 74, 86};
+} // namespace mapcolor
+
+// A check mark in a solved cell, so it never looks like any other place.
+void drawMapCheck(SDL_Renderer* renderer, const SDL_FRect& box);
+
 // The device the player used last; the hints on screen follow it.
 enum class InputDevice { Keyboard, Gamepad, Touch };
 

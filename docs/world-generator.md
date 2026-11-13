@@ -339,7 +339,8 @@ installation has neither.
 ### Layout
 
 The opening draws and the layout are those of sections 1 and 2, with other
-ring sizes. There are no preset cells besides the town.
+ring sizes. As in Yoda Stories, the four middle cells start out plain and
+the town is set after them.
 
 | size   | inner ring | middle ring | outer ring | edge |
 |--------|-----------|-------------|------------|------|
